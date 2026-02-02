@@ -1,9 +1,10 @@
 {
   "name": "ghee-ecommerce",
   "version": "1.0.0",
+  "private": true,
   "scripts": {
-    "start": "node backend/server.js",
-    "start:frontend": "cd frontend && npm run preview",
-    "install:all": "cd backend && npm install && cd ../frontend && npm install"
+    "install:all": "cd backend && npm install && cd ../frontend && npm install",
+    "build:frontend": "cd frontend && npm run build",
+    "start": "node backend/server.js"
   }
 }
