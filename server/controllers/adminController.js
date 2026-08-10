@@ -26,14 +26,38 @@ exports.getAllAdmins = async (req, res) => {
   } catch (e) { res.status(500).json({ message: e.message }); }
 };
 
+exports.getSupportAgents = async (req, res) => {
+  try {
+    const agents = await User.find({ role: 'support' }).select('-password');
+    res.json(agents);
+  } catch (e) { res.status(500).json({ message: e.message }); }
+};
+
 exports.createAdmin = async (req, res) => {
   try {
-    const { name, email, password, permissions } = req.body;
+    const { name, email, password, permissions, role } = req.body;
     if (await User.findOne({ email })) return res.status(400).json({ message: 'User already exists' });
-    const newAdmin = new User({ name, email, password, role: 'admin', permissions: permissions || [] });
+    
+    // Assign role based on request, default to 'admin'
+    const validRoles = ['admin', 'support', 'superadmin'];
+    const assignedRole = validRoles.includes(role) ? role : 'admin';
+    
+    const newAdmin = new User({ name, email, password, role: assignedRole, permissions: permissions || [] });
     await newAdmin.save();
-    await logAction(req, 'CREATE_ADMIN', 'USER', newAdmin._id, { name: newAdmin.name });
+    await logAction(req, 'CREATE_ADMIN', 'USER', newAdmin._id, { name: newAdmin.name, role: assignedRole });
     const obj = newAdmin.toObject(); delete obj.password; res.status(201).json(obj);
+  } catch (e) { res.status(500).json({ message: e.message }); }
+};
+
+exports.createSupportAgent = async (req, res) => {
+  try {
+    const { name, email, password, phone } = req.body;
+    if (await User.findOne({ email })) return res.status(400).json({ message: 'User already exists' });
+    
+    const newAgent = new User({ name, email, password, phone, role: 'support' });
+    await newAgent.save();
+    await logAction(req, 'CREATE_SUPPORT_AGENT', 'USER', newAgent._id, { name: newAgent.name });
+    const obj = newAgent.toObject(); delete obj.password; res.status(201).json(obj);
   } catch (e) { res.status(500).json({ message: e.message }); }
 };
 

@@ -5,6 +5,7 @@ import { toast } from 'react-toastify'
 import api from '../../api/axios'
 import OTPModal from '../../components/OTPModal'
 import { useConfirm } from '../../context/ConfirmContext'
+import RestrictedAccess from '../../components/RestrictedAccess'
 
 /* ── Field component using CSS tokens ── */
 const Field = ({ label, icon: Icon, name, value, onChange, suffix, helpText, error }) => (
@@ -135,6 +136,10 @@ const AdminSettings = () => {
       ...p,
       security: { ...(p.security || {}), [key]: val }
     }))
+  }
+
+  if (user?.role !== 'superadmin') {
+    return <RestrictedAccess title="Root Authority Required" message="Only Super Administrators can modify platform settings." />
   }
 
   if (loading) return (

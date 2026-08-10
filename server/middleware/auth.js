@@ -53,6 +53,15 @@ auth.admin = (req, res, next) => {
   }
 };
 
+// ✅ Support middleware (allows support, admin, superadmin)
+auth.support = (req, res, next) => {
+  if (req.user && (req.user.role === 'support' || req.user.role === 'admin' || req.user.role === 'superadmin')) {
+    next();
+  } else {
+    res.status(403).json({ message: 'Support access only' });
+  }
+};
+
 // ✅ Super Admin only middleware
 auth.superadmin = (req, res, next) => {
   if (req.user && req.user.role === 'superadmin') {

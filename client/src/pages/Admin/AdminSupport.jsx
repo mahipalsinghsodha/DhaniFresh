@@ -7,6 +7,7 @@ import RestrictedAccess from "../../components/RestrictedAccess";
 import { toast } from "react-toastify";
 import { useSocket } from "../../hooks/useSocket";
 import ChatBubble from "../../components/chat/ChatBubble";
+import SupportOrderPanel from "../../components/SupportOrderPanel";
 
 const STATUS_CFG = {
   WAITING: { label: "Waiting", dot: "var(--warning)", text: "var(--warning)", bg: "rgba(245,166,35,0.08)", border: "rgba(245,166,35,0.25)" },
@@ -400,6 +401,18 @@ export default function AdminSupport() {
               </motion.div>
             )}
           </AnimatePresence>
+        </div>
+      )}
+
+      {/* ─── RIGHTMOST: Embedded Order Search Panel ─── */}
+      {selected && !isMobile && (
+        <div style={{ width: '380px', borderLeft: '1px solid var(--border-color)', background: 'var(--bg-surface)', flexShrink: 0, display: 'flex', flexDirection: 'column' }}>
+          <div style={{ padding: '14px 20px', borderBottom: '1px solid var(--border-color)', background: 'var(--bg-surface)', fontWeight: 800, fontSize: 14, color: 'var(--text-primary)' }}>
+            Search Database
+          </div>
+          <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+            <SupportOrderPanel initialSearchQuery={selected.orderId || selected.userId?.email || selected.guestEmail} />
+          </div>
         </div>
       )}
     </div>

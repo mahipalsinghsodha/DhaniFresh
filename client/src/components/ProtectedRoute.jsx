@@ -13,7 +13,7 @@ const AuthLoader = () => (
   </div>
 )
 
-const ProtectedRoute = ({ children, adminOnly = false, permission = null }) => {
+const ProtectedRoute = ({ children, adminOnly = false, permission = null, supportAccess = false }) => {
   const { user, loading, hasPermission } = useAuth()
 
   // ✅ FIX C3: Always show loader while auth is resolving — never render children prematurely
@@ -25,6 +25,11 @@ const ProtectedRoute = ({ children, adminOnly = false, permission = null }) => {
 
   // Admin and Super Admin can access adminOnly routes
   if (adminOnly && user.role !== 'admin' && user.role !== 'superadmin') {
+    return <Navigate to="/" replace />
+  }
+
+  // Support Panel Access
+  if (supportAccess && !['admin', 'superadmin', 'support'].includes(user.role)) {
     return <Navigate to="/" replace />
   }
 

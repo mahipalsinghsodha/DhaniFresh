@@ -15,6 +15,7 @@ import 'react-toastify/dist/ReactToastify.css'
 import WhatsAppButton from './components/WhatsAppButton'
 import { useThemeStore } from './store/theme'
 import NotificationDrawer from './components/NotificationDrawer'
+import SupportWidget from './components/SupportWidget'
 import api from './api/axios'
 import { ConfirmProvider } from './context/ConfirmContext'
 
@@ -58,6 +59,9 @@ const HowItWorks      = lazy(() => import('./pages/HowItWorks'))
 
 const CheckoutSubscription = lazy(() => import('./pages/CheckoutSubscription'))
 
+// Support Admin pages
+const SupportDashboard = lazy(() => import('./pages/Admin/SupportDashboard.jsx'))
+
 // Admin pages
 const AdminDashboard = lazy(() => import('./pages/Admin/AdminDashboard.jsx'))
 const AdminReturns = lazy(() => import('./pages/Admin/AdminReturns.jsx')) // ✅ P1: Admin Returns page
@@ -79,6 +83,7 @@ const AdminMedia = lazy(() => import('./pages/Admin/AdminMedia.jsx'))
 const AdminSettings = lazy(() => import('./pages/Admin/AdminSettings.jsx'))
 const AdminNewsletters = lazy(() => import('./pages/Admin/AdminNewsletters.jsx'))
 const AdminSubscriptions = lazy(() => import('./pages/Admin/AdminSubscriptions.jsx'))
+const AdminSupportAgents = lazy(() => import('./pages/Admin/AdminSupportAgents.jsx'))
 
 // ─── Guest-Only Route ─────────────────────────────────────────────────────────
 function GuestRoute({ children }) {
@@ -89,8 +94,9 @@ function GuestRoute({ children }) {
 
   if (user) {
     const isAdmin = user.role === 'admin' || user.role === 'superadmin'
+    const isSupport = user.role === 'support'
     // Respect the intended destination set by navigate('/login', { state: { from } })
-    const destination = location.state?.from || (isAdmin ? '/admin' : '/')
+    const destination = location.state?.from || (isAdmin ? '/admin' : isSupport ? '/support-panel' : '/')
     return <Navigate to={destination} replace />
   }
   return children
@@ -254,8 +260,12 @@ function AnimatedRoutes() {
             <Route path="/admin/products/:id/images" element={<ProtectedRoute adminOnly><AdminProductImages /></ProtectedRoute>} />
             <Route path="/admin/reviews"          element={<ProtectedRoute adminOnly><AdminReviews /></ProtectedRoute>} />
 
+            {/* ── Support ── */}
+            <Route path="/support-panel"          element={<ProtectedRoute supportAccess><SupportDashboard /></ProtectedRoute>} />
+
             {/* ── Superadmin ── */}
             <Route path="/admin/manage-admins"    element={<ProtectedRoute adminOnly permission="superadmin_view"><AdminManagement /></ProtectedRoute>} />
+            <Route path="/admin/support-agents"   element={<ProtectedRoute adminOnly permission="superadmin_view"><AdminSupportAgents /></ProtectedRoute>} />
             <Route path="/admin/audit-logs"       element={<ProtectedRoute adminOnly permission="superadmin_view"><AuditLogs /></ProtectedRoute>} />
 
             {/* ── 404 ── */}
@@ -311,6 +321,7 @@ function App() {
                     <Footer />
                     <WhatsAppButton />
                     <NotificationDrawer />
+                    <SupportWidget />
                   </SiteStatusWrapper>
                 </div>
               </Router>

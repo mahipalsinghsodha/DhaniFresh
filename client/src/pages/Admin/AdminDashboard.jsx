@@ -312,9 +312,10 @@ const AdminDashboard = () => {
           <SectionCard title="Analytics & Tools" icon={FiBarChart2} delay={0.20}>
             <QuickCard title="Analytics"         desc="Sales reports and insights"           icon={FiBarChart2}  to="/admin/analytics"      accent delay={0.25} />
             <QuickCard title="Support Tickets"   desc="Customer support messages"            icon={FiActivity}   to="/admin/support"                   delay={0.30} />
-            <QuickCard title="Platform Settings" desc="GST rate and shipping config"        icon={FiSettings}   to="/admin/settings"                  delay={0.35} />
             {isSuperAdmin && <>
+              <QuickCard title="Platform Settings" desc="GST rate and shipping config"        icon={FiSettings}   to="/admin/settings"                  delay={0.35} />
               <QuickCard title="Admin Management" desc="Manage admin accounts"              icon={FiShield}     to="/admin/manage-admins"  accent delay={0.40} />
+              <QuickCard title="Support Agents"   desc="Manage support team"                icon={FiUsers}      to="/admin/support-agents" accent delay={0.42} />
               <QuickCard title="Audit Logs"       desc="System activity and security logs"  icon={FiTrendingUp} to="/admin/audit-logs"               delay={0.45} />
             </>}
           </SectionCard>

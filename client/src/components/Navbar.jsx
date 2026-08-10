@@ -99,8 +99,9 @@ const Navbar = () => {
 
   const handleLogout = () => { logout(); navigate('/') }
   const isActive = (path) => location.pathname === path
-  const isCustomer = !user || (user.role !== 'admin' && user.role !== 'superadmin')
+  const isCustomer = !user || (user.role !== 'admin' && user.role !== 'superadmin' && user.role !== 'support')
   const isAdmin = user && (user.role === 'admin' || user.role === 'superadmin')
+  const isSupport = user && user.role === 'support'
 
   const handleLanguageChange = async (lang) => {
     i18n.changeLanguage(lang)
@@ -144,16 +145,16 @@ const Navbar = () => {
         <div className="flex items-center justify-between h-[60px] sm:h-[68px]">
 
           {/* ── Logo ── */}
-          <Link to={isAdmin ? '/admin' : '/'} className="flex items-center gap-1.5 sm:gap-2.5 shrink-0 group bg-[#fffdf8] rounded-xl px-1 sm:px-1.5 py-1">
+          <Link to={isAdmin ? '/admin' : isSupport ? '/support-panel' : '/'} className="flex items-center gap-1.5 sm:gap-2.5 shrink-0 group bg-[#fffdf8] rounded-xl px-1 sm:px-1.5 py-1">
             <img 
               src="/logo_rectangle.png" 
               alt="Daatasa Logo" 
               className="h-[34px] sm:h-[48px] w-auto transition-transform duration-300 group-hover:scale-[1.02]" 
             />
-            {isAdmin && (
+            {(isAdmin || isSupport) && (
               <span className="hidden sm:inline-block ml-1 px-2 py-0.5 text-[9px] font-bold uppercase tracking-widest rounded-full"
                 style={{ background: 'var(--gold)', color: 'var(--navy)' }}>
-                {user.role === 'superadmin' ? 'Super' : 'Admin'}
+                {user.role === 'superadmin' ? 'Super' : isSupport ? 'Support' : 'Admin'}
               </span>
             )}
           </Link>
@@ -221,6 +222,24 @@ const Navbar = () => {
                     {isActive(to) && (
                       <motion.span
                         layoutId="navActiveAdmin"
+                        className="absolute bottom-0 left-3.5 right-3.5 h-0.5 rounded-full"
+                        style={{ background: 'var(--gold)' }}
+                      />
+                    )}
+                  </Link>
+                ))}
+              </>
+            )}
+            {isSupport && (
+              <>
+                {[
+                  { to: '/support-panel', label: 'Support Dashboard' },
+                ].map(({ to, label }) => (
+                  <Link key={to} to={to} className={navLinkCls(to)}>
+                    {label}
+                    {isActive(to) && (
+                      <motion.span
+                        layoutId="navActiveSupport"
                         className="absolute bottom-0 left-3.5 right-3.5 h-0.5 rounded-full"
                         style={{ background: 'var(--gold)' }}
                       />
@@ -361,6 +380,9 @@ const Navbar = () => {
                             ] : []),
                             ...(isAdmin ? [
                               { to: '/admin', icon: Shield, label: t('navbar.adminPanel', 'Admin Panel') },
+                            ] : []),
+                            ...(isSupport ? [
+                              { to: '/support-panel', icon: Shield, label: 'Support Panel' },
                             ] : []),
                           ].map(item => (
                             <Link key={item.to} to={item.to}
@@ -616,6 +638,11 @@ const Navbar = () => {
                     <Link to="/admin/orders" className={mobileLinkCls('/admin/orders')}>{t('navbar.ordersAdmin', 'Orders')}</Link>
                     <Link to="/admin/users" className={mobileLinkCls('/admin/users')}>{t('navbar.users', 'Users')}</Link>
                     <Link to="/admin/analytics" className={mobileLinkCls('/admin/analytics')}>{t('navbar.analytics', 'Analytics')}</Link>
+                  </>
+                )}
+                {isSupport && (
+                  <>
+                    <Link to="/support-panel" className={mobileLinkCls('/support-panel')}>Support Dashboard</Link>
                   </>
                 )}
 

@@ -40,7 +40,7 @@ const AdminManagement = () => {
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [formData, setFormData] = useState({ name: '', email: '', password: '', permissions: [] });
+  const [formData, setFormData] = useState({ name: '', email: '', password: '', confirmPassword: '', permissions: [], role: 'admin' });
 
   const PERMISSIONS = [
     { id: 'dashboard',  label: 'Analytics',     desc: 'System performance & stats' },
@@ -70,12 +70,15 @@ const AdminManagement = () => {
 
   const handleCreateAdmin = async (e) => {
     e.preventDefault();
+    if (formData.password !== formData.confirmPassword) {
+      return toast.error('Passwords do not match');
+    }
     setSubmitting(true);
     try {
       await api.post('/api/admin/create-admin', formData);
       toast.success('Personnel account provisioned');
       setIsModalOpen(false);
-      setFormData({ name: '', email: '', password: '', permissions: [] });
+      setFormData({ name: '', email: '', password: '', confirmPassword: '', permissions: [], role: 'admin' });
       fetchAdmins();
     } catch (err) {
       toast.error(err.response?.data?.message || 'Provisioning failed');
@@ -187,8 +190,8 @@ const AdminManagement = () => {
                     <div>
                        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 4 }}>
                           <h3 style={{ margin: 0, fontSize: 18, fontWeight: 900 }}>{admin.name}</h3>
-                          <Badge color={admin.role === 'superadmin' ? 'var(--brand-secondary)' : 'var(--info)'} bg={admin.role === 'superadmin' ? 'rgba(245,166,35,0.1)' : 'rgba(49,130,206,0.1)'}>
-                            {admin.role === 'superadmin' ? 'Root Authority' : 'Manager'}
+                          <Badge color={admin.role === 'superadmin' ? 'var(--brand-secondary)' : admin.role === 'support' ? 'var(--success)' : 'var(--info)'} bg={admin.role === 'superadmin' ? 'rgba(245,166,35,0.1)' : admin.role === 'support' ? 'rgba(56,161,105,0.1)' : 'rgba(49,130,206,0.1)'}>
+                            {admin.role === 'superadmin' ? 'Root Authority' : admin.role === 'support' ? 'Support Agent' : 'Manager'}
                           </Badge>
                        </div>
                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--text-muted)', fontSize: 13, fontWeight: 500 }}>
@@ -255,16 +258,33 @@ const AdminManagement = () => {
                          style={{ width: '100%', padding: 14, borderRadius: 12, border: `1.5px solid var(--border-color)`, background: 'var(--bg-base)', outline: 'none', color: 'var(--text-primary)' }} className="input-focus" />
                     </div>
                     <div>
-                       <label style={{ display: 'block', fontSize: 11, fontWeight: 800, color: 'var(--text-muted)', marginBottom: 8, textTransform: 'uppercase' }}>Corporate Mail</label>
+                       <label style={{ display: 'block', fontSize: 11, fontWeight: 800, color: 'var(--text-muted)', marginBottom: 8, textTransform: 'uppercase' }}>Email Address (Login ID)</label>
                        <input type="email" required value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})}
                          style={{ width: '100%', padding: 14, borderRadius: 12, border: `1.5px solid var(--border-color)`, background: 'var(--bg-base)', outline: 'none', color: 'var(--text-primary)' }} className="input-focus" />
                     </div>
                  </div>
 
                  <div style={{ marginBottom: 24 }}>
-                    <label style={{ display: 'block', fontSize: 11, fontWeight: 800, color: 'var(--text-muted)', marginBottom: 8, textTransform: 'uppercase' }}>Access Credential (Password)</label>
-                    <input type="password" required value={formData.password} onChange={e => setFormData({...formData, password: e.target.value})}
-                      style={{ width: '100%', padding: 14, borderRadius: 12, border: `1.5px solid var(--border-color)`, background: 'var(--bg-base)', outline: 'none', color: 'var(--text-primary)' }} className="input-focus" />
+                    <label style={{ display: 'block', fontSize: 11, fontWeight: 800, color: 'var(--text-muted)', marginBottom: 8, textTransform: 'uppercase' }}>User Role / Type</label>
+                    <select value={formData.role} onChange={e => setFormData({...formData, role: e.target.value})}
+                      style={{ width: '100%', padding: 14, borderRadius: 12, border: `1.5px solid var(--border-color)`, background: 'var(--bg-base)', outline: 'none', color: 'var(--text-primary)', appearance: 'none' }} className="input-focus">
+                      <option value="admin">Admin (Manager)</option>
+                      <option value="support">Support Agent</option>
+                      <option value="superadmin">Super Admin</option>
+                    </select>
+                 </div>
+
+                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, marginBottom: 24 }}>
+                    <div>
+                       <label style={{ display: 'block', fontSize: 11, fontWeight: 800, color: 'var(--text-muted)', marginBottom: 8, textTransform: 'uppercase' }}>Password</label>
+                       <input type="password" required value={formData.password} onChange={e => setFormData({...formData, password: e.target.value})}
+                         style={{ width: '100%', padding: 14, borderRadius: 12, border: `1.5px solid var(--border-color)`, background: 'var(--bg-base)', outline: 'none', color: 'var(--text-primary)' }} className="input-focus" />
+                    </div>
+                    <div>
+                       <label style={{ display: 'block', fontSize: 11, fontWeight: 800, color: 'var(--text-muted)', marginBottom: 8, textTransform: 'uppercase' }}>Confirm Password</label>
+                       <input type="password" required value={formData.confirmPassword} onChange={e => setFormData({...formData, confirmPassword: e.target.value})}
+                         style={{ width: '100%', padding: 14, borderRadius: 12, border: `1.5px solid var(--border-color)`, background: 'var(--bg-base)', outline: 'none', color: 'var(--text-primary)' }} className="input-focus" />
+                    </div>
                  </div>
 
                  <div style={{ marginBottom: 32 }}>
