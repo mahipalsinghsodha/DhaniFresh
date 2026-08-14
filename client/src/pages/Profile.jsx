@@ -126,9 +126,11 @@ const Profile = () => {
               <span className={`inline-block mt-4 px-4 py-1.5 text-xs font-bold rounded-full uppercase tracking-widest ${
                   user.role === 'admin' || user.role === 'superadmin'
                     ? 'bg-purple-100 text-purple-700'
-                    : 'bg-brand-primary/5 text-brand-primary'
+                    : user.role === 'courier'
+                      ? 'bg-blue-100 text-blue-700'
+                      : 'bg-brand-primary/5 text-brand-primary'
                 }`}>
-                {user.role === 'superadmin' ? 'Super Admin' : user.role === 'admin' ? 'Admin' : 'Customer'}
+                {user.role === 'superadmin' ? 'Super Admin' : user.role === 'admin' ? 'Admin' : user.role === 'courier' ? 'Courier' : 'Customer'}
               </span>
             </div>
 

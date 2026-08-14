@@ -98,8 +98,9 @@ function GuestRoute({ children }) {
   if (user) {
     const isAdmin = user.role === 'admin' || user.role === 'superadmin'
     const isSupport = user.role === 'support'
+    const isCourier = user.role === 'courier'
     // Respect the intended destination set by navigate('/login', { state: { from } })
-    const destination = location.state?.from || (isAdmin ? '/admin' : isSupport ? '/support-panel' : '/')
+    const destination = location.state?.from || (isAdmin ? '/admin' : isSupport ? '/support-panel' : isCourier ? '/courier/scan' : '/')
     return <Navigate to={destination} replace />
   }
   return children
