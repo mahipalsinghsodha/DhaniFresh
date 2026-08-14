@@ -164,9 +164,10 @@ router.post('/', auth, async (req, res) => {
       }
     }
 
-    const taxPrice = (itemsPrice - discount) * gstMultiplier;
+    // Tax is inclusive in the MRP
+    const taxPrice = (itemsPrice - discount) - ((itemsPrice - discount) / (1 + gstMultiplier));
     const shippingPrice = (itemsPrice - discount) > FREE_SHIPPING_THRESHOLD ? 0 : SHIPPING_CHARGE;
-    const totalPrice = itemsPrice - discount + taxPrice + shippingPrice;
+    const totalPrice = itemsPrice - discount + shippingPrice;
 
 
     const mongoose = require('mongoose');
@@ -358,9 +359,10 @@ router.get('/price-preview', auth, async (req, res) => {
       (total, item) => total + (item.product?.price || 0) * item.quantity,
       0
     );
-    const taxPrice      = itemsPrice * gstMultiplier;
+    // Tax is inclusive
+    const taxPrice      = itemsPrice - (itemsPrice / (1 + gstMultiplier));
     const shippingPrice = itemsPrice > settings.freeShippingThreshold ? 0 : settings.shippingCharge;
-    const totalPrice    = itemsPrice + taxPrice + shippingPrice;
+    const totalPrice    = itemsPrice + shippingPrice;
 
     res.json({
       itemsPrice,
@@ -507,9 +509,10 @@ router.post('/verify-coupon', auth, async (req, res) => {
     }
 
     const afterDiscount = Math.max(0, itemsPrice - discount);
-    const taxPrice = afterDiscount * gstMultiplier;
+    // Tax is inclusive
+    const taxPrice = afterDiscount - (afterDiscount / (1 + gstMultiplier));
     const shippingPrice = afterDiscount > FREE_SHIPPING_THRESHOLD ? 0 : SHIPPING_CHARGE;
-    const totalPrice = afterDiscount + taxPrice + shippingPrice;
+    const totalPrice = afterDiscount + shippingPrice;
 
     res.json({
       valid: true,
@@ -720,8 +723,56 @@ router.get('/', auth, auth.admin, auth.hasPermission('orders'), async (req, res)
     const limit = parseInt(req.query.limit) || 1000; // High limit default for backward compatibility
     const skip = (page - 1) * limit;
 
-    const totalCount = await Order.countDocuments();
-    const orders = await Order.find()
+    const filter = req.query.filter || 'all';
+    const search = req.query.search || '';
+    const startDate = req.query.startDate;
+    const endDate = req.query.endDate;
+    
+    const query = {};
+
+    if (startDate && endDate) {
+      // Validate date range max 365 days just to be safe on backend too
+      const sDate = new Date(startDate);
+      const eDate = new Date(endDate);
+      eDate.setHours(23, 59, 59, 999); // Include end of day
+      const diffDays = Math.ceil(Math.abs(eDate - sDate) / (1000 * 60 * 60 * 24));
+      if (diffDays <= 366) { // 365 full days + end of day
+        query.createdAt = { $gte: sDate, $lte: eDate };
+      }
+    }
+    
+    if (filter === 'pending') {
+      query.isPaid = false;
+      query.isDelivered = false;
+      query.paymentStatus = { $nin: ['CANCELLED', 'FAILED', 'COD_CONFIRMED'] };
+      query.orderStatus = { $ne: 'ACCEPTED' };
+    } else if (filter === 'accepted') {
+      query.orderStatus = 'ACCEPTED';
+    } else if (filter === 'cod') {
+      query.paymentStatus = 'COD_CONFIRMED';
+      query.isDelivered = false;
+    } else if (filter === 'paid') {
+      query.isPaid = true;
+      query.isDelivered = false;
+    } else if (filter === 'delivered') {
+      query.isDelivered = true;
+    } else if (filter === 'cancelled') {
+      query.paymentStatus = { $in: ['CANCELLED', 'FAILED'] };
+    }
+
+    if (search) {
+      const User = require('../models/User');
+      const users = await User.find({ name: { $regex: search, $options: 'i' } }).select('_id');
+      const userIds = users.map(u => u._id);
+      
+      query.$or = [
+        { user: { $in: userIds } },
+        { $expr: { $regexMatch: { input: { $toString: '$_id' }, regex: search, options: 'i' } } }
+      ];
+    }
+
+    const totalCount = await Order.countDocuments(query);
+    const orders = await Order.find(query)
       .populate('user', 'name email')
       .populate('orderItems.product')
       .sort({ createdAt: -1 })
@@ -954,6 +1005,16 @@ router.put('/bulk/update', auth, auth.admin, auth.hasPermission('orders'), async
             message: `Your order has been delivered successfully.`,
             link: `/orders/${order._id}`
           });
+        } else if (action === 'accept') {
+          order.orderStatus = 'ACCEPTED';
+          order.acceptedBy = req.user._id;
+          order.acceptedAt = new Date();
+          await pushStatusAndNotify(order, 'ACCEPTED', 'Order accepted by admin (Bulk)', req.user._id, {
+            type: 'ORDER_CONFIRMED',
+            title: 'Order Accepted',
+            message: `Your order has been accepted by the seller.`,
+            link: `/orders/${order._id}`
+          });
         }
         return order.save();
       }
@@ -1146,6 +1207,12 @@ router.put('/:id/return-status', auth, auth.admin, auth.hasPermission('orders'),
     
     if (status === 'APPROVED') {
       order.paymentStatus = 'REFUNDED';
+      
+      // Restore stock for returned items
+      for (const item of order.orderItems) {
+        await mongoose.model('Product').findByIdAndUpdate(item.product, { $inc: { stock: item.quantity } });
+      }
+
       await pushStatusAndNotify(order, 'RETURN_APPROVED', `Return Approved. Note: ${adminNote || 'None'}`, req.user._id, {
         type: 'SYSTEM',
         title: 'Return Approved',
@@ -1166,6 +1233,55 @@ router.put('/:id/return-status', auth, auth.admin, auth.hasPermission('orders'),
 
     await order.populate('user', 'name email');
     await order.populate('orderItems.product');
+    res.json(order);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// ========================================================================
+// ADMIN: ACCEPT ORDER
+// ========================================================================
+router.put('/:id/accept', auth, auth.admin, auth.hasPermission('orders'), async (req, res) => {
+  try {
+    const order = await Order.findById(req.params.id);
+    if (!order) return res.status(404).json({ message: 'Order not found' });
+
+    order.orderStatus = 'ACCEPTED';
+    order.acceptedBy = req.user._id;
+    order.acceptedAt = new Date();
+
+    await pushStatusAndNotify(order, 'ACCEPTED', 'Order accepted by admin', req.user._id, {
+      type: 'ORDER_CONFIRMED',
+      title: 'Order Accepted',
+      message: `Your order has been accepted by the seller.`,
+      link: `/orders/${order._id}`
+    });
+
+    await order.save();
+    res.json(order);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// ========================================================================
+// ADMIN: ASSIGN COURIER
+// ========================================================================
+router.put('/:id/assign-courier', auth, auth.admin, auth.hasPermission('orders'), async (req, res) => {
+  try {
+    const { courierId } = req.body;
+    const order = await Order.findById(req.params.id);
+    
+    if (!order) return res.status(404).json({ message: 'Order not found' });
+    if (!courierId) return res.status(400).json({ message: 'Courier ID is required' });
+
+    order.courierId = courierId;
+    order.orderStatus = 'ASSIGNED_TO_COURIER';
+
+    await pushStatusAndNotify(order, 'ASSIGNED_TO_COURIER', 'Order assigned to courier', req.user._id);
+
+    await order.save();
     res.json(order);
   } catch (error) {
     res.status(500).json({ message: error.message });

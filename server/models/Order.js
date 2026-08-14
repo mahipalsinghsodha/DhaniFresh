@@ -52,6 +52,17 @@ refundInfo: {
     default: 'PENDING'
   },
 
+  orderStatus: {
+    type: String,
+    enum: ['PENDING_ACCEPTANCE', 'ACCEPTED', 'ASSIGNED_TO_COURIER', 'PICKED_UP', 'OUT_FOR_DELIVERY', 'DELIVERED', 'ATTEMPTED_FAILED', 'RETURNED', 'CANCELLED'],
+    default: 'PENDING_ACCEPTANCE'
+  },
+
+  acceptedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  acceptedAt: Date,
+  
+  courierId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+
   statusHistory: [{
     status: String,
     note: String,

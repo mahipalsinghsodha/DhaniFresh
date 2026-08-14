@@ -74,6 +74,22 @@ const AdminUsers = () => {
     }
   }
 
+  const handleRoleChange = async (target, newRole) => {
+    if (!(await confirm(`Are you sure you want to change ${target.name}'s role to ${newRole}?`))) return;
+    try {
+      setProcessingId(target._id)
+      const res = await api.put(`/api/auth/users/${target._id}/role`, { role: newRole })
+      const updated = { ...target, role: res.data.role }
+      setUsers(u => u.map(x => x._id === target._id ? updated : x))
+      if (selectedUser?._id === target._id) setSelectedUser(updated)
+      toast.success('Role updated successfully')
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to update role')
+    } finally {
+      setProcessingId(null)
+    }
+  }
+
   const filtered = users.filter(u => {
     const matchSearch = u.name.toLowerCase().includes(search.toLowerCase()) ||
       u.email.toLowerCase().includes(search.toLowerCase()) ||
@@ -400,7 +416,22 @@ const AdminUsers = () => {
                     {[
                       { icon: FiMail,     label: 'Email',  val: selectedUser.email },
                       { icon: FiPhone,    label: 'Phone',  val: selectedUser.phone || 'Not provided' },
-                      { icon: FiShield,   label: 'Role',   val: selectedUser.role },
+                      { icon: FiShield,   label: 'Role',   
+                        val: (
+                          <select 
+                            value={selectedUser.role}
+                            onChange={(e) => handleRoleChange(selectedUser, e.target.value)}
+                            disabled={processingId === selectedUser._id}
+                            style={{ background: 'var(--bg-surface)', color: 'var(--text-primary)', border: '1px solid var(--border-color)', borderRadius: '4px', padding: '2px 4px', fontSize: '12px' }}
+                          >
+                            <option value="user">User</option>
+                            <option value="courier">Courier</option>
+                            <option value="support">Support</option>
+                            <option value="admin">Admin</option>
+                            <option value="superadmin">Superadmin</option>
+                          </select>
+                        )
+                      },
                       { icon: FiCalendar, label: 'Joined', val: new Date(selectedUser.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' }) },
                     ].map((item, idx) => (
                       <div key={idx} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '11px 16px', borderBottom: '1px solid var(--border-color)' }}>

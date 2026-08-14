@@ -427,54 +427,103 @@ function registerChatHandlers(io, socket) {
 /* ── Escalate to human ───────────────────────────────────────────────────── */
 async function escalateToHuman(io, socket, session, reason = 'User requested human agent') {
   try {
-    await ChatSession.findOneAndUpdate(
-      { sessionId: session.sessionId },
-      { status: 'WAITING' }
-    );
+    // 1. Find live agents in admin_room
+    const adminSockets = await io.in('admin_room').fetchSockets();
+    const liveAgentIds = [...new Set(adminSockets.map(s => s.user?._id?.toString()).filter(Boolean))];
 
-    const waitingCount = await ChatSession.countDocuments({ status: 'WAITING' });
-    const position = waitingCount;
-    const estimatedWait = Math.max(2, position * 2);
+    let assignedAgentId = null;
 
-    const sysMsg = await ChatMessage.create({
-      sessionId:   session.sessionId,
-      senderId:    'SYSTEM',
-      senderType:  'SYSTEM',
-      senderName:  'System',
-      content:     `You've been added to the support queue. An agent will join shortly. Estimated wait: ${estimatedWait}-${estimatedWait + 2} minutes.${position > 1 ? ` You are #${position} in queue.` : ''}`,
-      messageType: 'TEXT',
-    });
-
-    io.to(`session:${session.sessionId}`).emit('chat:message', sysMsg);
-    io.to(`session:${session.sessionId}`).emit('chat:status_changed', { status: 'WAITING', position });
-
-    // Notify all connected agents
-    const sessionData = await ChatSession.findOne({ sessionId: session.sessionId })
-      .populate('userId', 'name email')
-      .lean();
-
-    io.to('admin_room').emit('admin:new_session', sessionData);
-    io.to('admin_room').emit('admin:queue_count', { count: waitingCount });
-
-    // Notify all admins of the new escalation
-    try {
-      const admins = await User.find({ role: { $in: ['admin', 'superadmin'] } }).select('_id');
-      const notifications = admins.map(admin => ({
-        user: admin._id,
-        type: 'SYSTEM',
-        title: 'New Support Request',
-        message: `A user is requesting human support in the queue.`,
-        link: '/admin',
-        metadata: { sessionId: session.sessionId },
+    if (liveAgentIds.length > 0) {
+      // 2. Get active chat counts for these agents
+      const agentLoads = await Promise.all(liveAgentIds.map(async (agentId) => {
+        const count = await ChatSession.countDocuments({ agentId, status: 'ACTIVE' });
+        return { agentId, count };
       }));
-      if (notifications.length > 0) {
-        const createdNotifications = await Notification.insertMany(notifications);
-        createdNotifications.forEach(notif => {
-          io.to(`user:${notif.user}`).emit('notification', notif);
-        });
+
+      // 3. Filter agents under max limit (10) and sort by least active chats
+      const availableAgents = agentLoads
+        .filter(agent => agent.count < 10)
+        .sort((a, b) => a.count - b.count);
+
+      if (availableAgents.length > 0) {
+        assignedAgentId = availableAgents[0].agentId;
       }
-    } catch (err) {
-      console.error('[Chat] Failed to create admin escalation notification:', err);
+    }
+
+    if (assignedAgentId) {
+      // Assign directly to the selected agent
+      await ChatSession.findOneAndUpdate(
+        { sessionId: session.sessionId },
+        { status: 'ACTIVE', agentId: assignedAgentId }
+      );
+
+      const agent = await User.findById(assignedAgentId);
+
+      const sysMsg = await ChatMessage.create({
+        sessionId:   session.sessionId,
+        senderId:    'SYSTEM',
+        senderType:  'SYSTEM',
+        senderName:  'System',
+        content:     `Chat routed to ${agent.name}. They will be with you shortly.`,
+        messageType: 'TEXT',
+      });
+
+      io.to(`session:${session.sessionId}`).emit('chat:message', sysMsg);
+      io.to(`session:${session.sessionId}`).emit('chat:agent_joined', {
+        agentName:   agent.name,
+        agentAvatar: agent.avatar,
+      });
+
+      // Notify ONLY this agent
+      const sessionData = await ChatSession.findOne({ sessionId: session.sessionId })
+        .populate('userId', 'name email')
+        .lean();
+      io.to(`user:${assignedAgentId}`).emit('admin:new_session_assigned', sessionData);
+
+      // Create notification
+      try {
+        const notif = await Notification.create({
+          user: assignedAgentId,
+          type: 'SYSTEM',
+          title: 'New Chat Assigned',
+          message: `A new support chat has been routed to you.`,
+          link: `/admin/support?session=${session.sessionId}`,
+          metadata: { sessionId: session.sessionId },
+        });
+        io.to(`user:${assignedAgentId}`).emit('notification', notif);
+      } catch (err) {
+        console.error('[Chat] Failed to create routing notification:', err);
+      }
+
+    } else {
+      // Fallback: Queue
+      await ChatSession.findOneAndUpdate(
+        { sessionId: session.sessionId },
+        { status: 'WAITING' }
+      );
+
+      const waitingCount = await ChatSession.countDocuments({ status: 'WAITING' });
+      const position = waitingCount;
+      const estimatedWait = Math.max(2, position * 2);
+
+      const sysMsg = await ChatMessage.create({
+        sessionId:   session.sessionId,
+        senderId:    'SYSTEM',
+        senderType:  'SYSTEM',
+        senderName:  'System',
+        content:     `All agents are currently busy. You've been added to the queue. Estimated wait: ${estimatedWait}-${estimatedWait + 2} minutes.${position > 1 ? ` You are #${position} in queue.` : ''}`,
+        messageType: 'TEXT',
+      });
+
+      io.to(`session:${session.sessionId}`).emit('chat:message', sysMsg);
+      io.to(`session:${session.sessionId}`).emit('chat:status_changed', { status: 'WAITING', position });
+
+      const sessionData = await ChatSession.findOne({ sessionId: session.sessionId })
+        .populate('userId', 'name email')
+        .lean();
+
+      io.to('admin_room').emit('admin:new_session', sessionData);
+      io.to('admin_room').emit('admin:queue_count', { count: waitingCount });
     }
   } catch (error) {
     console.error('[Chat] escalateToHuman error:', error);

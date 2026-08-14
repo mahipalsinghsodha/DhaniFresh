@@ -626,6 +626,43 @@ router.put('/users/:id/block', auth, auth.admin, auth.hasPermission('users'), as
 });
 
 /* ─────────────────────────────────────────────────────────────────────────── */
+/*  ADMIN: Change user role                                                    */
+/* ─────────────────────────────────────────────────────────────────────────── */
+router.put('/users/:id/role', auth, auth.admin, auth.hasPermission('users'), async (req, res) => {
+  try {
+    const { role } = req.body;
+    const allowedRoles = ['user', 'admin', 'superadmin', 'support', 'courier'];
+    
+    if (!allowedRoles.includes(role)) {
+      return res.status(400).json({ message: 'Invalid role' });
+    }
+
+    const target = await User.findById(req.params.id);
+    if (!target) return res.status(404).json({ message: 'User not found' });
+    
+    // Prevent non-superadmins from granting or removing superadmin role
+    if (req.user.role !== 'superadmin' && (role === 'superadmin' || target.role === 'superadmin')) {
+      return res.status(403).json({ message: 'Only superadmins can manage superadmin roles' });
+    }
+
+    target.role = role;
+    await target.save({ validateBeforeSave: false });
+
+    await logAction(req, 'UPDATE_USER_ROLE', 'USER', target._id, {
+      newRole: role, userName: target.name, userEmail: target.email
+    });
+
+    res.json({
+      message: 'User role updated successfully',
+      role: target.role,
+      userId: target._id
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+/* ─────────────────────────────────────────────────────────────────────────── */
 /*  WISHLIST                                                                   */
 /* ─────────────────────────────────────────────────────────────────────────── */
 router.post('/wishlist', auth, async (req, res) => {

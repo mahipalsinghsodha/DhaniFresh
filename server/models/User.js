@@ -19,7 +19,7 @@ const userSchema = new mongoose.Schema({
   name:     { type: String, required: true, trim: true },
   email:    { type: String, required: true, unique: true, lowercase: true, trim: true },
   password: { type: String, minlength: 6, select: false },
-  role:     { type: String, enum: ['user', 'admin', 'superadmin', 'support'], default: 'user' },
+  role:     { type: String, enum: ['user', 'admin', 'superadmin', 'support', 'courier'], default: 'user' },
   permissions: [{ type: String }], // e.g., ['products', 'orders', 'users']
   phone:    String,
   avatar:   String, // Cloudinary URL for profile photo

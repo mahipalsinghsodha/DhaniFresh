@@ -304,19 +304,13 @@ const Cart = () => {
                   ) : (
                     <div className="space-y-4 mb-6">
                       <div className="flex justify-between text-sm">
-                        <span className="font-medium text-brand-text/60">Subtotal</span>
+                        <span className="font-medium text-brand-text/60">MRP (incl. of all taxes)</span>
                         <span className="font-bold text-brand-primary">₹{(preview?.itemsPrice ?? subtotal).toLocaleString('en-IN')}</span>
                       </div>
                       {preview?.discount > 0 && (
                         <div className="flex justify-between text-sm font-bold text-green-600">
-                          <span>Coupon Discount</span>
+                          <span>Discount on MRP</span>
                           <span>-₹{Math.round(preview.discount).toLocaleString('en-IN')}</span>
-                        </div>
-                      )}
-                      {preview?.gstRate > 0 && (
-                        <div className="flex justify-between text-sm">
-                          <span className="font-medium text-brand-text/60">GST ({preview.gstRate}%)</span>
-                          <span className="font-bold text-brand-primary">₹{Math.round(preview.taxPrice).toLocaleString('en-IN')}</span>
                         </div>
                       )}
                       <div className="flex justify-between text-sm">
@@ -373,8 +367,8 @@ const Cart = () => {
                   </div>
 
                   {/* Total */}
-                  <div className="flex justify-between items-center py-5 border-t border-brand-primary/10 mb-6">
-                    <span className="font-extrabold text-lg text-brand-primary">Total</span>
+                  <div className="flex justify-between items-center py-5 border-t border-brand-primary/10">
+                    <span className="font-extrabold text-lg text-brand-primary">Total Amount</span>
                     <span className="text-3xl font-extrabold font-display text-brand-primary">
                       {previewLoading
                         ? <span className="inline-block w-24 h-8 bg-brand-primary/5 rounded-full animate-pulse" />
@@ -382,6 +376,12 @@ const Cart = () => {
                       }
                     </span>
                   </div>
+
+                  {preview?.discount > 0 && (
+                    <div className="bg-[#e6fcf5] text-[#0ca678] text-sm font-bold text-center p-3 rounded-xl mb-6">
+                      You will save ₹{Math.round(preview.discount).toLocaleString('en-IN')} on this order
+                    </div>
+                  )}
 
                   <button
                     onClick={() => navigate('/checkout', { state: { couponCode: appliedCoupon?.code } })}

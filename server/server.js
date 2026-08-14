@@ -173,6 +173,7 @@ app.use('/api/chat', require('./routes/chatRoutes'));
 app.use('/api/subscribers', require('./routes/subscriberRoutes'));
 app.use('/api/subscriptions', require('./routes/subscriptionRoutes'));
 app.use('/api/activity', require('./routes/activityRoutes'));
+app.use('/api/courier', require('./routes/courierRoutes'));
 
 // Dynamic sitemap — accessible at GET /sitemap.xml (no /api prefix, for search engines)
 app.use('/sitemap.xml', require('./routes/sitemapRoute'));

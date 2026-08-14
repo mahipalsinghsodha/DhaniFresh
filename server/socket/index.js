@@ -61,6 +61,12 @@ function initSocketServer(httpServer) {
     const role   = socket.user?.role || 'guest';
     console.log(`[Socket] ${role} connected: ${userId} (${socket.id})`);
 
+    // Track activity for idle disconnect
+    socket.lastActivity = Date.now();
+    socket.onAny((event, ...args) => {
+      socket.lastActivity = Date.now();
+    });
+
     // Join personal room for targeted events
     if (socket.user) {
       socket.join(`user:${userId}`);
@@ -89,6 +95,19 @@ function initSocketServer(httpServer) {
       console.error(`[Socket] Error from ${userId}:`, err.message);
     });
   });
+
+  // ── Idle Connection Cleanup (1 Hour) ───────────────────────────────────────
+  const IDLE_TIMEOUT_MS = 60 * 60 * 1000; // 1 hour
+  setInterval(() => {
+    const now = Date.now();
+    io.sockets.sockets.forEach((socket) => {
+      if (socket.lastActivity && now - socket.lastActivity > IDLE_TIMEOUT_MS) {
+        console.log(`[Socket] Disconnecting idle socket: ${socket.id}`);
+        socket.emit('chat:error', { message: 'Connection closed due to inactivity.' });
+        socket.disconnect(true);
+      }
+    });
+  }, 5 * 60 * 1000); // Check every 5 minutes
 
   console.log('[Socket.io] Server initialized');
   return io;

@@ -62,6 +62,9 @@ const CheckoutSubscription = lazy(() => import('./pages/CheckoutSubscription'))
 // Support Admin pages
 const SupportDashboard = lazy(() => import('./pages/Admin/SupportDashboard.jsx'))
 
+// Courier pages
+const ScanOrder = lazy(() => import('./pages/Courier/ScanOrder.jsx'))
+
 // Admin pages
 const AdminDashboard = lazy(() => import('./pages/Admin/AdminDashboard.jsx'))
 const AdminReturns = lazy(() => import('./pages/Admin/AdminReturns.jsx')) // ✅ P1: Admin Returns page
@@ -262,6 +265,9 @@ function AnimatedRoutes() {
 
             {/* ── Support ── */}
             <Route path="/support-panel"          element={<ProtectedRoute supportAccess><SupportDashboard /></ProtectedRoute>} />
+
+            {/* ── Courier ── */}
+            <Route path="/courier/scan"           element={<ProtectedRoute><ScanOrder /></ProtectedRoute>} />
 
             {/* ── Superadmin ── */}
             <Route path="/admin/manage-admins"    element={<ProtectedRoute adminOnly permission="superadmin_view"><AdminManagement /></ProtectedRoute>} />

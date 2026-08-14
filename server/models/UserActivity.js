@@ -9,7 +9,7 @@ const userActivitySchema = new mongoose.Schema({
   action: {
     type: String,
     required: true,
-    enum: ['PAGE_VISIT', 'LOGIN', 'LOGOUT', 'OTHER'],
+    enum: ['PAGE_VISIT', 'LOGIN', 'LOGOUT', 'OTHER', 'ORDER_PLACED'],
     default: 'PAGE_VISIT',
   },
   details: {

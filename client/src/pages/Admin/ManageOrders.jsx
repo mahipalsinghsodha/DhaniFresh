@@ -23,6 +23,7 @@ const getStatus = (o) => {
   if (o.paymentStatus === 'RETURN_APPROVED') return { label: 'Returned', color: 'var(--warning)', bg: 'rgba(245,158,11,0.08)', border: 'rgba(245,158,11,0.25)' }
   if (o.isPaid) return { label: 'Paid', color: 'var(--info)', bg: 'rgba(49,130,206,0.08)', border: 'rgba(49,130,206,0.25)' }
   if (o.paymentStatus === 'COD_CONFIRMED') return { label: 'Confirmed', color: 'var(--info)', bg: 'rgba(49,130,206,0.08)', border: 'rgba(49,130,206,0.25)' }
+  if (o.orderStatus === 'ACCEPTED') return { label: 'Accepted', color: 'var(--brand-secondary)', bg: 'rgba(30,58,138,0.08)', border: 'rgba(30,58,138,0.25)' }
   return { label: 'Pending', color: 'var(--warning)', bg: 'rgba(245,166,35,0.12)', border: 'rgba(245,166,35,0.25)' }
 }
 
@@ -46,6 +47,40 @@ const openPrint = (body, title) => {
   w.document.close()
 }
 const invoiceHTML = (o) => `<div class="inv"><div class="head"><div><div class="brand">Daatasa</div><div style="color:#6b7280;font-size:13px">Premium Quality</div></div><div style="text-align:right"><div style="font-size:16px;font-weight:700">TAX INVOICE</div><div style="color:#F5A623;font-weight:700">#${o._id.slice(-10).toUpperCase()}</div><div style="font-size:12px;color:#6b7280">${new Date(o.createdAt).toLocaleDateString('en-IN')}</div></div></div><div style="display:flex;justify-content:space-between;margin-bottom:24px"><div><p style="font-size:11px;color:#9ca3af;font-weight:700;margin-bottom:6px">SHIP TO</p><strong>${o.user?.name||'Customer'}</strong><br/>${o.shippingAddress?.street||''}, ${o.shippingAddress?.city||''}<br/>${o.shippingAddress?.state||''} - ${o.shippingAddress?.zipCode||''}</div><img src="${qrUrl(`ORDER:${o._id}`,90)}" width="80" height="80"/></div><table><thead><tr><th>Item</th><th>Qty</th><th style="text-align:right">Price</th><th style="text-align:right">Total</th></tr></thead><tbody>${(o.orderItems||[]).map(i=>`<tr><td>${i.name}</td><td>${i.quantity}</td><td style="text-align:right">₹${Number(i.price).toFixed(2)}</td><td style="text-align:right">₹${(i.price*i.quantity).toFixed(2)}</td></tr>`).join('')}</tbody><tfoot><tr><td colspan="3">Subtotal</td><td style="text-align:right">₹${Number(o.itemsPrice||0).toFixed(2)}</td></tr><tr><td colspan="3">Tax</td><td style="text-align:right">₹${Number(o.taxPrice||0).toFixed(2)}</td></tr><tr><td colspan="3">Shipping</td><td style="text-align:right">₹${Number(o.shippingPrice||0).toFixed(2)}</td></tr><tr class="total"><td colspan="3"><strong>Total</strong></td><td style="text-align:right"><strong>₹${Number(o.totalPrice||0).toFixed(2)}</strong></td></tr></tfoot></table></div>`
+
+const shippingLabelHTML = (o) => {
+  const qrLink = `${window.location.origin}/courier/scan?orderId=${o._id}`;
+  return `<div style="width: 4in; height: 6in; padding: 20px; border: 2px solid #000; font-family: sans-serif; position: relative; margin: 0 auto;">
+    <h1 style="font-size: 24px; font-weight: 900; border-bottom: 2px solid #000; padding-bottom: 10px; margin: 0 0 20px 0; display: flex; justify-content: space-between;">
+      <span>DAATASA</span>
+      <span style="font-size: 14px; font-weight: bold; padding: 4px 8px; border: 2px solid #000; border-radius: 4px;">${o.paymentMethod === 'COD' ? 'COD' : 'PREPAID'}</span>
+    </h1>
+    <div style="font-size: 16px; margin-bottom: 20px;">
+      <p style="font-size: 12px; font-weight: bold; margin-bottom: 4px; text-transform: uppercase;">Ship To:</p>
+      <p style="font-weight: 900; font-size: 18px; margin: 0;">${o.user?.name || o.shippingAddress?.name || 'Customer'}</p>
+      <p style="margin: 4px 0 0 0;">${o.shippingAddress?.street || ''}</p>
+      <p style="margin: 4px 0 0 0;">${o.shippingAddress?.city || ''}, ${o.shippingAddress?.state || ''} - <strong>${o.shippingAddress?.zipCode || ''}</strong></p>
+      <p style="margin: 4px 0 0 0;">Ph: ${o.shippingAddress?.phone || o.user?.phone || 'N/A'}</p>
+    </div>
+    <div style="border-top: 2px dashed #000; border-bottom: 2px dashed #000; padding: 15px 0; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center;">
+      <div>
+        <p style="font-size: 12px; font-weight: bold; margin: 0 0 4px 0;">ORDER #${o._id.slice(-8).toUpperCase()}</p>
+        <p style="font-size: 12px; margin: 0 0 4px 0;">Date: ${new Date(o.createdAt).toLocaleDateString('en-IN')}</p>
+        <p style="font-size: 12px; margin: 0 0 4px 0;">Items: ${o.orderItems?.length || 0}</p>
+        <p style="font-size: 14px; font-weight: 900; margin: 10px 0 0 0;">Collect Amount: ${o.paymentMethod === 'COD' && o.paymentStatus !== 'PAID' ? '₹' + Number(o.totalPrice).toFixed(2) : '₹0.00'}</p>
+      </div>
+      <img src="${qrUrl(qrLink, 120)}" width="100" height="100" style="border: 2px solid #000; padding: 4px;" />
+    </div>
+    <div style="font-size: 12px;">
+      <p style="font-weight: bold; margin: 0 0 4px 0;">Return Address:</p>
+      <p style="margin: 0;">Daatasa Organics, 123 Main St, City, State - 123456</p>
+    </div>
+    <div style="position: absolute; bottom: 20px; width: calc(100% - 40px); text-align: center; font-size: 12px; font-weight: bold;">
+      Scan QR to update status
+    </div>
+  </div>`;
+}
+
 
 const ManageOrders = () => {
   const { hasPermission } = useAuth()
@@ -72,15 +107,30 @@ const ManageOrders = () => {
   const [trackingNum, setTrackingNum] = useState('')
   const [shippingProv, setShippingProv] = useState('')
 
+  const getDaysAgo = (days) => {
+    const d = new Date()
+    d.setDate(d.getDate() - days)
+    return d.toISOString().split('T')[0]
+  }
+  const [startDate, setStartDate] = useState(getDaysAgo(15))
+  const [endDate, setEndDate] = useState(getDaysAgo(0))
+
   useEffect(() => { 
-    if (hasPermission('orders')) fetchOrders(true, 1) 
+    if (hasPermission('orders')) fetchOrders(true, 1, filter, search, startDate, endDate) 
   }, [hasPermission])
 
   useEffect(() => {
     if (hasPermission('orders') && !loading) {
-      fetchOrders(false, page)
+      fetchOrders(false, page, filter, search, startDate, endDate)
     }
   }, [page])
+
+  useEffect(() => {
+    if (hasPermission('orders') && !loading) {
+      setPage(1)
+      fetchOrders(false, 1, filter, search, startDate, endDate)
+    }
+  }, [filter, search])
 
   useEffect(() => {
     if (socket) {
@@ -101,10 +151,10 @@ const ManageOrders = () => {
     }
   }, [socket])
 
-  const fetchOrders = async (showLoad = false, pg = 1) => {
+  const fetchOrders = async (showLoad = false, pg = 1, currentFilter = filter, currentSearch = search, start = startDate, end = endDate) => {
     if (showLoad) setLoading(true); else setSyncing(true)
     try {
-      const res = await api.get(`/api/orders?page=${pg}&limit=20`)
+      const res = await api.get(`/api/orders?page=${pg}&limit=20&filter=${currentFilter}&search=${currentSearch}&startDate=${start}&endDate=${end}`)
       setOrders(res.data.orders || res.data || [])
       if (res.data.pages) setTotalPages(res.data.pages)
       if (res.data.total) setTotalOrders(res.data.total)
@@ -131,6 +181,12 @@ const ManageOrders = () => {
     if (!(await confirm('Mark this order as PAID?'))) return
     try { await api.put(`/api/orders/${id}/pay`); fetchOrders(false, page); toast.success('Order marked as paid') }
     catch { toast.error('Failed to update') }
+  }
+
+  const markAccepted = async (id) => {
+    if (!(await confirm('Accept this order?'))) return
+    try { await api.put(`/api/orders/${id}/accept`); fetchOrders(false, page); toast.success('Order accepted') }
+    catch { toast.error('Failed to accept order') }
   }
 
   const markDelivered = async (id) => {
@@ -173,7 +229,17 @@ const ManageOrders = () => {
 
   const handleBulkAction = async (action) => {
     if (selectedOrders.size === 0) return
-    const actionText = action === 'pay' ? 'PAID' : 'DELIVERED'
+    if (action === 'print') {
+      const labelsHtml = Array.from(selectedOrders).map(id => {
+        const o = orders.find(x => x._id === id);
+        return o ? shippingLabelHTML(o) : '';
+      }).join('<div style="page-break-after: always;"></div>');
+      openPrint(labelsHtml, 'Bulk Shipping Labels');
+      setSelectedOrders(new Set());
+      return;
+    }
+
+    const actionText = action === 'pay' ? 'PAID' : action === 'accept' ? 'ACCEPTED' : 'DELIVERED'
     if (!(await confirm(`Mark ${selectedOrders.size} orders as ${actionText}?`))) return
     
     setSyncing(true)
@@ -200,18 +266,7 @@ const ManageOrders = () => {
 
   const isVoid = (o) => ['CANCELLED', 'FAILED'].includes(o.paymentStatus)
 
-  const filteredOrders = orders.filter(o => {
-    const matchFilter =
-      filter === 'all' ? true :
-      filter === 'pending' ? (!o.isPaid && !o.isDelivered && !isVoid(o) && o.paymentStatus !== 'COD_CONFIRMED') :
-      filter === 'cod' ? (o.paymentStatus === 'COD_CONFIRMED' && !o.isDelivered) :
-      filter === 'paid' ? (o.isPaid && !o.isDelivered) :
-      filter === 'delivered' ? o.isDelivered :
-      isVoid(o)
-    const q = search.toLowerCase()
-    const matchSearch = !q || o._id.toLowerCase().includes(q) || (o.user?.name || '').toLowerCase().includes(q)
-    return matchFilter && matchSearch
-  })
+  const filteredOrders = orders;
 
   if (!hasPermission('orders')) return <RestrictedAccess title="Access Restricted" message="You don't have permission to manage orders." />
 
@@ -257,21 +312,40 @@ const ManageOrders = () => {
               <h1 className="text-2xl sm:text-3xl font-extrabold text-white"
                 style={{ fontFamily: 'var(--font-display)', letterSpacing: '-0.025em' }}>Manage Orders</h1>
             </div>
-            <div className="flex items-center gap-2">
-              <div className="flex items-center gap-2 rounded-xl px-3 py-2.5"
+            <div className="flex flex-wrap items-center gap-2 mt-4 sm:mt-0">
+              <div className="flex items-center gap-2 rounded-xl px-3 py-2 text-sm"
+                style={{ background: 'rgba(255,255,255,0.10)', border: '1px solid rgba(255,255,255,0.14)', color: 'rgba(255,255,255,0.80)' }}>
+                <FiCalendar size={14} className="shrink-0" />
+                <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)}
+                  className="bg-transparent outline-none text-xs" style={{ color: '#FFF' }} />
+                <span>to</span>
+                <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)}
+                  className="bg-transparent outline-none text-xs" style={{ color: '#FFF' }} />
+                <button onClick={() => {
+                  const s = new Date(startDate);
+                  const e = new Date(endDate);
+                  if (e < s) return toast.error('End date cannot be before start date');
+                  const diffTime = Math.abs(e - s);
+                  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
+                  if (diffDays > 365) return toast.error('Date range cannot exceed 1 year (365 days)');
+                  setPage(1);
+                  fetchOrders(true, 1, filter, search, startDate, endDate);
+                }} className="ml-2 font-bold px-2 py-1 rounded bg-[var(--gold)] text-black text-xs">Apply</button>
+              </div>
+              <div className="flex items-center gap-2 rounded-xl px-3 py-2"
                 style={{ background: 'rgba(255,255,255,0.10)', border: '1px solid rgba(255,255,255,0.14)' }}>
                 <FiSearch size={14} style={{ color: 'rgba(255,255,255,0.55)' }} className="shrink-0" />
                 <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search orders…"
-                  className="bg-transparent outline-none text-sm w-48" style={{ color: '#FFF', caretColor: 'var(--gold)', fontFamily: 'var(--font)' }} />
+                  className="bg-transparent outline-none text-sm w-32 sm:w-48" style={{ color: '#FFF', caretColor: 'var(--gold)', fontFamily: 'var(--font)' }} />
               </div>
-              <button onClick={handleExportCSV} className="flex items-center gap-2 px-3 py-2.5 rounded-xl text-sm font-semibold transition-all hover:scale-105 active:scale-95"
+              <button onClick={handleExportCSV} className="flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-semibold transition-all hover:scale-105 active:scale-95"
                 style={{ background: 'rgba(255,255,255,0.15)', color: '#FFF' }}>
-                <FiDownload size={14} /> <span className="hidden sm:inline">Export</span>
+                <FiDownload size={14} /> <span className="hidden xl:inline">Export</span>
               </button>
               <button onClick={() => fetchOrders(true, page)} disabled={syncing}
-                className="flex items-center gap-2 px-3 py-2.5 text-sm font-semibold rounded-xl transition-all"
+                className="flex items-center gap-2 px-3 py-2 text-sm font-semibold rounded-xl transition-all"
                 style={{ background: 'rgba(255,255,255,0.10)', border: '1px solid rgba(255,255,255,0.14)', color: 'rgba(255,255,255,0.80)' }}>
-                <FiRefreshCw size={14} className={syncing ? 'animate-spin' : ''} /> Refresh
+                <FiRefreshCw size={14} className={syncing ? 'animate-spin' : ''} />
               </button>
             </div>
           </div>
@@ -281,6 +355,7 @@ const ManageOrders = () => {
             {[
               { v: 'all',       l: 'All' },
               { v: 'pending',   l: 'Pending' },
+              { v: 'accepted',  l: 'Accepted' },
               { v: 'cod',       l: 'COD' },
               { v: 'paid',      l: 'Paid' },
               { v: 'delivered', l: 'Delivered' },
@@ -306,7 +381,9 @@ const ManageOrders = () => {
             {selectedOrders.size} order(s) selected
           </span>
           <div className="flex gap-2">
-            <button onClick={() => handleBulkAction('pay')} className="btn btn-primary text-xs px-3 py-1.5 h-auto">Mark Paid</button>
+            <button onClick={() => handleBulkAction('accept')} className="btn btn-primary text-xs px-3 py-1.5 h-auto">Accept Orders</button>
+            <button onClick={() => handleBulkAction('print')} className="btn btn-secondary text-xs px-3 py-1.5 h-auto">Print Labels</button>
+            <button onClick={() => handleBulkAction('pay')} className="btn btn-secondary text-xs px-3 py-1.5 h-auto">Mark Paid</button>
             <button onClick={() => handleBulkAction('deliver')} className="btn btn-secondary text-xs px-3 py-1.5 h-auto">Mark Delivered</button>
             <button onClick={() => setSelectedOrders(new Set())} className="btn text-xs px-3 py-1.5 h-auto ml-2"><FiX /></button>
           </div>
@@ -457,6 +534,14 @@ const ManageOrders = () => {
                                 <button onClick={() => openPrint(invoiceHTML(o), `Invoice #${o._id.slice(-8).toUpperCase()}`)} className="btn btn-secondary text-xs h-auto py-2">
                                   <FiPrinter size={13} /> Invoice
                                 </button>
+                                <button onClick={() => openPrint(shippingLabelHTML(o), `Label #${o._id.slice(-8).toUpperCase()}`)} className="btn btn-secondary text-xs h-auto py-2">
+                                  <FiTag size={13} /> Shipping Label
+                                </button>
+                                {o.orderStatus === 'PENDING_ACCEPTANCE' && !isVoid(o) && (
+                                  <button onClick={() => markAccepted(o._id)} style={{ padding: '8px 14px', background: 'var(--brand-secondary)', color: '#fff', border: 'none', borderRadius: 10, fontSize: 12, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
+                                    <FiCheckCircle size={13} /> Accept Order
+                                  </button>
+                                )}
                                 {!o.isPaid && !isVoid(o) && (
                                   <button onClick={() => markPaid(o._id)} style={{ padding: '8px 14px', background: 'var(--success)', color: '#fff', border: 'none', borderRadius: 10, fontSize: 12, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
                                     <FiCheckCircle size={13} /> Mark Paid

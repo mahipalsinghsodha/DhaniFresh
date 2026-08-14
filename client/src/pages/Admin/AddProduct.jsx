@@ -116,6 +116,7 @@ const AddProduct = () => {
   const [fetchingConfig, setFetchingConfig] = useState(true)
   const [error, setError]     = useState('')
   const [categories, setCategories] = useState([])
+  const [gstRate, setGstRate] = useState(0)
   const [formData, setFormData] = useState({
     name: '', description: '', category: '',
     price: '', stock: '', weight: '500g', image: '', imageLeft: '', imageRight: '', imageTop: '', imagePackage: '', featured: false, launchDate: ''
@@ -129,8 +130,13 @@ const AddProduct = () => {
     }
     const init = async () => {
       try {
-        const catRes = await api.get('/api/categories')
+        const [catRes, setRes] = await Promise.all([
+          api.get('/api/categories'),
+          api.get('/api/settings')
+        ])
         setCategories(catRes.data)
+        setGstRate(setRes.data.gstEnabled ? setRes.data.gstRate : 0)
+        
         if (isEdit) {
           const res = await api.get(`/api/products/${id}`)
           setFormData(res.data)
@@ -349,6 +355,12 @@ const AddProduct = () => {
                 <input type="number" name="price" value={formData.price} onChange={handleChange}
                   required min="0" step="0.01" placeholder="0.00"
                   style={inputStyle} onFocus={handleFocus} onBlur={handleBlur} />
+                {formData.price > 0 && gstRate > 0 && (
+                  <p style={{ margin: '6px 0 0', fontSize: 11, color: 'var(--success)', fontWeight: 700 }}>
+                    <FiAlertCircle style={{ display: 'inline', marginRight: 4, verticalAlign: 'text-top' }} />
+                    Includes ₹{(Number(formData.price) - (Number(formData.price) / (1 + gstRate / 100))).toFixed(2)} GST ({gstRate}%)
+                  </p>
+                )}
               </Field>
 
               {/* Stock */}

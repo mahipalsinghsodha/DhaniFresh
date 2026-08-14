@@ -400,15 +400,12 @@ const Checkout = () => {
             <div className="rounded-[2rem] bg-white border border-brand-primary/10 shadow-sm p-8">
               <h2 className="text-xl font-bold font-display text-brand-primary mb-5 pb-4 border-b border-brand-primary/5">Price Breakdown</h2>
               <div className="space-y-4 mb-6 text-sm">
-                <div className="flex justify-between"><span className="font-medium text-brand-text/60">Subtotal</span><span className="font-bold text-brand-primary">₹{(preview?.itemsPrice ?? 0).toLocaleString('en-IN')}</span></div>
+                <div className="flex justify-between"><span className="font-medium text-brand-text/60">MRP (incl. of all taxes)</span><span className="font-bold text-brand-primary">₹{(preview?.itemsPrice ?? 0).toLocaleString('en-IN')}</span></div>
                 {(preview?.discount ?? 0) > 0 && (
                   <div className="flex justify-between">
-                    <span className="font-bold text-green-600">Discount {appliedCoupon?.code ? `(${appliedCoupon.code})` : ''}</span>
+                    <span className="font-bold text-green-600">Discount on MRP {appliedCoupon?.code ? `(${appliedCoupon.code})` : ''}</span>
                     <span className="font-bold text-green-600">−₹{Math.round(preview.discount).toLocaleString('en-IN')}</span>
                   </div>
-                )}
-                {preview?.gstRate > 0 && (
-                  <div className="flex justify-between"><span className="font-medium text-brand-text/60">GST ({preview.gstRate}%)</span><span className="font-bold text-brand-primary">₹{Math.round(preview.taxPrice).toLocaleString('en-IN')}</span></div>
                 )}
                 <div className="flex justify-between">
                   <span className="font-medium text-brand-text/60">Shipping</span>
@@ -418,13 +415,19 @@ const Checkout = () => {
                 </div>
               </div>
 
-              <div className="flex justify-between items-center py-5 border-t border-brand-primary/10 mb-6">
-                <span className="font-extrabold text-lg text-brand-primary">Total</span>
+              <div className="flex justify-between items-center py-5 border-t border-brand-primary/10">
+                <span className="font-extrabold text-lg text-brand-primary">Total Amount</span>
                 {previewLoad
                   ? <span className="inline-block w-24 h-8 bg-brand-primary/5 rounded-full animate-pulse"/>
                   : <span className="text-3xl font-extrabold font-display text-brand-primary">₹{Math.round(preview?.totalPrice ?? 0).toLocaleString('en-IN')}</span>
                 }
               </div>
+
+              {(preview?.discount ?? 0) > 0 && (
+                <div className="bg-[#e6fcf5] text-[#0ca678] text-sm font-bold text-center p-3 rounded-xl mb-6 mt-2">
+                  You will save ₹{Math.round(preview.discount).toLocaleString('en-IN')} on this order
+                </div>
+              )}
 
               <button type="submit" disabled={loading}
                 className="w-full h-14 btn btn-primary rounded-full flex items-center justify-center gap-2 text-base transition-all disabled:opacity-60"

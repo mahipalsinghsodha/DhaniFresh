@@ -72,6 +72,7 @@ const AdminProducts = () => {
   const [search, setSearch] = useState('')
   const [selectedProduct, setSelectedProduct] = useState(null)
   const [form, setForm] = useState({})
+  const [gstRate, setGstRate] = useState(0)
   const [saving, setSaving] = useState(false)
   const [importing, setImporting] = useState(false)
   const [csvPreviewOpen, setCsvPreviewOpen] = useState(false)
@@ -85,9 +86,14 @@ const AdminProducts = () => {
 
   const fetchData = async () => {
     try {
-      const [pRes, cRes] = await Promise.all([api.get('/api/products?all=true&limit=1000'), api.get('/api/categories')])
+      const [pRes, cRes, sRes] = await Promise.all([
+        api.get('/api/products?all=true&limit=1000'), 
+        api.get('/api/categories'),
+        api.get('/api/settings')
+      ])
       setProducts(pRes.data.products)
       setCategories(cRes.data)
+      setGstRate(sRes.data.gstEnabled ? sRes.data.gstRate : 0)
     } catch {
       toast.error('Failed to load products')
     } finally {
@@ -415,6 +421,11 @@ const AdminProducts = () => {
                       <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Price (₹)</label>
                       <input type="number" value={form.price} onChange={e => setForm({ ...form, price: e.target.value })} style={{ width: '100%', padding: '12px 16px', borderRadius: 'var(--radius-input)', border: '1.5px solid var(--border-color)', background: 'var(--bg-surface)', fontSize: 14, color: 'var(--text-primary)', outline: 'none', transition: 'border-color 0.2s', fontFamily: 'var(--font)' }}
                         onFocus={e => e.currentTarget.style.borderColor = 'var(--brand-secondary)'} onBlur={e => e.currentTarget.style.borderColor = 'var(--border-color)'} />
+                      {form.price > 0 && gstRate > 0 && (
+                        <p style={{ margin: '6px 0 0', fontSize: 10, color: 'var(--success)', fontWeight: 700 }}>
+                          Includes ₹{(Number(form.price) - (Number(form.price) / (1 + gstRate / 100))).toFixed(2)} GST ({gstRate}%)
+                        </p>
+                      )}
                     </div>
                     <div>
                       <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.06em' }}>MRP (₹)</label>
