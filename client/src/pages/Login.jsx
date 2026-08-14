@@ -72,7 +72,15 @@ const Login = () => {
   const [showPass, setShowPass] = useState(false)
   const [loading,  setLoading]  = useState(false)
 
-  useEffect(() => { if (user) navigate(from, { replace: true }) }, [user])
+  useEffect(() => { 
+    if (user) {
+      if (user.role === 'courier') {
+        navigate('/courier/scan', { replace: true })
+      } else {
+        navigate(from, { replace: true })
+      }
+    }
+  }, [user, navigate, from])
 
   // Handle token from URL if redirected (fallback from popup)
   useEffect(() => {
