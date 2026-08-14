@@ -17,6 +17,22 @@ const ScanOrder = () => {
   const [loading, setLoading] = useState(false);
   const [updating, setUpdating] = useState(false);
   const [isScanning, setIsScanning] = useState(true);
+  const [assignedOrders, setAssignedOrders] = useState([]);
+
+  useEffect(() => {
+    if (user?.role === 'courier') {
+      fetchAssignedOrders();
+    }
+  }, [user]);
+
+  const fetchAssignedOrders = async () => {
+    try {
+      const res = await api.get('/api/courier/orders');
+      setAssignedOrders(res.data);
+    } catch (err) {
+      console.error('Failed to fetch assigned orders', err);
+    }
+  };
 
   useEffect(() => {
     if (searchParams.get('orderId') && user?.role === 'courier') {
@@ -73,6 +89,7 @@ const ScanOrder = () => {
       const res = await api.put(`/api/courier/orders/${order._id}/status`, { status });
       setOrder(res.data);
       toast.success(`Order marked as ${status.replace(/_/g, ' ')}`);
+      fetchAssignedOrders();
     } catch (err) {
       toast.error(err.response?.data?.message || 'Failed to update status');
     } finally {
@@ -106,6 +123,12 @@ const ScanOrder = () => {
             placeholder="Enter Order ID"
             value={orderId}
             onChange={(e) => setOrderId(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                handleSearch(orderId);
+                setIsScanning(false);
+              }
+            }}
             className="flex-1 p-3 rounded-xl border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 focus:outline-none focus:border-[#F5A623]"
           />
           <button 
@@ -201,6 +224,28 @@ const ScanOrder = () => {
               >
                 <FiXCircle size={20} className="mb-1" /> Mark as Returned
               </button>
+            </div>
+          </div>
+        )}
+
+        {!order && assignedOrders.length > 0 && (
+          <div className="mt-8">
+            <h2 className="text-lg font-bold text-[#1B2F6E] dark:text-white mb-4">Assigned Orders</h2>
+            <div className="space-y-4">
+              {assignedOrders.map(ao => (
+                <div key={ao._id} onClick={() => {
+                  setOrderId(ao._id);
+                  handleSearch(ao._id);
+                  setIsScanning(false);
+                }} className="bg-white dark:bg-gray-800 p-4 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 cursor-pointer hover:shadow-md transition-all">
+                  <div className="flex justify-between items-center mb-2">
+                    <span className="font-mono font-bold text-sm">#{ao._id.slice(-8).toUpperCase()}</span>
+                    <span className="text-xs font-bold px-2 py-1 bg-blue-100 text-blue-800 rounded">{ao.orderStatus.replace(/_/g, ' ')}</span>
+                  </div>
+                  <p className="text-sm font-medium">{ao.user?.name || ao.shippingAddress?.name || 'Customer'}</p>
+                  <p className="text-xs text-gray-500">{ao.shippingAddress?.city}{ao.shippingAddress?.state ? `, ${ao.shippingAddress?.state}` : ''}</p>
+                </div>
+              ))}
             </div>
           </div>
         )}

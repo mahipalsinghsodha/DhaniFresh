@@ -95,9 +95,14 @@ const Login = () => {
     if (!email.trim() || !password) { toast.error('Please fill all fields'); return }
     setLoading(true)
     try {
-      await login(email.trim(), password)
+      const res = await login(email.trim(), password)
       toast.success(t('auth.loginDesc', 'Welcome back! 👋').replace(' Please enter your details.', ''))
-      navigate(from, { replace: true })
+      
+      if (res?.user?.role === 'courier') {
+        navigate('/courier/scan', { replace: true })
+      } else {
+        navigate(from, { replace: true })
+      }
     } catch (err) {
       toast.error(err?.response?.data?.message || 'Invalid email or password')
     } finally { setLoading(false) }
