@@ -23,8 +23,8 @@ const ProtectedRoute = ({ children, adminOnly = false, permission = null, suppor
     return <Navigate to="/login" replace />
   }
 
-  // Admin and Super Admin can access adminOnly routes
-  if (adminOnly && user.role !== 'admin' && user.role !== 'superadmin') {
+  // Admin, Super Admin, and Support Agents can access admin routes
+  if (adminOnly && !['admin', 'superadmin', 'support'].includes(user.role)) {
     return <Navigate to="/" replace />
   }
 

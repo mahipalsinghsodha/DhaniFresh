@@ -76,6 +76,40 @@ const FAQItem = ({ faq, idx }) => {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════ */
+/*  HELPERS                                                                   */
+/* ═══════════════════════════════════════════════════════════════════════════ */
+
+const getOrderStatus = (order) => {
+  if (order.isDelivered || order.orderStatus === 'DELIVERED') {
+    return { label: 'Delivered', color: '#10b981', bg: 'rgba(16,185,129,0.12)', border: 'rgba(16,185,129,0.25)' }
+  }
+  if (order.paymentStatus === 'CANCELLED' || order.orderStatus === 'CANCELLED') {
+    return { label: 'Cancelled', color: '#ef4444', bg: 'rgba(239,68,68,0.12)', border: 'rgba(239,68,68,0.25)' }
+  }
+  if (order.paymentStatus === 'FAILED') {
+    return { label: 'Failed', color: '#ef4444', bg: 'rgba(239,68,68,0.12)', border: 'rgba(239,68,68,0.25)' }
+  }
+  if (order.orderStatus === 'OUT_FOR_DELIVERY') {
+    return { label: 'Out for Delivery', color: '#3b82f6', bg: 'rgba(59,130,246,0.12)', border: 'rgba(59,130,246,0.25)' }
+  }
+  if (order.orderStatus === 'PICKED_UP' || order.orderStatus === 'ASSIGNED_TO_COURIER') {
+    return { label: 'Shipped', color: '#6366f1', bg: 'rgba(99,102,241,0.12)', border: 'rgba(99,102,241,0.25)' }
+  }
+  if (order.isPaid || order.orderStatus === 'ACCEPTED') {
+    return { label: 'Processing', color: '#f59e0b', bg: 'rgba(245,166,35,0.12)', border: 'rgba(245,166,35,0.25)' }
+  }
+  if (order.paymentStatus === 'COD_CONFIRMED') {
+    return { label: 'Confirmed', color: '#f59e0b', bg: 'rgba(245,166,35,0.12)', border: 'rgba(245,166,35,0.25)' }
+  }
+  return {
+    label: order.orderStatus ? order.orderStatus.replace(/_/g, ' ') : (order.status || 'Pending'),
+    color: '#f59e0b',
+    bg: 'rgba(245,166,35,0.12)',
+    border: 'rgba(245,166,35,0.25)'
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════ */
 /*  MAIN COMPONENT                                                            */
 /* ═══════════════════════════════════════════════════════════════════════════ */
 
@@ -132,15 +166,27 @@ export default function Support() {
   }, []) // eslint-disable-line
 
   // ── Fetch orders ──────────────────────────────────────────────────────────
-  useEffect(() => {
-    if (user && orders.length === 0) {
-      setLoadingOrders(true)
-      api.get('/api/orders/myorders?limit=5')
-        .then(res => setOrders(res.data.orders || []))
-        .catch(() => { })
-        .finally(() => setLoadingOrders(false))
+  const fetchOrders = useCallback(async () => {
+    if (!user) {
+      setOrders([])
+      return
     }
-  }, [user, orders.length])
+    setLoadingOrders(true)
+    try {
+      const res = await api.get('/api/orders/myorders?limit=5')
+      const list = Array.isArray(res.data) ? res.data : (res.data?.orders || [])
+      setOrders(list.slice(0, 5))
+    } catch (err) {
+      console.error('Failed to fetch recent orders:', err)
+      setOrders([])
+    } finally {
+      setLoadingOrders(false)
+    }
+  }, [user])
+
+  useEffect(() => {
+    fetchOrders()
+  }, [fetchOrders])
 
   // ── Scroll tracking ────────────────────────────────────────────────────────
   const handleScroll = useCallback(() => {
@@ -237,39 +283,51 @@ export default function Support() {
     setChatStep(3)
   }
 
-  // ── Sub-issue selection — auto-starts chat ─────────────────────────────────
+  // ── Sub-issue selection — auto-starts chat with AI Bot ───────────────────
   const handleIssueSelect = (issue) => {
     setSelectedIssue(issue.id)
+    connect()
     emit('chat:start', {
       guestName: user?.name,
       guestEmail: user?.email,
       category: 'ORDER',
       orderId: selectedOrder?._id || null,
       subIssue: issue.id,
+      initialMessage: issue.msg,
     })
     setChatPhase('chat')
-    setTimeout(() => {
-      if (sessionId) {
-        emit('chat:message', {
-          sessionId,
-          content: `${issue.msg} (Order #${selectedOrder?._id?.slice(-6).toUpperCase()})`,
-          messageType: 'TEXT',
-        })
-      }
-    }, 1200)
+  }
+
+  // ── Start chat directly with order details ────────────────────────────────
+  const handleStartOrderChat = () => {
+    connect()
+    emit('chat:start', {
+      guestName: user?.name,
+      guestEmail: user?.email,
+      category: 'ORDER',
+      orderId: selectedOrder?._id || null,
+    })
+    setChatPhase('chat')
   }
 
   // ── Start chat (non-ORDER or guest) ──────────────────────────────────────
   const handleStartChat = () => {
     if (!topic) return
     if (!user && (!guestName.trim() || !guestEmail.trim())) return
+    connect()
     emit('chat:start', {
       guestName:  guestName.trim() || user?.name,
       guestEmail: guestEmail.trim() || user?.email,
-      category: topic,
-      orderId:    orderId.trim() || null,
+      category: topic || 'OTHER',
+      orderId:    topic === 'ORDER' ? (orderId.trim() || null) : null,
     })
     setChatPhase('chat')
+  }
+
+  // ── Open general chat without order auto-selected ─────────────────────────
+  const handleOpenGeneralChat = () => {
+    resetChat()
+    setActiveTab('chat')
   }
 
   // ── Send message ──────────────────────────────────────────────────────────
@@ -431,7 +489,13 @@ export default function Support() {
         {/* ── Tabs ── */}
         <div className="flex gap-1 p-1 rounded-2xl mb-8 bg-[var(--ivory)] border border-brand-primary/10">
           {tabs.map(tab => (
-            <button key={tab.id} onClick={() => setActiveTab(tab.id)}
+            <button key={tab.id} onClick={() => {
+              if (tab.id === 'chat' && chatPhase === 'pre') {
+                setSelectedOrder(null)
+                setOrderId('')
+              }
+              setActiveTab(tab.id)
+            }}
               className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-bold transition-all ${activeTab === tab.id ? 'bg-white text-brand-secondary shadow-sm border border-brand-primary/10' : 'bg-transparent text-brand-text/50 border border-transparent'}`}
               id={`tab-${tab.id}`}>
               <tab.icon size={14} />
@@ -459,45 +523,71 @@ export default function Support() {
                   <Link to="/products" className="btn btn-primary h-12 px-6 rounded-full inline-flex items-center">Start Shopping</Link>
                 </div>
               ) : (
-                orders.map(order => (
-                  <div key={order._id} className="rounded-[1.5rem] p-6 bg-white border border-brand-primary/10 shadow-sm">
-                    <div className="flex flex-wrap items-center justify-between gap-4 mb-4 pb-4 border-b border-brand-primary/5">
-                      <div>
-                        <div className="flex items-center gap-2 mb-1">
-                          <span className="text-xs font-mono font-bold text-brand-primary">#{order._id.slice(-6).toUpperCase()}</span>
-                          <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider ${
-                            order.status === 'Delivered' ? 'bg-green-50 text-green-600 border border-green-200' :
-                            order.status === 'Cancelled' ? 'bg-red-50 text-red-600 border border-red-200' :
-                            'bg-yellow-50 text-yellow-600 border border-yellow-200'
-                          }`}>
-                            {order.status}
-                          </span>
+                <>
+                  {orders.slice(0, 5).map(order => {
+                    const status = getOrderStatus(order)
+                    const items = order.orderItems || order.items || []
+                    const total = Number(order.totalPrice ?? order.total ?? 0).toLocaleString('en-IN')
+                    return (
+                      <div key={order._id} className="rounded-[1.5rem] p-6 bg-white border border-brand-primary/10 shadow-sm">
+                        <div className="flex flex-wrap items-center justify-between gap-4 mb-4 pb-4 border-b border-brand-primary/5">
+                          <div>
+                            <div className="flex items-center gap-2 mb-1">
+                              <span className="text-xs font-mono font-bold text-brand-primary">#{order._id.slice(-6).toUpperCase()}</span>
+                              <span
+                                className="text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider"
+                                style={{ background: status.bg, color: status.color, border: `1px solid ${status.border}` }}
+                              >
+                                {status.label}
+                              </span>
+                            </div>
+                            <span className="text-xs font-bold text-brand-text/50">
+                              {new Date(order.createdAt).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' })}
+                            </span>
+                          </div>
+                          <div className="text-right">
+                            <p className="text-sm font-bold text-brand-primary">₹{total}</p>
+                            <p className="text-xs font-bold text-brand-text/50">{items.length} item{items.length !== 1 ? 's' : ''}</p>
+                          </div>
                         </div>
-                        <span className="text-xs font-bold text-brand-text/50">{new Date(order.createdAt).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
+                        {/* Items preview */}
+                        {items.slice(0, 2).map((item, i) => {
+                          const itemImg = item.image || item.product?.image
+                          const itemName = item.name || item.product?.name || 'Product'
+                          return (
+                            <div key={i} className="flex items-center gap-3 mb-3">
+                              {itemImg && (
+                                <img
+                                  src={itemImg}
+                                  alt={itemName}
+                                  className="w-10 h-10 rounded-lg object-cover border border-brand-primary/10 shadow-sm"
+                                />
+                              )}
+                              <span className="text-xs font-bold text-brand-text/70 truncate">{itemName}</span>
+                            </div>
+                          )
+                        })}
+                        <div className="flex items-center justify-between gap-4 mt-4">
+                          <p className="text-sm font-bold text-brand-text/70">Need help with this order?</p>
+                          <button
+                            onClick={() => handleOrderHelp(order)}
+                            className="btn btn-primary px-5 h-10 rounded-full shadow-gold text-xs"
+                          >
+                            Get Help
+                          </button>
+                        </div>
                       </div>
-                      <div className="text-right">
-                        <p className="text-sm font-bold text-brand-primary">₹{order.total}</p>
-                        <p className="text-xs font-bold text-brand-text/50">{order.items?.length || 0} items</p>
-                      </div>
-                    </div>
-                    {/* Items preview */}
-                    {order.items?.slice(0, 2).map((item, i) => (
-                      <div key={i} className="flex items-center gap-3 mb-3">
-                        {item.image && <img src={item.image} alt={item.name} className="w-10 h-10 rounded-lg object-cover border border-brand-primary/10 shadow-sm" />}
-                        <span className="text-xs font-bold text-brand-text/70 truncate">{item.name}</span>
-                      </div>
-                    ))}
-                    <div className="flex items-center justify-between gap-4 mt-4">
-                      <p className="text-sm font-bold text-brand-text/70">Need help with this order?</p>
-                      <button
-                        onClick={() => handleOrderHelp(order)}
-                        className="btn btn-primary px-5 h-10 rounded-full shadow-gold text-xs"
-                      >
-                        Get Help
-                      </button>
-                    </div>
+                    )
+                  })}
+                  <div className="text-center pt-2">
+                    <Link
+                      to="/orders"
+                      className="text-xs font-bold text-brand-secondary hover:text-brand-primary underline transition-colors"
+                    >
+                      View all orders in Order History →
+                    </Link>
                   </div>
-                ))
+                </>
               )}
             </motion.div>
           )}
@@ -526,7 +616,7 @@ export default function Support() {
                   Can't find what you're looking for?
                 </p>
                 <button
-                  onClick={() => setActiveTab('chat')}
+                  onClick={handleOpenGeneralChat}
                   className="btn btn-primary inline-flex items-center gap-2 h-12 px-6 rounded-full shadow-gold"
                 >
                   <MessageSquare size={16} /> Chat with us
@@ -705,38 +795,45 @@ export default function Support() {
                           </div>
                         ) : (
                           <div className="space-y-3">
-                            {orders.slice(0, 5).map(order => (
-                              <button
-                                key={order._id}
-                                onClick={() => handleOrderSelect(order)}
-                                className="w-full text-left transition-all"
-                                style={{
-                                  padding: '14px 16px', borderRadius: '14px', cursor: 'pointer',
-                                  border: `2px solid ${selectedOrder?._id === order._id ? 'var(--gold)' : 'var(--border-color)'}`,
-                                  background: selectedOrder?._id === order._id ? 'rgba(245,166,35,0.07)' : 'var(--bg-alt)',
-                                }}
-                              >
-                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-                                  <span style={{ fontWeight: 800, fontSize: '13px', fontFamily: 'monospace', color: 'var(--text-primary)' }}>
-                                    #{order._id.slice(-6).toUpperCase()}
-                                  </span>
-                                  <span style={{
-                                    fontSize: '11px', fontWeight: 700, padding: '2px 9px', borderRadius: '99px',
-                                    background: order.status === 'Delivered' ? 'rgba(16,185,129,0.12)' : order.status === 'Cancelled' ? 'rgba(239,68,68,0.12)' : 'rgba(245,166,35,0.12)',
-                                    color: order.status === 'Delivered' ? '#10b981' : order.status === 'Cancelled' ? '#ef4444' : '#f59e0b',
-                                  }}>{order.status}</span>
-                                </div>
-                                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: 'var(--text-muted)', marginBottom: '4px' }}>
-                                  <span>{new Date(order.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
-                                  <span style={{ fontWeight: 700, color: 'var(--text-secondary)' }}>₹{order.total}</span>
-                                </div>
-                                {order.items?.[0] && (
-                                  <div style={{ fontSize: '11px', color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                    {order.items[0].name}{order.items.length > 1 ? ` +${order.items.length - 1} more` : ''}
+                            {orders.slice(0, 5).map(order => {
+                              const status = getOrderStatus(order)
+                              const items = order.orderItems || order.items || []
+                              const total = Number(order.totalPrice ?? order.total ?? 0).toLocaleString('en-IN')
+                              const firstItem = items[0]
+                              const firstItemName = firstItem?.name || firstItem?.product?.name || 'Order item'
+                              return (
+                                <button
+                                  key={order._id}
+                                  onClick={() => handleOrderSelect(order)}
+                                  className="w-full text-left transition-all"
+                                  style={{
+                                    padding: '14px 16px', borderRadius: '14px', cursor: 'pointer',
+                                    border: `2px solid ${selectedOrder?._id === order._id ? 'var(--gold)' : 'var(--border-color)'}`,
+                                    background: selectedOrder?._id === order._id ? 'rgba(245,166,35,0.07)' : 'var(--bg-alt)',
+                                  }}
+                                >
+                                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                                    <span style={{ fontWeight: 800, fontSize: '13px', fontFamily: 'monospace', color: 'var(--text-primary)' }}>
+                                      #{order._id.slice(-6).toUpperCase()}
+                                    </span>
+                                    <span style={{
+                                      fontSize: '11px', fontWeight: 700, padding: '2px 9px', borderRadius: '99px',
+                                      background: status.bg,
+                                      color: status.color,
+                                    }}>{status.label}</span>
                                   </div>
-                                )}
-                              </button>
-                            ))}
+                                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: 'var(--text-muted)', marginBottom: '4px' }}>
+                                    <span>{new Date(order.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
+                                    <span style={{ fontWeight: 700, color: 'var(--text-secondary)' }}>₹{total}</span>
+                                  </div>
+                                  {firstItem && (
+                                    <div style={{ fontSize: '11px', color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                      {firstItemName}{items.length > 1 ? ` +${items.length - 1} more` : ''}
+                                    </div>
+                                  )}
+                                </button>
+                              )
+                            })}
                           </div>
                         )}
                       </>
@@ -765,7 +862,9 @@ export default function Support() {
                               {new Date(selectedOrder.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
                             </span>
                           </div>
-                          <span style={{ fontWeight: 700, fontSize: '13px', color: 'var(--gold)' }}>₹{selectedOrder.total}</span>
+                          <span style={{ fontWeight: 700, fontSize: '13px', color: 'var(--gold)' }}>
+                            ₹{Number(selectedOrder.totalPrice ?? selectedOrder.total ?? 0).toLocaleString('en-IN')}
+                          </span>
                         </div>
 
                         <div className="space-y-2">
@@ -787,6 +886,21 @@ export default function Support() {
                               {issue.label}
                             </button>
                           ))}
+                        </div>
+
+                        <div className="pt-1">
+                          <button
+                            onClick={handleStartOrderChat}
+                            className="w-full py-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2"
+                            style={{
+                              border: '1.5px dashed var(--gold)',
+                              background: 'rgba(245,166,35,0.05)',
+                              color: 'var(--gold)',
+                              cursor: 'pointer',
+                            }}
+                          >
+                            <Sparkles size={14} /> Open AI Chatbot for this order →
+                          </button>
                         </div>
                       </>
                     )}

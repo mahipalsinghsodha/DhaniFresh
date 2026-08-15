@@ -142,7 +142,8 @@ export const AuthProvider = ({ children }) => {
   const hasPermission = (permission) => {
     if (!user) return false
     if (user.role === 'superadmin') return true
-    return user.role === 'admin' && user.permissions?.includes(permission)
+    if (user.role === 'support') return permission === 'support' || permission === 'orders'
+    return user.role === 'admin' && (user.permissions?.includes(permission) || user.permissions?.includes('all'))
   }
 
   const toggleWishlist = async (productId) => {
@@ -175,7 +176,8 @@ export const AuthProvider = ({ children }) => {
       toggleWishlist,
       updateUser,
       isAuthenticated: !!user,
-      isAdmin: user?.role === 'admin' || user?.role === 'superadmin',
+      isAdmin: ['admin', 'superadmin', 'support'].includes(user?.role),
+      isSupport: ['admin', 'superadmin', 'support'].includes(user?.role),
     }}>
       {children}
     </AuthContext.Provider>

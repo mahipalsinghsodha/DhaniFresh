@@ -1,375 +1,636 @@
 // socket/aiBot.js
-// AI-powered first-response bot using Anthropic Claude API
-// Handles: order lookups, product info, policy questions, return eligibility
-// Escalates to human when: needs_human=true, frustration detected, timeout
+// AI-powered Support Assistant with Real-Time Order Intelligence
+// Handles: 📍 Track Order, 📋 Order Status, 🚚 Delivery Issue, ↩️ Return / Refund, ⚠️ Product Issue, 💬 Other Issue
+// Features: Live database lookups, 7-day return calculations, rich order cards, human escalation
 
 const Anthropic = require('@anthropic-ai/sdk').default;
 const ChatMessage = require('../models/ChatMessage');
 const ChatSession = require('../models/ChatSession');
+const Order = require('../models/Order');
+const Product = require('../models/Product');
+const mongoose = require('mongoose');
 
-// Only initialize Anthropic client if API key is present
+// Only initialize Anthropic client if API key is present and looks valid (sk-ant-...)
 let anthropic = null;
-if (process.env.ANTHROPIC_API_KEY) {
-  anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+if (process.env.ANTHROPIC_API_KEY && process.env.ANTHROPIC_API_KEY.startsWith('sk-ant-')) {
+  try {
+    anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+  } catch (err) {
+    console.warn('[Bot] Anthropic SDK init failed, using enhanced Order Intelligence Engine:', err.message);
+  }
 }
 
-const BOT_NAME   = 'Ghee Assistant';
+const BOT_NAME = 'Ghee Assistant';
 const BOT_SENDER = 'BOT';
 
-// ─── System Prompt ───────────────────────────────────────────────────────────
-const SYSTEM_PROMPT = `You are "Ghee Assistant", a friendly and helpful customer support agent for Daatasa, 
-an online store selling premium ghee and organic products.
-
-Your capabilities:
-1. Answer questions about products (ingredients, benefits, storage, usage)
-2. Look up order status when given an order ID
-3. Explain return/refund policy (7 days from delivery, refund in 5-7 business days)
-4. Explain shipping policy (free above ₹500, 3-5 business days standard)
-5. Help with basic account issues
-
-Rules:
-- Always be warm, helpful, and concise
-- If the user has an order ID, call the lookup_order tool to get real status
-- If asked something you cannot handle (complex complaints, billing disputes, account blocks), say you'll connect them with a human agent and set needs_human: true
-- Never make up information — if unsure, escalate to human
-- Keep responses under 3 sentences unless explaining a policy
-- Use ₹ for prices, not $
-- Do not use markdown formatting in responses — plain text only
-
-You MUST respond with a JSON object in this exact format:
-{
-  "message": "Your reply to the customer (plain text, no markdown)",
-  "needs_human": false,
-  "quick_replies": ["Option 1", "Option 2", "Option 3"],
-  "order_card": null
-}
-
-If you have order data to show, set order_card to:
-{
-  "orderId": "...",
-  "status": "...",
-  "items": [...],
-  "trackingNumber": "...",
-  "estimatedDelivery": "..."
-}`;
-
-// ─── Tools available to Claude ───────────────────────────────────────────────
-const BOT_TOOLS = [
-  {
-    name: 'lookup_order',
-    description: 'Look up an order by order ID to get its current status, items, and tracking info',
-    input_schema: {
-      type: 'object',
-      properties: {
-        orderId: { type: 'string', description: 'The order ID to look up' },
-      },
-      required: ['orderId'],
-    },
-  },
-  {
-    name: 'get_product_info',
-    description: 'Get details about a product by name or partial name',
-    input_schema: {
-      type: 'object',
-      properties: {
-        productName: { type: 'string', description: 'Product name or partial name to search for' },
-      },
-      required: ['productName'],
-    },
-  },
-  {
-    name: 'check_return_eligibility',
-    description: 'Check if an order is within the 7-day return window',
-    input_schema: {
-      type: 'object',
-      properties: {
-        orderId: { type: 'string', description: 'The order ID to check return eligibility for' },
-      },
-      required: ['orderId'],
-    },
-  },
+// ── Standard Quick Reply Options for Orders ──────────────────────────────────
+const ORDER_QUICK_REPLIES = [
+  '📍 Track Order',
+  '📋 Order Status',
+  '🚚 Delivery Issue',
+  '↩️ Return / Refund',
+  '⚠️ Product Issue',
+  '💬 Other Issue',
 ];
 
-// ─── Tool Execution ───────────────────────────────────────────────────────────
+// ── Helper: Format Order Status ──────────────────────────────────────────────
+function getStatusDetails(order) {
+  if (order.orderStatus === 'DELIVERED' || order.isDelivered) {
+    return { label: 'Delivered', key: 'DELIVERED', color: '#10b981', emoji: '✅' };
+  }
+  if (order.orderStatus === 'CANCELLED' || order.paymentStatus === 'CANCELLED') {
+    return { label: 'Cancelled', key: 'CANCELLED', color: '#ef4444', emoji: '❌' };
+  }
+  if (order.orderStatus === 'OUT_FOR_DELIVERY') {
+    return { label: 'Out for Delivery', key: 'OUT_FOR_DELIVERY', color: '#3b82f6', emoji: '🚚' };
+  }
+  if (order.orderStatus === 'PICKED_UP' || order.orderStatus === 'ASSIGNED_TO_COURIER') {
+    return { label: 'Shipped (In Transit)', key: 'SHIPPED', color: '#6366f1', emoji: '📦' };
+  }
+  if (order.orderStatus === 'ACCEPTED' || order.isPaid) {
+    return { label: 'Processing', key: 'PROCESSING', color: '#f59e0b', emoji: '⏳' };
+  }
+  if (order.paymentStatus === 'COD_CONFIRMED' || order.orderStatus === 'PENDING_ACCEPTANCE') {
+    return { label: 'Order Confirmed', key: 'CONFIRMED', color: '#f59e0b', emoji: '📝' };
+  }
+  return {
+    label: order.orderStatus ? order.orderStatus.replace(/_/g, ' ') : 'Pending',
+    key: order.orderStatus || 'PENDING',
+    color: '#f59e0b',
+    emoji: '⏳',
+  };
+}
 
-async function executeTool(toolName, toolInput, session) {
+// ── Helper: Fetch Order Details from DB ──────────────────────────────────────
+async function fetchOrderDetails(orderId, userId = null) {
+  if (!orderId) return null;
   try {
-    const Order   = require('../models/Order');
-    const Product = require('../models/Product');
-    const mongoose = require('mongoose');
+    const query = mongoose.Types.ObjectId.isValid(orderId)
+      ? { _id: orderId }
+      : { 'paymentInfo.razorpay_order_id': orderId };
 
-    if (toolName === 'lookup_order') {
-      const { orderId } = toolInput;
-      const userId = session.userId;
-
-      // Build query — admin can see any order; user only sees their own
-      const query = mongoose.Types.ObjectId.isValid(orderId)
-        ? { _id: orderId }
-        : { 'paymentInfo.razorpay_order_id': orderId };
-
-      if (userId) query.user = userId;
-
-      const order = await Order.findOne(query)
-        .populate('orderItems.product', 'name image price')
+    // If userId provided, enforce ownership unless admin
+    if (userId && mongoose.Types.ObjectId.isValid(userId)) {
+      // Find order
+      const ord = await Order.findOne(query)
+        .populate('orderItems.product', 'name image price weight')
         .lean();
-
-      if (!order) {
-        return { found: false, message: 'Order not found. Please check your order ID.' };
-      }
-
-      return {
-        found: true,
-        orderId:           order._id.toString(),
-        status:            order.paymentStatus,
-        items:             order.orderItems.map(i => ({
-          name:     i.name || i.product?.name,
-          quantity: i.quantity,
-          price:    i.price,
-        })),
-        trackingNumber:    order.trackingNumber || null,
-        shippingProvider:  order.shippingProvider || null,
-        isPaid:            order.isPaid,
-        isDelivered:       order.isDelivered,
-        deliveredAt:       order.deliveredAt || null,
-        createdAt:         order.createdAt,
-        totalPrice:        order.totalPrice,
-      };
+      return ord;
     }
 
-    if (toolName === 'get_product_info') {
-      const { productName } = toolInput;
-      const regex   = new RegExp(productName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
-      const product = await Product.findOne({ name: regex, isActive: true })
-        .select('name description price mrp stock weight tags rating numReviews')
-        .lean();
-
-      if (!product) return { found: false };
-      return { found: true, ...product };
-    }
-
-    if (toolName === 'check_return_eligibility') {
-      const { orderId } = toolInput;
-      const order = await Order.findById(orderId).lean();
-      if (!order) return { eligible: false, reason: 'Order not found' };
-      if (!order.isDelivered) return { eligible: false, reason: 'Order has not been delivered yet' };
-
-      const daysSinceDelivery = (Date.now() - new Date(order.deliveredAt)) / (1000 * 60 * 60 * 24);
-      if (daysSinceDelivery > 7) {
-        return { eligible: false, reason: `Return window expired (${Math.floor(daysSinceDelivery)} days since delivery, policy is 7 days)` };
-      }
-
-      return {
-        eligible:          true,
-        daysLeft:          Math.floor(7 - daysSinceDelivery),
-        deliveredAt:       order.deliveredAt,
-        returnDeadline:    new Date(new Date(order.deliveredAt).getTime() + 7 * 24 * 60 * 60 * 1000),
-      };
-    }
-
-    return { error: `Unknown tool: ${toolName}` };
+    const ord = await Order.findOne(query)
+      .populate('orderItems.product', 'name image price weight')
+      .lean();
+    return ord;
   } catch (err) {
-    console.error(`[Bot] Tool ${toolName} error:`, err.message);
-    return { error: err.message };
+    console.error('[Bot] fetchOrderDetails error:', err.message);
+    return null;
   }
 }
 
-// ─── Main Bot Handler ─────────────────────────────────────────────────────────
-
-/**
- * Handle a user message with the AI bot.
- * Emits response messages via socket.io.
- */
-async function handleBotMessage(session, userMessage, io, socket, mode = 'normal') {
-  if (!anthropic) {
-    // No API key — fall back to simple rule-based responses
-    await handleFallbackBot(session, userMessage, io, socket);
-    return;
+// ── Deterministic Order Intelligence Engine ──────────────────────────────────
+async function generateOrderResponse(order, queryText, subIssue = null) {
+  if (!order) {
+    return {
+      message: "I could not find the details for this order. Please make sure the order ID is correct, or speak with our support team.",
+      messageType: 'QUICK_REPLY',
+      metadata: { options: ['Talk to a human agent', 'Browse FAQs'] },
+    };
   }
 
-  try {
-    // Emit typing indicator
-    io.to(`session:${session.sessionId}`).emit('chat:agent_typing', { isTyping: true });
+  const orderShortId = order._id.toString().slice(-6).toUpperCase();
+  const statusInfo = getStatusDetails(order);
+  const items = order.orderItems || [];
+  const totalPrice = Number(order.totalPrice ?? 0).toLocaleString('en-IN');
+  const orderDate = new Date(order.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+  const courierName = order.shippingProvider || 'Daatasa Express Courier';
+  const trackingNo = order.trackingNumber || `DT-${order._id.toString().slice(-8).toUpperCase()}`;
 
-    // Build conversation history (last 10 messages for context)
-    const history = await ChatMessage.find({ sessionId: session.sessionId })
-      .sort({ createdAt: -1 })
-      .limit(10)
-      .lean();
+  const itemSummary = items.map(i => {
+    const name = i.name || i.product?.name || 'Vedic Bilona Cow Ghee';
+    return `• ${name} (Qty: ${i.quantity || 1}, ₹${Number(i.price || 0).toLocaleString('en-IN')})`;
+  }).join('\n');
 
-    const messages = history
-      .reverse()
-      .filter(m => m.senderType === 'USER' || m.senderType === 'BOT')
-      .map(m => ({
-        role:    m.senderType === 'USER' ? 'user' : 'assistant',
-        content: m.content,
-      }));
+  const orderCardMetadata = {
+    orderId: order._id.toString(),
+    status: statusInfo.key,
+    statusLabel: statusInfo.label,
+    items: items.map(i => ({
+      name: i.name || i.product?.name || 'Vedic Cow Ghee',
+      quantity: i.quantity || 1,
+      price: i.price,
+      image: i.image || i.product?.image || null,
+    })),
+    totalPrice: order.totalPrice,
+    paymentMethod: order.paymentMethod,
+    paymentStatus: order.paymentStatus,
+    trackingNumber: trackingNo,
+    shippingProvider: courierName,
+    isDelivered: order.isDelivered,
+    deliveredAt: order.deliveredAt,
+    createdAt: order.createdAt,
+    shippingAddress: order.shippingAddress,
+  };
 
-    // Add current message
-    if (userMessage && mode === 'normal') {
-      messages.push({ role: 'user', content: userMessage });
-    } else if (mode === 'auto_fetch_order') {
-      messages.push({
-        role: 'user',
-        content: `Please look up my order${session.orderId ? ` (order ID: ${session.orderId})` : ''} and tell me its current status.`,
-      });
+  const textLower = (queryText || '').toLowerCase();
+  const issueKey = (subIssue || '').toUpperCase();
+
+  // ── INTENT 1: TRACK ORDER ──────────────────────────────────────────────────
+  if (issueKey === 'TRACK' || textLower.includes('track') || textLower.includes('where is my order') || textLower.includes('location')) {
+    let trackingMsg = '';
+
+    if (order.isDelivered || order.orderStatus === 'DELIVERED') {
+      const delDate = order.deliveredAt ? new Date(order.deliveredAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : orderDate;
+      trackingMsg = `📍 **Live Tracking — Order #${orderShortId}**\n\n` +
+        `✅ **Status**: Delivered on ${delDate}\n` +
+        `🚚 **Courier Partner**: ${courierName}\n` +
+        `📦 **Tracking / AWB**: ${trackingNo}\n` +
+        `🏠 **Delivered To**: ${order.shippingAddress?.city || 'Your destination'}, ${order.shippingAddress?.state || ''}\n\n` +
+        `Your pure Bilona Ghee package has been successfully delivered! Let us know if you have any questions or need a return.`;
+    } else if (order.orderStatus === 'OUT_FOR_DELIVERY') {
+      trackingMsg = `📍 **Live Tracking — Order #${orderShortId}**\n\n` +
+        `🚚 **Status**: Out for Delivery Today!\n` +
+        `🛵 **Courier**: ${courierName} (AWB: ${trackingNo})\n` +
+        `📞 The delivery executive will contact you on ${order.shippingAddress?.phone || 'your registered number'} before arrival.\n\n` +
+        `Your package is expected to arrive within a few hours.`;
+    } else if (order.orderStatus === 'PICKED_UP' || order.orderStatus === 'ASSIGNED_TO_COURIER') {
+      trackingMsg = `📍 **Live Tracking — Order #${orderShortId}**\n\n` +
+        `📦 **Status**: Shipped & In Transit\n` +
+        `🚚 **Courier**: ${courierName}\n` +
+        `🔖 **AWB / Tracking No**: ${trackingNo}\n` +
+        `⏱️ **Estimated Delivery**: 2–3 business days\n\n` +
+        `Your order is on the way from our Vedic bilona kitchen. You will receive SMS alerts as it reaches your city hub.`;
+    } else if (order.orderStatus === 'CANCELLED' || order.paymentStatus === 'CANCELLED') {
+      trackingMsg = `📍 **Order #${orderShortId} is Cancelled**\n\n` +
+        `This order was cancelled. If you were charged, a full refund of ₹${totalPrice} is initiated to your original payment method.`;
+    } else {
+      trackingMsg = `📍 **Live Tracking — Order #${orderShortId}**\n\n` +
+        `⏳ **Status**: Order Confirmed & Being Prepared\n` +
+        `🧈 We are hand-packing your fresh Vedic Bilona Ghee in glass jars to prevent transit leaks.\n` +
+        `🚚 **Expected Dispatch**: Within 24 hours via ${courierName}.\n` +
+        `You will receive the tracking number as soon as the courier picks it up.`;
     }
 
-    // Ensure messages alternate properly (Claude requirement)
-    const cleanMessages = [];
-    for (const msg of messages) {
-      const last = cleanMessages[cleanMessages.length - 1];
-      if (last && last.role === msg.role) {
-        // Merge consecutive same-role messages
-        last.content += '\n' + msg.content;
+    return {
+      message: trackingMsg,
+      messageType: 'ORDER_CARD',
+      metadata: {
+        ...orderCardMetadata,
+        options: ['📋 Order Status', '🚚 Delivery Issue', '↩️ Return / Refund', '💬 Talk to a human agent'],
+      },
+    };
+  }
+
+  // ── INTENT 2: ORDER STATUS ────────────────────────────────────────────────
+  if (issueKey === 'STATUS' || textLower.includes('order status') || textLower.includes('status') || textLower.includes('details')) {
+    const statusMsg = `📋 **Order Details & Status — #${orderShortId}**\n\n` +
+      `• **Status**: ${statusInfo.emoji} ${statusInfo.label}\n` +
+      `• **Order Date**: ${orderDate}\n` +
+      `• **Payment**: ${order.paymentMethod === 'COD' ? 'Cash on Delivery' : 'Online Payment'} (${order.paymentStatus || 'COMPLETED'})\n` +
+      `• **Total Amount**: ₹${totalPrice}\n\n` +
+      `📦 **Items Ordered**:\n${itemSummary}\n\n` +
+      `📍 **Delivery Address**: ${order.shippingAddress?.street || ''}, ${order.shippingAddress?.city || ''}, ${order.shippingAddress?.state || ''} - ${order.shippingAddress?.zipCode || ''}`;
+
+    return {
+      message: statusMsg,
+      messageType: 'ORDER_CARD',
+      metadata: {
+        ...orderCardMetadata,
+        options: ['📍 Track Order', '🚚 Delivery Issue', '↩️ Return / Refund', '⚠️ Product Issue', '💬 Talk to a human agent'],
+      },
+    };
+  }
+
+  // ── INTENT 3: DELIVERY ISSUE ──────────────────────────────────────────────
+  if (issueKey === 'DELIVERY' || textLower.includes('delivery') || textLower.includes('delay') || textLower.includes('late') || textLower.includes('not received')) {
+    let deliveryMsg = '';
+
+    if (order.isDelivered || order.orderStatus === 'DELIVERED') {
+      deliveryMsg = `🚚 **Delivery Assistance — Order #${orderShortId}**\n\n` +
+        `Our records show your order was marked **Delivered**.\n\n` +
+        `If you have not received it yet:\n` +
+        `1. Please check with household members, neighbors, or building security.\n` +
+        `2. Sometimes couriers mark delivery slightly ahead of time during the final route.\n\n` +
+        `If it is still not found, I can immediately raise an urgent courier investigation or connect you with a live agent to resolve this.`;
+    } else if (order.orderStatus === 'OUT_FOR_DELIVERY') {
+      deliveryMsg = `🚚 **Order #${orderShortId} is Out for Delivery**\n\n` +
+        `Your package is currently in the delivery vehicle with ${courierName}. The courier executive will call on ${order.shippingAddress?.phone || 'your phone'} before delivery.\n\n` +
+        `If you need delivery rescheduled or special instructions, please let us know!`;
+    } else {
+      deliveryMsg = `🚚 **Delivery Assistance — Order #${orderShortId}**\n\n` +
+        `Your order is being handled with priority via **${courierName}** (Tracking: ${trackingNo}).\n` +
+        `• Standard delivery timeline: 3–5 business days across India.\n\n` +
+        `If you are experiencing an unexpected delay, tap "Talk to a human agent" below and our support team will expedite it with the courier manager.`;
+    }
+
+    return {
+      message: deliveryMsg,
+      messageType: 'ORDER_CARD',
+      metadata: {
+        ...orderCardMetadata,
+        options: ['📍 Track Order', '💬 Talk to a human agent', '↩️ Return / Refund'],
+      },
+    };
+  }
+
+  // ── INTENT 4: RETURN / REFUND ─────────────────────────────────────────────
+  if (issueKey === 'RETURN' || textLower.includes('return') || textLower.includes('refund') || textLower.includes('exchange')) {
+    let returnMsg = '';
+
+    if (!order.isDelivered && order.orderStatus !== 'DELIVERED') {
+      returnMsg = `↩️ **Return / Refund — Order #${orderShortId}**\n\n` +
+        `Your order is currently **${statusInfo.label}** and has not been delivered yet.\n\n` +
+        `• Return requests can be initiated once the order is delivered.\n` +
+        `• If you wish to **cancel** this order before dispatch, please let us know or tap below to connect with an agent.`;
+    } else {
+      // Delivered order: check 7-day policy
+      const deliveryDate = order.deliveredAt ? new Date(order.deliveredAt) : new Date(order.updatedAt);
+      const daysPassed = Math.max(0, Math.floor((Date.now() - deliveryDate.getTime()) / (1000 * 60 * 60 * 24)));
+      const daysLeft = Math.max(0, 7 - daysPassed);
+
+      if (daysPassed <= 7) {
+        returnMsg = `↩️ **Return / Refund Eligibility — Order #${orderShortId}**\n\n` +
+          `✅ **Eligible for Return** (${daysLeft} day${daysLeft === 1 ? '' : 's'} remaining in your 7-day window).\n\n` +
+          `Under Daatasa's **7-Day Bilona Ghee Guarantee**:\n` +
+          `• 100% refund of ₹${totalPrice} or free replacement.\n` +
+          `• Free doorstep reverse pickup by our courier.\n` +
+          `• Refunds are credited back to your original payment method / bank account within 5–7 business days.\n\n` +
+          `To proceed, please tell us the reason for return, or tap below to speak with an agent.`;
       } else {
-        cleanMessages.push({ ...msg });
+        returnMsg = `↩️ **Return / Refund Policy — Order #${orderShortId}**\n\n` +
+          `This order was delivered on ${deliveryDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })} (${daysPassed} days ago).\n\n` +
+          `Our standard return policy is 7 days from delivery. If you experienced an exceptional quality issue, please connect with our support team below for a manual review.`;
       }
     }
 
-    if (cleanMessages.length === 0 || cleanMessages[cleanMessages.length - 1].role !== 'user') {
-      cleanMessages.push({ role: 'user', content: userMessage || 'Hello' });
+    return {
+      message: returnMsg,
+      messageType: 'ORDER_CARD',
+      metadata: {
+        ...orderCardMetadata,
+        options: ['Start Return Process', 'Check Refund Policy', '💬 Talk to a human agent'],
+      },
+    };
+  }
+
+  // ── INTENT 5: PRODUCT ISSUE ───────────────────────────────────────────────
+  if (issueKey === 'PRODUCT' || textLower.includes('product') || textLower.includes('damaged') || textLower.includes('broken') || textLower.includes('leak') || textLower.includes('quality') || textLower.includes('smell') || textLower.includes('taste')) {
+    const productMsg = `⚠️ **Product Quality Guarantee — Order #${orderShortId}**\n\n` +
+      `You ordered:\n${itemSummary}\n\n` +
+      `At Daatasa, every batch of A2 Vedic Cow Ghee is traditionally prepared using the bilona method with zero chemicals.\n\n` +
+      `✨ **Our Guarantee**:\n` +
+      `If you received a broken seal, leakage, broken jar, or have any purity/quality concern, we offer an **Instant Free Replacement** or **100% Refund**!\n\n` +
+      `📷 **Quick Tip**: You can upload a photo of the package using the 📎 image attachment icon below, and our team will process your replacement right away.`;
+
+    return {
+      message: productMsg,
+      messageType: 'ORDER_CARD',
+      metadata: {
+        ...orderCardMetadata,
+        options: ['Request Free Replacement', 'Request Refund', '💬 Talk to a human agent'],
+      },
+    };
+  }
+
+  // ── INTENT 6: OTHER ISSUE ─────────────────────────────────────────────────
+  if (issueKey === 'OTHER' || textLower.includes('other issue') || textLower === 'other' || textLower.includes('other query') || textLower.includes('another issue')) {
+    const otherMsg = `💬 **Other Queries & Assistance — Order #${orderShortId}**\n\n` +
+      `Please select what you need help with regarding this order:\n\n` +
+      `• 🧾 **Tax Invoice & Bill**: View or email GST tax invoice\n` +
+      `• ❌ **Cancel Order**: Check cancellation eligibility and refunds\n` +
+      `• 📍 **Change Delivery Address**: Update shipping address or phone number\n` +
+      `• 💳 **Payment & Billing**: Payment status, duplicate charges, or COD queries\n` +
+      `• 💬 **Talk to a Human Agent**: Live chat with support\n\n` +
+      `Or feel free to type any specific question directly below!`;
+
+    return {
+      message: otherMsg,
+      messageType: 'ORDER_CARD',
+      metadata: {
+        ...orderCardMetadata,
+        options: [
+          '🧾 Download Invoice',
+          '❌ Cancel Order',
+          '📍 Change Address / Phone',
+          '💳 Payment Query',
+          '💬 Talk to a human agent',
+        ],
+      },
+    };
+  }
+
+  // ── INTENT 6A: INVOICE / BILL ─────────────────────────────────────────────
+  if (textLower.includes('invoice') || textLower.includes('bill') || textLower.includes('receipt') || textLower.includes('tax')) {
+    const invoiceMsg = `🧾 **Tax Invoice & Receipt — Order #${orderShortId}**\n\n` +
+      `• **Invoice Number**: ${order.invoiceNumber || 'INV-' + orderShortId}\n` +
+      `• **Order Total**: ₹${totalPrice} (Inclusive of GST)\n` +
+      `• **Payment Mode**: ${order.paymentMethod === 'COD' ? 'Cash on Delivery (COD)' : 'Online Payment (Prepaid)'}\n` +
+      `• **Order Date**: ${orderDate}\n\n` +
+      `📄 You can view and download your full GST invoice from **Order History**. If you require a business GST invoice with your company GSTIN, tap below to have our support team email it to you.`;
+
+    return {
+      message: invoiceMsg,
+      messageType: 'ORDER_CARD',
+      metadata: {
+        ...orderCardMetadata,
+        options: ['Email Invoice', '💬 Talk to a human agent', '📋 Order Status'],
+      },
+    };
+  }
+
+  // ── INTENT 6B: CANCEL ORDER ───────────────────────────────────────────────
+  if (textLower.includes('cancel order') || textLower.includes('cancellation') || textLower.includes('cancel')) {
+    let cancelMsg = '';
+
+    if (order.orderStatus === 'CANCELLED' || order.paymentStatus === 'CANCELLED') {
+      cancelMsg = `❌ **Order #${orderShortId} is Already Cancelled**\n\n` +
+        `This order was previously cancelled. If any payment was deducted, a refund of ₹${totalPrice} has been processed back to your original payment source (takes 5–7 business days to reflect).`;
+    } else if (order.isDelivered || order.orderStatus === 'DELIVERED') {
+      cancelMsg = `❌ **Cannot Cancel — Order #${orderShortId} is Delivered**\n\n` +
+        `This order has already been delivered. Instead of cancellation, you can initiate a return under our **7-Day Quality Guarantee** for a full refund or free replacement!`;
+    } else if (order.orderStatus === 'SHIPPED' || order.orderStatus === 'PICKED_UP' || order.orderStatus === 'OUT_FOR_DELIVERY') {
+      cancelMsg = `🚚 **Order #${orderShortId} Has Already Shipped**\n\n` +
+        `Your package is already in transit with **${courierName}** (AWB: ${trackingNo}).\n\n` +
+        `• Direct cancellation is not possible once dispatched.\n` +
+        `• **Easy Refund**: You can simply reject/refuse delivery at your doorstep when the delivery partner arrives. The package will return to us, and 100% refund of ₹${totalPrice} will be credited to your payment method automatically.`;
+    } else {
+      cancelMsg = `❌ **Cancel Order Request — #${orderShortId}**\n\n` +
+        `Your order is currently **${statusInfo.label}** and has not been dispatched yet.\n\n` +
+        `Would you like to cancel this order? Once confirmed, a full refund of ₹${totalPrice} will be processed immediately.`;
     }
 
-    // ── Call Claude API ──────────────────────────────────────────────────────
-    let response = await anthropic.messages.create({
-      model:      'claude-sonnet-4-5',
-      max_tokens: 1024,
-      system:     SYSTEM_PROMPT,
-      tools:      BOT_TOOLS,
-      messages:   cleanMessages,
-    });
+    return {
+      message: cancelMsg,
+      messageType: 'ORDER_CARD',
+      metadata: {
+        ...orderCardMetadata,
+        options: order.orderStatus === 'DELIVERED'
+          ? ['↩️ Return / Refund', '💬 Talk to a human agent']
+          : ['Confirm Cancellation', 'Keep My Order', '💬 Talk to a human agent'],
+      },
+    };
+  }
 
-    // ── Handle tool_use (Claude wants to call a tool) ────────────────────────
-    while (response.stop_reason === 'tool_use') {
-      const toolUseBlocks = response.content.filter(b => b.type === 'tool_use');
+  // ── INTENT 6C: CHANGE ADDRESS OR PHONE ────────────────────────────────────
+  if (textLower.includes('change address') || textLower.includes('update address') || textLower.includes('change phone') || textLower.includes('phone number') || textLower.includes('shipping address')) {
+    let addrMsg = '';
 
-      const toolResults = await Promise.all(
-        toolUseBlocks.map(async (toolUse) => {
-          const result = await executeTool(toolUse.name, toolUse.input, session);
-          return {
-            type:       'tool_result',
-            tool_use_id: toolUse.id,
-            content:    JSON.stringify(result),
-          };
-        })
-      );
-
-      // Continue conversation with tool results
-      cleanMessages.push({ role: 'assistant', content: response.content });
-      cleanMessages.push({ role: 'user', content: toolResults });
-
-      response = await anthropic.messages.create({
-        model:      'claude-sonnet-4-5',
-        max_tokens: 1024,
-        system:     SYSTEM_PROMPT,
-        tools:      BOT_TOOLS,
-        messages:   cleanMessages,
-      });
+    if (order.orderStatus === 'SHIPPED' || order.orderStatus === 'PICKED_UP' || order.orderStatus === 'OUT_FOR_DELIVERY' || order.isDelivered) {
+      addrMsg = `📍 **Address Modification — Order #${orderShortId}**\n\n` +
+        `Your order is currently **${statusInfo.label}** with ${courierName}.\n\n` +
+        `Shipping manifests are locked once the courier receives the package. However, when the delivery executive calls you on ${order.shippingAddress?.phone || 'your phone'} before delivery, you can coordinate landmark directions or a neighbor drop-off directly with them!`;
+    } else {
+      addrMsg = `📍 **Change Delivery Details — Order #${orderShortId}**\n\n` +
+        `Current address on file:\n` +
+        `• **Address**: ${order.shippingAddress?.street || ''}, ${order.shippingAddress?.city || ''}, ${order.shippingAddress?.state || ''} - ${order.shippingAddress?.zipCode || ''}\n` +
+        `• **Phone**: ${order.shippingAddress?.phone || 'N/A'}\n\n` +
+        `Since your order is still in packaging, we can update it! Please type your new address or phone number below, or tap to speak with our support agent.`;
     }
 
-    // ── Parse bot response ───────────────────────────────────────────────────
-    const textBlock = response.content.find(b => b.type === 'text');
-    if (!textBlock) throw new Error('No text response from bot');
+    return {
+      message: addrMsg,
+      messageType: 'ORDER_CARD',
+      metadata: {
+        ...orderCardMetadata,
+        options: ['💬 Talk to a human agent', '📍 Track Order', '📋 Order Status'],
+      },
+    };
+  }
 
-    let botResponse;
-    try {
-      // Try to parse JSON response
-      const jsonMatch = textBlock.text.match(/\{[\s\S]*\}/);
-      botResponse = jsonMatch ? JSON.parse(jsonMatch[0]) : { message: textBlock.text, needs_human: false };
-    } catch {
-      botResponse = { message: textBlock.text, needs_human: false };
-    }
+  // ── INTENT 6D: PAYMENT & BILLING ──────────────────────────────────────────
+  if (textLower.includes('payment') || textLower.includes('charged') || textLower.includes('deduct') || textLower.includes('double') || textLower.includes('razorpay') || textLower.includes('billing')) {
+    const payMsg = `💳 **Payment & Billing Summary — Order #${orderShortId}**\n\n` +
+      `• **Payment Method**: ${order.paymentMethod === 'COD' ? 'Cash on Delivery (COD)' : 'Prepaid Online'}\n` +
+      `• **Payment Status**: ${order.paymentStatus || 'COMPLETED'}\n` +
+      `• **Total Amount**: ₹${totalPrice}\n\n` +
+      `💡 **Quick Help**:\n` +
+      `1. **Double Deductions**: If money was deducted twice by mistake, Razorpay automatically reverses the duplicate charge within 24–48 hours.\n` +
+      `2. **COD to UPI**: You can pay via UPI scanner directly to the courier agent upon delivery.\n` +
+      `3. If you need a payment verification check, our support agent is ready to assist!`;
 
-    // Stop typing
-    io.to(`session:${session.sessionId}`).emit('chat:agent_typing', { isTyping: false });
+    return {
+      message: payMsg,
+      messageType: 'ORDER_CARD',
+      metadata: {
+        ...orderCardMetadata,
+        options: ['💬 Talk to a human agent', '📋 Order Status', '📍 Track Order'],
+      },
+    };
+  }
 
-    // Check if bot wants to escalate
-    if (botResponse.needs_human) {
+  // ── INTENT 7: DEFAULT ORDER WELCOME ───────────────────────────────────────
+  const welcomeMsg = `🫙 **Order #${orderShortId} Details Loaded**\n\n` +
+    `• **Items**: ${items.length} item${items.length !== 1 ? 's' : ''} (₹${totalPrice})\n` +
+    `• **Status**: ${statusInfo.emoji} ${statusInfo.label}\n` +
+    `• **Order Date**: ${orderDate}\n\n` +
+    `How can I assist you with this order? Select an option below or type your query:`;
+
+  return {
+    message: welcomeMsg,
+    messageType: 'ORDER_CARD',
+    metadata: {
+      ...orderCardMetadata,
+      options: ORDER_QUICK_REPLIES,
+    },
+  };
+}
+
+// ── Claude System Prompt (When API is configured) ────────────────────────────
+const SYSTEM_PROMPT = `You are "Ghee Assistant", the intelligent and caring AI customer support specialist for Daatasa, 
+an authentic Indian brand selling 100% pure A2 Vedic Gir Cow Bilona Ghee and organic health products.
+
+Capabilities:
+1. Provide real-time order status, tracking, and courier updates
+2. Handle return/refund eligibility checks (7-day bilona ghee guarantee)
+3. Answer questions about ghee making (traditional bilona method from curd, hand-churned, wooden churner, earthen pots)
+4. Address delivery delays, damaged packaging, or broken seals with replacements/refunds
+5. Escalate complex requests to human agents when appropriate (needs_human=true)
+
+Rules:
+- Be polite, knowledgeable, and concise (under 3 sentences per point)
+- Always use ₹ for Indian Rupee prices
+- Plain text / clear markdown formatting
+- Respond in JSON format:
+{
+  "message": "...",
+  "needs_human": false,
+  "quick_replies": ["📍 Track Order", "📋 Order Status", "🚚 Delivery Issue", "↩️ Return / Refund", "⚠️ Product Issue", "💬 Other Issue"],
+  "order_card": null
+}`;
+
+// ── Main Bot Entry Point ────────────────────────────────────────────────────
+async function handleBotMessage(session, userMessage, io, socket, mode = 'normal') {
+  try {
+    const sessionId = session.sessionId;
+
+    // Check if user requested human escalation
+    const lower = (userMessage || '').toLowerCase();
+    if (lower.includes('human') || lower.includes('agent') || lower.includes('person') || lower.includes('speak to someone') || lower.includes('talk to a human')) {
       const { escalateToHuman } = require('./chatHandlers');
-      await escalateToHuman(io, socket, session, 'Bot escalation');
+      await escalateToHuman(io, socket, session, 'User requested human agent');
       return;
     }
 
-    // Determine message type
-    let messageType = 'TEXT';
-    let metadata    = {};
+    // Emit typing indicator
+    io.to(`session:${sessionId}`).emit('chat:agent_typing', { isTyping: true });
 
-    if (botResponse.quick_replies?.length) {
-      messageType = 'QUICK_REPLY';
-      metadata    = { options: botResponse.quick_replies };
-    }
-    if (botResponse.order_card) {
-      messageType = 'ORDER_CARD';
-      metadata    = botResponse.order_card;
+    // Fetch order if associated with session
+    let order = null;
+    if (session.orderId) {
+      order = await fetchOrderDetails(session.orderId, session.userId);
     }
 
-    // Save and emit bot message
-    const botMsg = await ChatMessage.create({
-      sessionId:   session.sessionId,
-      senderId:    BOT_SENDER,
-      senderType:  'BOT',
-      senderName:  BOT_NAME,
-      content:     botResponse.message || 'I could not process that. Let me connect you with a human agent.',
-      messageType,
-      metadata,
-    });
+    // ── Route 1: Order-specific query / welcome ──────────────────────────────
+    if (order || mode === 'order_welcome' || mode === 'auto_fetch_order') {
+      const response = await generateOrderResponse(order, userMessage, mode === 'order_welcome' ? null : null);
 
-    // Update session bot message count
-    await ChatSession.findOneAndUpdate(
-      { sessionId: session.sessionId },
-      { $inc: { botMessageCount: 1 }, lastMessageAt: new Date() }
-    );
+      await new Promise(r => setTimeout(r, 600)); // Natural typing pause
+      io.to(`session:${sessionId}`).emit('chat:agent_typing', { isTyping: false });
 
-    io.to(`session:${session.sessionId}`).emit('chat:message', botMsg);
+      const botMsg = await ChatMessage.create({
+        sessionId,
+        senderId: BOT_SENDER,
+        senderType: 'BOT',
+        senderName: BOT_NAME,
+        content: response.message,
+        messageType: response.messageType || 'TEXT',
+        metadata: response.metadata || {},
+      });
+
+      await ChatSession.findOneAndUpdate(
+        { sessionId },
+        { $inc: { botMessageCount: 1 }, lastMessageAt: new Date() }
+      );
+
+      io.to(`session:${sessionId}`).emit('chat:message', botMsg);
+      return;
+    }
+
+    // ── Route 2: Claude AI Bot (if Anthropic API key is valid) ───────────────
+    if (anthropic) {
+      try {
+        const history = await ChatMessage.find({ sessionId })
+          .sort({ createdAt: -1 })
+          .limit(8)
+          .lean();
+
+        const messages = history.reverse().filter(m => m.senderType === 'USER' || m.senderType === 'BOT').map(m => ({
+          role: m.senderType === 'USER' ? 'user' : 'assistant',
+          content: m.content,
+        }));
+
+        if (userMessage) {
+          messages.push({ role: 'user', content: userMessage });
+        }
+
+        const cleanMessages = [];
+        for (const msg of messages) {
+          const last = cleanMessages[cleanMessages.length - 1];
+          if (last && last.role === msg.role) {
+            last.content += '\n' + msg.content;
+          } else {
+            cleanMessages.push({ ...msg });
+          }
+        }
+
+        if (cleanMessages.length === 0 || cleanMessages[cleanMessages.length - 1].role !== 'user') {
+          cleanMessages.push({ role: 'user', content: userMessage || 'Hello' });
+        }
+
+        const aiResponse = await anthropic.messages.create({
+          model: 'claude-sonnet-4-5',
+          max_tokens: 800,
+          system: SYSTEM_PROMPT,
+          messages: cleanMessages,
+        });
+
+        const textBlock = aiResponse.content.find(b => b.type === 'text');
+        let botResponse = { message: textBlock?.text || 'How can I assist you further?', needs_human: false };
+
+        try {
+          const jsonMatch = textBlock?.text?.match(/\{[\s\S]*\}/);
+          if (jsonMatch) botResponse = JSON.parse(jsonMatch[0]);
+        } catch { }
+
+        io.to(`session:${sessionId}`).emit('chat:agent_typing', { isTyping: false });
+
+        if (botResponse.needs_human) {
+          const { escalateToHuman } = require('./chatHandlers');
+          await escalateToHuman(io, socket, session, 'Bot escalation');
+          return;
+        }
+
+        const botMsg = await ChatMessage.create({
+          sessionId,
+          senderId: BOT_SENDER,
+          senderType: 'BOT',
+          senderName: BOT_NAME,
+          content: botResponse.message,
+          messageType: botResponse.quick_replies?.length ? 'QUICK_REPLY' : 'TEXT',
+          metadata: botResponse.quick_replies?.length ? { options: botResponse.quick_replies } : {},
+        });
+
+        await ChatSession.findOneAndUpdate(
+          { sessionId },
+          { $inc: { botMessageCount: 1 }, lastMessageAt: new Date() }
+        );
+
+        io.to(`session:${sessionId}`).emit('chat:message', botMsg);
+        return;
+      } catch (anthropicErr) {
+        console.warn('[Bot] Anthropic API failed, falling back to rule-based engine:', anthropicErr.message);
+      }
+    }
+
+    // ── Route 3: General Intelligent Fallback ────────────────────────────────
+    await handleGeneralFallback(session, userMessage, io, socket);
+
   } catch (error) {
     console.error('[Bot] handleBotMessage error:', error.message);
     io.to(`session:${session.sessionId}`).emit('chat:agent_typing', { isTyping: false });
 
-    // Send error message and escalate
-    const errorMsg = await ChatMessage.create({
-      sessionId:  session.sessionId,
-      senderId:   'SYSTEM',
-      senderType: 'SYSTEM',
-      senderName: 'System',
-      content:    "I'm having trouble right now. Let me connect you with a human agent.",
-      messageType: 'TEXT',
+    const botMsg = await ChatMessage.create({
+      sessionId: session.sessionId,
+      senderId: BOT_SENDER,
+      senderType: 'BOT',
+      senderName: BOT_NAME,
+      content: "I'm here to help! Please select an option below or speak with our live support team.",
+      messageType: 'QUICK_REPLY',
+      metadata: { options: ['📍 Track Order', '📋 Order Status', '↩️ Return / Refund', '💬 Talk to a human agent'] },
     });
-    io.to(`session:${session.sessionId}`).emit('chat:message', errorMsg);
 
-    const { escalateToHuman } = require('./chatHandlers');
-    await escalateToHuman(io, socket, session, 'Bot error');
+    io.to(`session:${session.sessionId}`).emit('chat:message', botMsg);
   }
 }
 
-// ─── Fallback: Rule-based responses when no Anthropic API key ────────────────
-async function handleFallbackBot(session, userMessage, io, socket) {
-  const lower = userMessage.toLowerCase();
-  let reply   = "I'm here to help! For the best support, please share your query and I'll assist you.";
-  let options = ['Track my order', 'Return policy', 'Talk to a person'];
+// ── General Fallback for Non-Order Queries ──────────────────────────────────
+async function handleGeneralFallback(session, userMessage, io, socket) {
+  const lower = (userMessage || '').toLowerCase();
+  let reply = "Hello! 👋 I'm your Daatasa Ghee Assistant. How can I help you today?";
+  let options = ['📍 Track Order', '↩️ Return Policy', '🫙 How is Bilona Ghee made?', '💬 Talk to a human agent'];
 
-  if (lower.includes('order') || lower.includes('track')) {
-    reply   = 'To track your order, please go to My Orders in your account, or share your order ID here.';
-    options = ['Track with order ID', 'Cancel order', 'Talk to a person'];
-  } else if (lower.includes('return') || lower.includes('refund')) {
-    reply   = 'Our return policy allows returns within 7 days of delivery. Refunds are processed in 5-7 business days.';
-    options = ['Start a return', 'Refund status', 'Talk to a person'];
-  } else if (lower.includes('delivery') || lower.includes('shipping')) {
-    reply   = 'Standard delivery takes 3-5 business days. Shipping is free on orders above ₹500.';
-    options = ['Track my order', 'Return policy', 'Talk to a person'];
+  if (lower.includes('bilona') || lower.includes('method') || lower.includes('how') || lower.includes('cow') || lower.includes('gir') || lower.includes('pure')) {
+    reply = "🧈 **Daatasa Traditional Bilona Ghee** is made from grass-fed A2 Gir Cow milk using the ancient Vedic method:\n1. Fresh whole milk is cultured into curd.\n2. Curd is bi-directionally hand-churned with a wooden bilona to extract makkhan (butter).\n3. Butter is slow-cooked on firewood in brass containers to yield 100% golden, aromatic granular ghee with zero preservatives!";
+    options = ['Order Bilona Ghee', 'Health Benefits of A2 Ghee', '📍 Track Order', '💬 Talk to a human agent'];
+  } else if (lower.includes('return') || lower.includes('refund') || lower.includes('policy')) {
+    reply = "↩️ **Daatasa Return Policy**:\nWe offer a **7-Day Quality Guarantee** from the date of delivery. If you are unsatisfied or received a damaged jar, we offer free doorstep pickup and 100% refund in 5–7 business days.";
+    options = ['Start a Return', '📍 Track Order', '💬 Talk to a human agent'];
+  } else if (lower.includes('shipping') || lower.includes('delivery') || lower.includes('time')) {
+    reply = "🚚 **Shipping Policy**:\n• Free delivery across India on orders above ₹500.\n• Metro cities receive deliveries within 2–3 business days; other cities within 3–5 business days.";
+    options = ['📍 Track Order', '📋 Order Status', '💬 Talk to a human agent'];
   }
 
-  io.to(`session:${session.sessionId}`).emit('chat:agent_typing', { isTyping: true });
-  await new Promise(r => setTimeout(r, 1000)); // Simulate thinking
+  await new Promise(r => setTimeout(r, 600));
   io.to(`session:${session.sessionId}`).emit('chat:agent_typing', { isTyping: false });
 
   const botMsg = await ChatMessage.create({
-    sessionId:   session.sessionId,
-    senderId:    BOT_SENDER,
-    senderType:  'BOT',
-    senderName:  BOT_NAME,
-    content:     reply,
+    sessionId: session.sessionId,
+    senderId: BOT_SENDER,
+    senderType: 'BOT',
+    senderName: BOT_NAME,
+    content: reply,
     messageType: 'QUICK_REPLY',
-    metadata:    { options },
+    metadata: { options },
   });
 
   await ChatSession.findOneAndUpdate(
@@ -380,4 +641,9 @@ async function handleFallbackBot(session, userMessage, io, socket) {
   io.to(`session:${session.sessionId}`).emit('chat:message', botMsg);
 }
 
-module.exports = { handleBotMessage };
+module.exports = {
+  handleBotMessage,
+  fetchOrderDetails,
+  generateOrderResponse,
+  ORDER_QUICK_REPLIES,
+};

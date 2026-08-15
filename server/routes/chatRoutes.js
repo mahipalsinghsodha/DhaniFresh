@@ -1,26 +1,26 @@
 // routes/chatRoutes.js
-const express     = require('express');
-const router      = express.Router();
+const express = require('express');
+const router = express.Router();
 const ChatSession = require('../models/ChatSession');
 const ChatMessage = require('../models/ChatMessage');
-const auth        = require('../middleware/auth');
+const auth = require('../middleware/auth');
 
 /* ─────────────────────────────────────────────────────────────────────────── */
-/*  GET /api/chat/sessions — Admin: get all sessions (paginated, filtered)    */
+/*  GET /api/chat/sessions — Support/Admin: get all sessions (paginated)       */
 /* ─────────────────────────────────────────────────────────────────────────── */
-router.get('/sessions', auth, auth.admin, async (req, res) => {
+router.get('/sessions', auth, auth.support, async (req, res) => {
   try {
-    const { status, page = 1, limit = 20 } = req.query;
-    const pageNum  = Math.max(1, parseInt(page));
+    const { status, page = 1, limit = 50 } = req.query;
+    const pageNum = Math.max(1, parseInt(page));
     const limitNum = Math.min(100, parseInt(limit));
-    const skip     = (pageNum - 1) * limitNum;
+    const skip = (pageNum - 1) * limitNum;
 
     const query = {};
     if (status) query.status = status;
 
     const [sessions, total] = await Promise.all([
       ChatSession.find(query)
-        .sort({ lastMessageAt: -1 })
+        .sort({ lastMessageAt: -1, createdAt: -1 })
         .skip(skip)
         .limit(limitNum)
         .populate('userId', 'name email avatar')
@@ -59,10 +59,12 @@ router.get('/sessions/:sessionId/messages', auth, async (req, res) => {
     const session = await ChatSession.findOne({ sessionId: req.params.sessionId });
     if (!session) return res.status(404).json({ message: 'Chat session not found' });
 
-    // Only allow: admin OR the session owner
-    const isAdmin = req.user.role === 'admin' || req.user.role === 'superadmin';
+    // Allow: admin, superadmin, support OR the session owner
+    const isStaff = ['admin', 'superadmin', 'support'].includes(req.user.role) || 
+                    (Array.isArray(req.user.permissions) && (req.user.permissions.includes('support') || req.user.permissions.includes('all')));
     const isOwner = session.userId && String(session.userId) === String(req.user._id);
-    if (!isAdmin && !isOwner) {
+    
+    if (!isStaff && !isOwner) {
       return res.status(403).json({ message: 'Access denied' });
     }
 
@@ -70,8 +72,8 @@ router.get('/sessions/:sessionId/messages', auth, async (req, res) => {
       .sort({ createdAt: 1 })
       .lean();
 
-    // Mark user messages as read if agent is viewing
-    if (isAdmin) {
+    // Mark user messages as read if staff is viewing
+    if (isStaff) {
       await ChatMessage.updateMany(
         { sessionId: req.params.sessionId, senderType: 'USER', isRead: false },
         { isRead: true }
@@ -112,9 +114,9 @@ router.post('/sessions/:sessionId/rate', async (req, res) => {
 });
 
 /* ─────────────────────────────────────────────────────────────────────────── */
-/*  GET /api/chat/queue-count — Admin: waiting sessions count                 */
+/*  GET /api/chat/queue-count — Support/Admin: waiting sessions count         */
 /* ─────────────────────────────────────────────────────────────────────────── */
-router.get('/queue-count', auth, auth.admin, async (req, res) => {
+router.get('/queue-count', auth, auth.support, async (req, res) => {
   try {
     const count = await ChatSession.countDocuments({ status: 'WAITING' });
     res.json({ count });

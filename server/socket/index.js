@@ -2,8 +2,8 @@
 // Socket.io server initialization with JWT auth middleware
 
 const { Server } = require('socket.io');
-const jwt        = require('jsonwebtoken');
-const User       = require('../models/User');
+const jwt = require('jsonwebtoken');
+const User = require('../models/User');
 
 let io;
 
@@ -40,7 +40,7 @@ function initSocketServer(httpServer) {
 
     try {
       const decoded = jwt.verify(token, process.env.JWT_SECRET);
-      const user    = await User.findById(decoded.id).select('name email role avatar isBlocked tokenVersion');
+      const user = await User.findById(decoded.id).select('name email role avatar isBlocked tokenVersion');
 
       if (!user || user.isBlocked || decoded.version !== user.tokenVersion) {
         return next(new Error('Authentication failed'));
@@ -58,7 +58,7 @@ function initSocketServer(httpServer) {
 
   io.on('connection', (socket) => {
     const userId = socket.user?._id?.toString() || 'guest';
-    const role   = socket.user?.role || 'guest';
+    const role = socket.user?.role || 'guest';
     console.log(`[Socket] ${role} connected: ${userId} (${socket.id})`);
 
     // Track activity for idle disconnect
