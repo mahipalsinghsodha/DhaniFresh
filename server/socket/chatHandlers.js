@@ -1,26 +1,40 @@
 // socket/chatHandlers.js
 // All real-time chat socket events
 
-const { v4: uuidv4 }  = require('crypto');
+const { v4: uuidv4 } = require('crypto');
 const ChatSession = require('../models/ChatSession');
 const ChatMessage = require('../models/ChatMessage');
 const Notification = require('../models/Notification');
+const SupportTicket = require('../models/SupportTicket');
 const User = require('../models/User');
 const { handleBotMessage } = require('./aiBot');
 const { sendSupportReplyEmail } = require('../services/emailService');
 
+// Helper: check if a user is support staff
+const isSupportStaff = (user) => {
+  if (!user) return false;
+  if (['admin', 'superadmin', 'support'].includes(user.role)) return true;
+  if (Array.isArray(user.permissions) && (user.permissions.includes('support') || user.permissions.includes('all'))) return true;
+  return false;
+};
+
 // Helper: generate short unique session ID
 const generateSessionId = () => require('crypto').randomBytes(12).toString('hex');
 
-// Phrases that trigger human escalation
+// Phrases that trigger human escalation (including "talk to a person" and "talk to a human agent")
 const ESCALATION_TRIGGERS = [
   'human', 'agent', 'person', 'real person', 'speak to someone',
-  'talk to someone', 'live agent', 'not helpful', "can't help",
-  'useless', 'frustrated', 'not satisfied',
+  'talk to someone', 'talk to a person', 'talk to person', 'talk to a human',
+  'talk to human', 'talk to a human agent', 'talk to human agent', 'talk to agent',
+  'talk to support', 'live agent', 'live support', 'customer care', 'representative',
+  'support executive', 'support agent', 'connect to agent', 'connect with agent',
+  'connect to human', 'connect with support', 'not helpful', "can't help",
+  'useless', 'frustrated', 'not satisfied', 'call me', 'callback', 'executive',
 ];
 
 function needsEscalation(text) {
-  const lower = text.toLowerCase();
+  if (!text) return false;
+  const lower = text.toLowerCase().trim();
   return ESCALATION_TRIGGERS.some(trigger => lower.includes(trigger));
 }
 
@@ -28,7 +42,7 @@ function registerChatHandlers(io, socket) {
   /* ── USER: Start a new chat session ─────────────────────────────────────── */
   socket.on('chat:start', async (data) => {
     try {
-      const { guestName, guestEmail, category = 'OTHER', orderId } = data;
+      const { guestName, guestEmail, category = 'OTHER', orderId, subIssue, initialMessage } = data;
 
       let validOrderId = null;
       if (orderId && require('mongoose').Types.ObjectId.isValid(orderId)) {
@@ -36,7 +50,7 @@ function registerChatHandlers(io, socket) {
       }
 
       const sessionId = generateSessionId();
-      const session   = await ChatSession.create({
+      const session = await ChatSession.create({
         sessionId,
         userId:     socket.user?._id || null,
         guestName:  socket.user?.name || guestName,
@@ -50,27 +64,57 @@ function registerChatHandlers(io, socket) {
       socket.join(`session:${sessionId}`);
       socket.sessionId = sessionId;
 
-      // Welcome message from bot
-      const welcomeMessage = await ChatMessage.create({
-        sessionId,
-        senderId:   'BOT',
-        senderType: 'BOT',
-        senderName: 'Ghee Assistant',
-        content:    `Hi ${socket.user?.name || guestName || 'there'}! 👋 I'm Ghee Assistant. How can I help you today?`,
-        messageType: 'QUICK_REPLY',
-        metadata: {
-          options: getCategoryQuickReplies(category),
-        },
-      });
-
       socket.emit('chat:session_created', { sessionId, status: 'BOT_HANDLING' });
-      socket.emit('chat:message', welcomeMessage);
 
-      // If order category, try to auto-fetch order info via bot
-      if (category === 'ORDER' && validOrderId && socket.user) {
+      const userMsgContent = initialMessage || subIssue;
+
+      if (userMsgContent) {
+        // If an initial message or quick reply option was selected
+        const userMsg = await ChatMessage.create({
+          sessionId,
+          senderId:   socket.user?._id || 'guest',
+          senderType: 'USER',
+          senderName: socket.user?.name || session.guestName || 'Guest',
+          content:    userMsgContent,
+          messageType: 'TEXT',
+        });
+
+        socket.emit('chat:message', userMsg);
+
+        // Check if user requested human escalation directly (e.g. "Talk to a person" / "Talk to a human agent")
+        if (needsEscalation(userMsgContent)) {
+          setTimeout(() => {
+            escalateToHuman(io, socket, session, 'User requested human agent').catch(console.error);
+          }, 350);
+          return;
+        }
+
         setTimeout(() => {
-          handleBotMessage(session, '', io, socket, 'auto_fetch_order').catch(console.error);
-        }, 500);
+          handleBotMessage(session, userMsgContent, io, socket, 'normal').catch(console.error);
+        }, 350);
+        return;
+      }
+
+      // If an order ID is provided without a sub-issue (greet with order card)
+      if (validOrderId) {
+        setTimeout(() => {
+          handleBotMessage(session, '', io, socket, 'order_welcome').catch(console.error);
+        }, 350);
+      } else {
+        // Standard welcome message for non-order general support
+        const welcomeMessage = await ChatMessage.create({
+          sessionId,
+          senderId:   'BOT',
+          senderType: 'BOT',
+          senderName: 'Ghee Assistant',
+          content:    `Hi ${socket.user?.name || guestName || 'there'}! 👋 I'm Ghee Assistant. How can I help you today?`,
+          messageType: 'QUICK_REPLY',
+          metadata: {
+            options: getCategoryQuickReplies(category),
+          },
+        });
+
+        socket.emit('chat:message', welcomeMessage);
       }
     } catch (error) {
       console.error('[Chat] chat:start error:', error);
@@ -90,13 +134,7 @@ function registerChatHandlers(io, socket) {
       const session = await ChatSession.findOne({ sessionId });
       if (!session) return socket.emit('chat:error', { message: 'Session not found' });
 
-      // Check for escalation keywords
-      if (needsEscalation(content) && session.status === 'BOT_HANDLING') {
-        await escalateToHuman(io, socket, session);
-        return;
-      }
-
-      // Save user message
+      // Save user message first so all agents can see what the user asked
       const msg = await ChatMessage.create({
         sessionId,
         senderId:   socket.user?._id || 'guest',
@@ -106,19 +144,23 @@ function registerChatHandlers(io, socket) {
         messageType,
       });
 
-      // Broadcast to the session room (so agent sees it too)
+      // Broadcast to the session room (so user and agent both see it)
       io.to(`session:${sessionId}`).emit('chat:message', msg);
+      await ChatSession.findOneAndUpdate({ sessionId }, { lastMessageAt: new Date() });
+
+      // Check for escalation keywords (e.g. "Talk to a person" / "Talk to a human agent")
+      if (needsEscalation(content) && session.status === 'BOT_HANDLING') {
+        await escalateToHuman(io, socket, session);
+        return;
+      }
 
       // Notify admins of new message in their queue
       io.to('admin_room').emit('admin:session_update', {
         sessionId,
-        status:      session.status,
-        lastMessage: msg,
+        status:        session.status,
+        lastMessage:   msg,
         lastMessageAt: new Date(),
       });
-
-      // Update session lastMessageAt
-      await ChatSession.findOneAndUpdate({ sessionId }, { lastMessageAt: new Date() });
 
       // If bot is handling, route to AI
       if (session.status === 'BOT_HANDLING') {
@@ -197,20 +239,20 @@ function registerChatHandlers(io, socket) {
   /* ── AGENT: Join a session ──────────────────────────────────────────────── */
   socket.on('agent:join_session', async ({ sessionId }) => {
     try {
-      if (!socket.user || !['admin', 'superadmin'].includes(socket.user.role)) return;
+      if (!isSupportStaff(socket.user)) return;
 
       socket.join(`session:${sessionId}`);
 
       const session = await ChatSession.findOneAndUpdate(
         { sessionId, status: { $ne: 'CLOSED' } },
-        { 
-          agentId: socket.user._id, 
-          status: 'ACTIVE',
+        {
+          agentId: socket.user._id,
+          status:  'ACTIVE',
           $push: {
             agentActions: {
-              adminId: socket.user._id,
+              adminId:   socket.user._id,
               adminName: socket.user.name,
-              action: 'ACCEPTED',
+              action:    'ACCEPTED',
             }
           }
         },
@@ -232,7 +274,7 @@ function registerChatHandlers(io, socket) {
         agentAvatar: socket.user.avatar,
       });
       io.to(`session:${sessionId}`).emit('chat:message', sysMsg);
-      io.to('admin_room').emit('admin:session_update', { sessionId, status: 'ACTIVE', agentId: socket.user._id });
+      io.to('admin_room').emit('admin:session_update', { sessionId, status: 'ACTIVE', agentId: socket.user._id, agentName: socket.user.name });
 
       // Notify the user if they are logged in
       if (session.userId) {
@@ -265,16 +307,16 @@ function registerChatHandlers(io, socket) {
   /* ── AGENT: Reject a session ────────────────────────────────────────────── */
   socket.on('agent:reject_session', async ({ sessionId }) => {
     try {
-      if (!socket.user || !['admin', 'superadmin'].includes(socket.user.role)) return;
+      if (!isSupportStaff(socket.user)) return;
 
       const session = await ChatSession.findOneAndUpdate(
         { sessionId, status: 'WAITING' }, // only if it's still waiting
         {
           $push: {
             agentActions: {
-              adminId: socket.user._id,
+              adminId:   socket.user._id,
               adminName: socket.user.name,
-              action: 'REJECTED',
+              action:    'REJECTED',
             }
           }
         },
@@ -283,12 +325,11 @@ function registerChatHandlers(io, socket) {
       if (!session) return;
 
       // Broadcast to admins that this specific admin rejected it
-      // Other admins still see it in WAITING state, but maybe UI grays it out for the rejecting admin
-      io.to('admin_room').emit('admin:session_rejected', { 
-        sessionId, 
-        adminId: socket.user._id 
+      io.to('admin_room').emit('admin:session_rejected', {
+        sessionId,
+        adminId: socket.user._id
       });
-      
+
     } catch (error) {
       console.error('[Chat] agent:reject_session error:', error);
     }
@@ -297,7 +338,7 @@ function registerChatHandlers(io, socket) {
   /* ── AGENT: Send message ────────────────────────────────────────────────── */
   socket.on('agent:message', async ({ sessionId, content, messageType = 'TEXT', metadata = {} }) => {
     try {
-      if (!socket.user || !['admin', 'superadmin'].includes(socket.user.role)) return;
+      if (!isSupportStaff(socket.user)) return;
       if (!content?.trim()) return;
 
       const msg = await ChatMessage.create({
@@ -324,7 +365,7 @@ function registerChatHandlers(io, socket) {
           } else {
             // For guests, check if there are sockets in the session room that belong to guests
             const sessionSockets = await io.in(`session:${sessionId}`).fetchSockets();
-            isUserOnline = sessionSockets.some(s => !s.user || !['admin', 'superadmin'].includes(s.user.role));
+            isUserOnline = sessionSockets.some(s => !isSupportStaff(s.user));
           }
         } catch (e) {
           console.error('[Chat] Error checking socket presence:', e);
@@ -356,7 +397,6 @@ function registerChatHandlers(io, socket) {
                 link: `/support?session=${sessionId}`,
                 metadata: { sessionId },
               });
-              // Emitting just in case they have another tab open in some edge case
               io.to(`user:${sessionData.userId}`).emit('notification', notification);
             } catch (err) {
               console.error('[Chat] Failed to create chat reply notification:', err);
@@ -378,7 +418,7 @@ function registerChatHandlers(io, socket) {
   /* ── AGENT: Close chat ──────────────────────────────────────────────────── */
   socket.on('agent:close_session', async ({ sessionId, resolution }) => {
     try {
-      if (!socket.user || !['admin', 'superadmin'].includes(socket.user.role)) return;
+      if (!isSupportStaff(socket.user)) return;
 
       await ChatSession.findOneAndUpdate(
         { sessionId },
@@ -424,106 +464,103 @@ function registerChatHandlers(io, socket) {
   });
 }
 
-/* ── Escalate to human ───────────────────────────────────────────────────── */
+/* ── Escalate to human (Broadcast to ALL support agents & admins) ───────── */
 async function escalateToHuman(io, socket, session, reason = 'User requested human agent') {
   try {
-    // 1. Find live agents in admin_room
-    const adminSockets = await io.in('admin_room').fetchSockets();
-    const liveAgentIds = [...new Set(adminSockets.map(s => s.user?._id?.toString()).filter(Boolean))];
+    // 1. Update session status to WAITING in queue (available to all agents)
+    const updatedSession = await ChatSession.findOneAndUpdate(
+      { sessionId: session.sessionId },
+      { status: 'WAITING', agentId: null },
+      { new: true }
+    );
 
-    let assignedAgentId = null;
+    const waitingCount = await ChatSession.countDocuments({ status: 'WAITING' });
+    const position = waitingCount;
+    const estimatedWait = Math.max(1, position * 2);
 
-    if (liveAgentIds.length > 0) {
-      // 2. Get active chat counts for these agents
-      const agentLoads = await Promise.all(liveAgentIds.map(async (agentId) => {
-        const count = await ChatSession.countDocuments({ agentId, status: 'ACTIVE' });
-        return { agentId, count };
+    // 2. Inform the customer
+    const sysMsg = await ChatMessage.create({
+      sessionId:   session.sessionId,
+      senderId:    'SYSTEM',
+      senderType:  'SYSTEM',
+      senderName:  'System',
+      content:     `Connecting you with our Support Team. A live agent will be with you shortly.${position > 1 ? ` (Queue position: #${position})` : ''}`,
+      messageType: 'TEXT',
+    });
+
+    io.to(`session:${session.sessionId}`).emit('chat:message', sysMsg);
+    io.to(`session:${session.sessionId}`).emit('chat:status_changed', { status: 'WAITING', position });
+
+    // 3. Fetch full session data
+    const sessionData = await ChatSession.findOne({ sessionId: session.sessionId })
+      .populate('userId', 'name email avatar')
+      .populate('orderId')
+      .lean();
+
+    // 4. Broadcast to ALL connected agents & admins in admin_room
+    io.to('admin_room').emit('admin:new_session', sessionData);
+    io.to('admin_room').emit('admin:queue_count', { count: waitingCount });
+
+    // 5. Notify ALL support agents and admins
+    try {
+      const supportUsers = await User.find({
+        $or: [
+          { role: { $in: ['admin', 'superadmin', 'support'] } },
+          { permissions: 'support' },
+          { permissions: 'all' },
+        ],
+        isBlocked: false,
+      }).select('_id name email role');
+
+      const customerName = sessionData.userId?.name || sessionData.guestName || 'Customer';
+      const orderTag = sessionData.orderId ? ` for Order #${sessionData.orderId._id ? sessionData.orderId._id.toString().slice(-6).toUpperCase() : sessionData.orderId.toString().slice(-6).toUpperCase()}` : '';
+
+      await Promise.all(supportUsers.map(async (agent) => {
+        try {
+          const notif = await Notification.create({
+            user: agent._id,
+            type: 'CHAT_REPLY',
+            title: 'New Support Chat Request',
+            message: `${customerName} requested live support${orderTag}.`,
+            link: `/admin/support?session=${session.sessionId}`,
+            metadata: { sessionId: session.sessionId },
+          });
+
+          io.to(`user:${agent._id.toString()}`).emit('notification', notif);
+          io.to(`user:${agent._id.toString()}`).emit('admin:new_session', sessionData);
+        } catch (e) {
+          // ignore individual notification failure
+        }
       }));
-
-      // 3. Filter agents under max limit (10) and sort by least active chats
-      const availableAgents = agentLoads
-        .filter(agent => agent.count < 10)
-        .sort((a, b) => a.count - b.count);
-
-      if (availableAgents.length > 0) {
-        assignedAgentId = availableAgents[0].agentId;
-      }
+    } catch (notifErr) {
+      console.error('[Chat] Failed to notify support agents:', notifErr.message);
     }
 
-    if (assignedAgentId) {
-      // Assign directly to the selected agent
-      await ChatSession.findOneAndUpdate(
-        { sessionId: session.sessionId },
-        { status: 'ACTIVE', agentId: assignedAgentId }
-      );
-
-      const agent = await User.findById(assignedAgentId);
-
-      const sysMsg = await ChatMessage.create({
-        sessionId:   session.sessionId,
-        senderId:    'SYSTEM',
-        senderType:  'SYSTEM',
-        senderName:  'System',
-        content:     `Chat routed to ${agent.name}. They will be with you shortly.`,
-        messageType: 'TEXT',
-      });
-
-      io.to(`session:${session.sessionId}`).emit('chat:message', sysMsg);
-      io.to(`session:${session.sessionId}`).emit('chat:agent_joined', {
-        agentName:   agent.name,
-        agentAvatar: agent.avatar,
-      });
-
-      // Notify ONLY this agent
-      const sessionData = await ChatSession.findOne({ sessionId: session.sessionId })
-        .populate('userId', 'name email')
-        .lean();
-      io.to(`user:${assignedAgentId}`).emit('admin:new_session_assigned', sessionData);
-
-      // Create notification
-      try {
-        const notif = await Notification.create({
-          user: assignedAgentId,
-          type: 'SYSTEM',
-          title: 'New Chat Assigned',
-          message: `A new support chat has been routed to you.`,
-          link: `/admin/support?session=${session.sessionId}`,
-          metadata: { sessionId: session.sessionId },
+    // 6. Create or sync SupportTicket for ticket-based support dashboards
+    try {
+      if (sessionData.userId?._id || sessionData.userId) {
+        const uId = sessionData.userId._id || sessionData.userId;
+        const subject = sessionData.orderId 
+          ? `Order #${(sessionData.orderId._id || sessionData.orderId).toString().slice(-6).toUpperCase()} Support Escalation` 
+          : `${sessionData.category || 'General'} Live Chat Request`;
+        
+        await SupportTicket.create({
+          user: uId,
+          subject,
+          category: sessionData.orderId ? 'ORDER_ISSUE' : 'OTHER',
+          order: sessionData.orderId?._id || sessionData.orderId || null,
+          priority: 'HIGH',
+          status: 'OPEN',
+          messages: [
+            {
+              sender: 'user',
+              message: `Live support requested by ${sessionData.userId?.name || 'Customer'}. (Chat Session: ${session.sessionId})`,
+            },
+          ],
         });
-        io.to(`user:${assignedAgentId}`).emit('notification', notif);
-      } catch (err) {
-        console.error('[Chat] Failed to create routing notification:', err);
       }
-
-    } else {
-      // Fallback: Queue
-      await ChatSession.findOneAndUpdate(
-        { sessionId: session.sessionId },
-        { status: 'WAITING' }
-      );
-
-      const waitingCount = await ChatSession.countDocuments({ status: 'WAITING' });
-      const position = waitingCount;
-      const estimatedWait = Math.max(2, position * 2);
-
-      const sysMsg = await ChatMessage.create({
-        sessionId:   session.sessionId,
-        senderId:    'SYSTEM',
-        senderType:  'SYSTEM',
-        senderName:  'System',
-        content:     `All agents are currently busy. You've been added to the queue. Estimated wait: ${estimatedWait}-${estimatedWait + 2} minutes.${position > 1 ? ` You are #${position} in queue.` : ''}`,
-        messageType: 'TEXT',
-      });
-
-      io.to(`session:${session.sessionId}`).emit('chat:message', sysMsg);
-      io.to(`session:${session.sessionId}`).emit('chat:status_changed', { status: 'WAITING', position });
-
-      const sessionData = await ChatSession.findOne({ sessionId: session.sessionId })
-        .populate('userId', 'name email')
-        .lean();
-
-      io.to('admin_room').emit('admin:new_session', sessionData);
-      io.to('admin_room').emit('admin:queue_count', { count: waitingCount });
+    } catch (ticketErr) {
+      console.error('[Chat] Failed to sync SupportTicket:', ticketErr.message);
     }
   } catch (error) {
     console.error('[Chat] escalateToHuman error:', error);

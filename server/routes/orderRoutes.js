@@ -598,9 +598,18 @@ router.get('/track', async (req, res) => {
 // ========================================================================
 router.get('/myorders', auth, async (req, res) => {
   try {
-    const orders = await Order.find({ user: req.user._id })
+    let query = Order.find({ user: req.user._id })
       .populate('orderItems.product')
       .sort({ createdAt: -1 });
+
+    if (req.query.limit) {
+      const limit = parseInt(req.query.limit, 10);
+      if (!isNaN(limit) && limit > 0) {
+        query = query.limit(limit);
+      }
+    }
+
+    const orders = await query;
     res.json(orders);
   } catch (error) {
     res.status(500).json({ message: error.message });

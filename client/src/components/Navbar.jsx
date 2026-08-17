@@ -233,7 +233,8 @@ const Navbar = () => {
             {isSupport && (
               <>
                 {[
-                  { to: '/support-panel', label: 'Support Dashboard' },
+                  { to: '/admin/support', label: 'Live Chat' },
+                  { to: '/support-panel', label: 'Support Tickets' },
                 ].map(({ to, label }) => (
                   <Link key={to} to={to} className={navLinkCls(to)}>
                     {label}
@@ -382,7 +383,8 @@ const Navbar = () => {
                               { to: '/admin', icon: Shield, label: t('navbar.adminPanel', 'Admin Panel') },
                             ] : []),
                             ...(isSupport ? [
-                              { to: '/support-panel', icon: Shield, label: 'Support Panel' },
+                              { to: '/admin/support', icon: MessageSquare, label: 'Live Chat Support' },
+                              { to: '/support-panel', icon: Shield, label: 'Support Tickets' },
                             ] : []),
                           ].map(item => (
                             <Link key={item.to} to={item.to}
@@ -642,7 +644,8 @@ const Navbar = () => {
                 )}
                 {isSupport && (
                   <>
-                    <Link to="/support-panel" className={mobileLinkCls('/support-panel')}>Support Dashboard</Link>
+                    <Link to="/admin/support" className={mobileLinkCls('/admin/support')}>Live Chat Support</Link>
+                    <Link to="/support-panel" className={mobileLinkCls('/support-panel')}>Support Tickets</Link>
                   </>
                 )}
 

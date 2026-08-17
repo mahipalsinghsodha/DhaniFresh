@@ -1,13 +1,14 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { FiSearch, FiMessageSquare, FiUser, FiPackage, FiPhone, FiMail, FiCheckCircle } from 'react-icons/fi';
+import { FiSearch, FiMessageSquare, FiUser, FiPackage, FiPhone, FiMail, FiCheckCircle, FiLifeBuoy } from 'react-icons/fi';
 import api from '../../api/axios';
 import { toast } from 'react-toastify';
 import { useAuth } from '../../context/AuthContext';
+import AdminSupport from './AdminSupport';
 
 export default function SupportDashboard() {
   const { user } = useAuth();
-  const [activeTab, setActiveTab] = useState('tickets');
+  const [activeTab, setActiveTab] = useState('chat');
   
   // Search State
   const [searchQuery, setSearchQuery] = useState('');
@@ -90,26 +91,37 @@ export default function SupportDashboard() {
           <div>
             <h1 className="text-2xl font-bold" style={{ color: 'var(--brand-primary)' }}>Support Dashboard</h1>
             <p className="text-sm font-medium" style={{ color: 'var(--text-muted)' }}>
-              Manage customer queries, check orders, and resolve issues.
+              Manage live chats, customer queries, check orders, and resolve issues.
             </p>
           </div>
           <div className="flex gap-2 p-1 bg-slate-100 rounded-xl">
             <button
-              onClick={() => setActiveTab('tickets')}
-              className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${activeTab === 'tickets' ? 'bg-white shadow-sm text-brand-primary' : 'text-slate-500 hover:text-slate-700'}`}
+              onClick={() => setActiveTab('chat')}
+              className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-bold transition-all ${activeTab === 'chat' ? 'bg-white shadow-sm text-brand-primary' : 'text-slate-500 hover:text-slate-700'}`}
             >
-              Support Tickets
+              <FiMessageSquare size={15} /> Live Chat
+            </button>
+            <button
+              onClick={() => setActiveTab('tickets')}
+              className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-bold transition-all ${activeTab === 'tickets' ? 'bg-white shadow-sm text-brand-primary' : 'text-slate-500 hover:text-slate-700'}`}
+            >
+              <FiLifeBuoy size={15} /> Support Tickets
             </button>
             <button
               onClick={() => setActiveTab('search')}
-              className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${activeTab === 'search' ? 'bg-white shadow-sm text-brand-primary' : 'text-slate-500 hover:text-slate-700'}`}
+              className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-bold transition-all ${activeTab === 'search' ? 'bg-white shadow-sm text-brand-primary' : 'text-slate-500 hover:text-slate-700'}`}
             >
-              User/Order Search
+              <FiSearch size={15} /> User/Order Search
             </button>
           </div>
         </div>
 
         {/* Tab Content */}
+        {activeTab === 'chat' && (
+          <div className="rounded-2xl overflow-hidden border border-slate-100 shadow-sm">
+            <AdminSupport />
+          </div>
+        )}
         {activeTab === 'tickets' && (
           <div className="flex flex-col md:flex-row gap-6 h-[calc(100vh-200px)]">
             
