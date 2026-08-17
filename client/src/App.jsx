@@ -58,6 +58,7 @@ const Disclaimer      = lazy(() => import('./pages/Disclaimer'))
 const HowItWorks      = lazy(() => import('./pages/HowItWorks'))
 
 const CheckoutSubscription = lazy(() => import('./pages/CheckoutSubscription'))
+const B2B = lazy(() => import('./pages/B2B'))
 
 // Support Admin pages
 const SupportDashboard = lazy(() => import('./pages/Admin/SupportDashboard.jsx'))
@@ -73,6 +74,7 @@ const AdminUserActivity = lazy(() => import('./pages/Admin/AdminUserActivity.jsx
 const AddProduct = lazy(() => import('./pages/Admin/AddProduct.jsx'))
 const ManageOrders = lazy(() => import('./pages/Admin/ManageOrders.jsx'))
 const AdminReviews = lazy(() => import('./pages/Admin/AdminReviews.jsx'))
+const ManageB2B = lazy(() => import('./pages/Admin/ManageB2B.jsx'))
 const AdminSupport = lazy(() => import('./pages/Admin/AdminSupport.jsx'))
 const AdminCoupons = lazy(() => import('./pages/Admin/AdminCoupons.jsx'))
 const AdminUsers = lazy(() => import('./pages/Admin/AdminUsers.jsx'))
@@ -215,6 +217,7 @@ function AnimatedRoutes() {
             <Route path="/track-order"            element={<TrackOrder />} /> {/* ✅ P1 */}
             <Route path="/checkout-subscription"  element={<ProtectedRoute><CheckoutSubscription /></ProtectedRoute>} />
             <Route path="/contact"                element={<Contact />} />
+            <Route path="/b2b"                    element={<B2B />} />
 
             {/* ── Static ── */}
             <Route path="/about"                  element={<AboutUs />} />
@@ -239,7 +242,7 @@ function AnimatedRoutes() {
             <Route path="/orders/:id" element={<ProtectedRoute><OrderDetail /></ProtectedRoute>} />
             <Route path="/orders/:id/return" element={<ProtectedRoute><ReturnRequest /></ProtectedRoute>} /> {/* ✅ P1 */}
             <Route path="/change-password" element={<ProtectedRoute><ChangePassword /></ProtectedRoute>} /> {/* ✅ P1 */}
-            <Route path="/checkout" element={<ProtectedRoute><Checkout /></ProtectedRoute>} />
+            <Route path="/checkout" element={<Checkout />} />
             <Route path="/wishlist" element={<ProtectedRoute><Wishlist /></ProtectedRoute>} /> {/* ✅ P1 */}
             <Route path="/support"  element={<ProtectedRoute><Support /></ProtectedRoute>} />
 
@@ -263,6 +266,7 @@ function AnimatedRoutes() {
             <Route path="/admin/media"             element={<ProtectedRoute adminOnly><AdminMedia /></ProtectedRoute>} />
             <Route path="/admin/products/:id/images" element={<ProtectedRoute adminOnly><AdminProductImages /></ProtectedRoute>} />
             <Route path="/admin/reviews"          element={<ProtectedRoute adminOnly><AdminReviews /></ProtectedRoute>} />
+            <Route path="/admin/b2b"              element={<ProtectedRoute adminOnly><ManageB2B /></ProtectedRoute>} />
 
             {/* ── Support ── */}
             <Route path="/support-panel"          element={<ProtectedRoute supportAccess><SupportDashboard /></ProtectedRoute>} />

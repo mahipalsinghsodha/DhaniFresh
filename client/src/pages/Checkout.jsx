@@ -20,7 +20,7 @@ const STATES = [
   'Telangana','Tripura','Uttar Pradesh','Uttarakhand','West Bengal',
 ]
 
-const emptyNew = { name:'', phone:'', street:'', city:'', district:'', state:'', zipCode:'', country:'India' }
+const emptyNew = { name:'', email:'', phone:'', street:'', city:'', district:'', state:'', zipCode:'', country:'India' }
 
 const StepHeader = ({ num, title, sub, active }) => (
   <div className="px-8 py-6 border-b border-brand-primary/5 flex items-center gap-4">
@@ -40,11 +40,12 @@ const Checkout = () => {
   const { user } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
-  const { fetchCartCount } = useCart()
+  const { fetchCartCount, clearCart } = useCart()
 
   const [cart, setCart]               = useState(null)
+  const { items: cartItems }          = useCart()
   const [loading, setLoading]         = useState(false)
-  const [paymentMethod, setPayment]   = useState('COD')
+  const [paymentMethod, setPayment]   = useState(user ? 'COD' : 'Online')
   const [savedAddresses, setSaved]    = useState([])
   const [selectedAddrId, setSelAddr]  = useState(null)
   const [showNewForm, setShowNew]     = useState(false)
@@ -59,15 +60,25 @@ const Checkout = () => {
   const [preview, setPreview]         = useState(null)
   const [previewLoad, setPreviewLoad] = useState(false)
 
+  // Memoize guestCartItems string for dependency arrays
+  const guestCartStr = !user ? JSON.stringify(cartItems) : '[]';
+
   useEffect(() => {
-    if (!user) { navigate('/login', { state:{ from:'/checkout' } }); return }
-    fetchCart(); fetchAddresses()
+    fetchCart(); 
+    if (user) {
+      fetchAddresses()
+    } else {
+      setShowNew(true)
+    }
 
     if (location.state?.couponCode) {
       const code = location.state.couponCode
       setCoupon(code)
       setCouponL(true)
-      api.post('/api/orders/verify-coupon', { couponCode: code })
+      
+      const guestCartItems = !user ? JSON.parse(guestCartStr) : undefined;
+      
+      api.post('/api/orders/verify-coupon', { couponCode: code, guestCartItems })
         .then(res => {
           const coupon = res.data.coupon
           const bd = res.data.breakdown
@@ -91,9 +102,15 @@ const Checkout = () => {
 
   const fetchCart = async () => {
     try {
-      const res = await api.get('/api/cart')
-      setCart(res.data)
-      if (res.data.items.length === 0) { navigate('/cart'); return }
+      if (user) {
+        const res = await api.get('/api/cart')
+        setCart(res.data)
+        if (res.data.items.length === 0) { navigate('/cart'); return }
+      } else {
+        const parsedItems = JSON.parse(guestCartStr);
+        setCart({ items: parsedItems })
+        if (parsedItems.length === 0) { navigate('/cart'); return }
+      }
       fetchPreview()
     } catch(e) { console.error(e) }
   }
@@ -101,7 +118,8 @@ const Checkout = () => {
   const fetchPreview = async (couponDiscount = 0) => {
     setPreviewLoad(true)
     try {
-      const res = await api.get('/api/orders/price-preview')
+      const guestCartItems = !user ? JSON.parse(guestCartStr) : undefined;
+      const res = await api.post('/api/orders/price-preview', { guestCartItems })
       const p = res.data
       if (couponDiscount > 0) {
         const after = Math.max(0, p.itemsPrice - couponDiscount)
@@ -145,11 +163,19 @@ const Checkout = () => {
 
   const placeOrder = async () => {
     const shippingAddress = getAddr()
-    if (showNewForm && saveNewAddr) await api.post('/api/auth/addresses', { ...newAddr, isDefault: savedAddresses.length === 0 })
-    const payload = { shippingAddress, paymentMethod, couponCode: appliedCoupon?.code || null }
+    if (showNewForm && saveNewAddr && user) await api.post('/api/auth/addresses', { ...newAddr, isDefault: savedAddresses.length === 0 })
+    
+    // For guest checkout, pull email from shipping address
+    const guestEmail = !user ? shippingAddress.email : null;
+    const guestCartItems = !user ? JSON.parse(guestCartStr) : undefined;
+    
+    const payload = { shippingAddress, paymentMethod, couponCode: appliedCoupon?.code || null, guestEmail, guestCartItems }
     if (paymentMethod === 'COD') {
-      await api.post('/api/orders', payload); fetchCartCount()
-      toast.success('Order placed successfully!'); navigate('/orders')
+      await api.post('/api/orders', payload); 
+      clearCart();
+      fetchCartCount();
+      toast.success('Order placed successfully!'); 
+      navigate('/orders');
     } else { await startOnlinePayment(payload) }
   }
 
@@ -157,8 +183,8 @@ const Checkout = () => {
     e.preventDefault(); setLoading(true)
     // Validate address before opening Razorpay or placing order
     const addr = getAddr()
-    if (!addr.name?.trim() || !addr.street?.trim() || !addr.city?.trim() || !addr.zipCode?.trim() || !addr.state?.trim()) {
-      toast.error('Please select or fill in a delivery address')
+    if (!addr.name?.trim() || !addr.street?.trim() || !addr.city?.trim() || !addr.zipCode?.trim() || !addr.state?.trim() || (!user && !addr.email?.trim())) {
+      toast.error('Please fill in all required delivery details (including email for guests)')
       setLoading(false); return
     }
     try { await placeOrder() } catch (err) {
@@ -171,8 +197,9 @@ const Checkout = () => {
   }
 
   const startOnlinePayment = async (payload) => {
-    const { data: order } = await api.post('/api/orders', payload)
-    const { data: rzrOrder } = await api.post('/api/payment/create-order', { orderId: order._id })
+    const { data } = await api.post('/api/orders', payload)
+    const { order, razorpayOrder: rzrOrder } = data;
+
     const razorpayKey = import.meta.env.VITE_RAZORPAY_KEY_ID;
     if (!razorpayKey) {
       toast.error('Razorpay Key is missing in frontend environment variables.');
@@ -182,9 +209,15 @@ const Checkout = () => {
       key: razorpayKey,
       order_id: rzrOrder.id, name: 'Daatasa',
       description: 'Premium Ghee Purchase', amount: rzrOrder.amount,
-      theme: { color: '#F5A623' }, prefill: { name: user.name, email: user.email },
+      theme: { color: '#F5A623' }, prefill: { name: user?.name || getAddr().name, email: user?.email || getAddr().email, contact: user?.phone || getAddr().phone },
       handler: async (res) => {
-        try { await api.post('/api/payment/verify', res); fetchCartCount(); toast.success('Payment successful!'); navigate('/orders') }
+        try { 
+          await api.post('/api/payment/verify', res); 
+          clearCart();
+          fetchCartCount(); 
+          toast.success('Payment successful!'); 
+          navigate('/orders');
+        }
         catch { toast.error('Payment verification failed') }
       },
       modal: { ondismiss: async () => {
@@ -299,8 +332,9 @@ const Checkout = () => {
                   ) : (
                     <motion.div key="new" initial={{ opacity:0, y:8 }} animate={{ opacity:1, y:0 }} exit={{ opacity:0 }} className="space-y-4">
                       <div className="grid sm:grid-cols-2 gap-4">
-                        <div><label className={labelCls}>Full Name</label><input required value={newAddr.name} onChange={e => setNewAddr(p=>({...p,name:e.target.value}))} className={inputCls} placeholder="Recipient name"/></div>
-                        <div><label className={labelCls}>Phone</label>
+                        <div><label className={labelCls}>Full Name *</label><input required value={newAddr.name} onChange={e => setNewAddr(p=>({...p,name:e.target.value}))} className={inputCls} placeholder="Recipient name"/></div>
+                        <div><label className={labelCls}>Email {user ? '' : '*'}</label><input required={!user} type="email" value={newAddr.email} onChange={e => setNewAddr(p=>({...p,email:e.target.value}))} className={inputCls} placeholder="For order updates"/></div>
+                        <div><label className={labelCls}>Phone *</label>
                           <input required type="tel" inputMode="numeric" maxLength={10} value={newAddr.phone}
                             onChange={e => setNewAddr(p=>({...p,phone:e.target.value.replace(/\D/g,'').slice(0,10)}))}
                             className={inputCls} placeholder="10-digit mobile" pattern="[6-9][0-9]{9}"/>
@@ -331,10 +365,12 @@ const Checkout = () => {
                           {STATES.map(s => <option key={s} value={s}>{s}</option>)}
                         </select>
                       </div>
-                      <label className="flex items-center gap-3 cursor-pointer p-4 rounded-xl border border-brand-primary/10 bg-[var(--ivory)] hover:bg-brand-primary/5 transition-colors">
-                        <input type="checkbox" checked={saveNewAddr} onChange={e => setSaveNew(e.target.checked)} className="w-5 h-5 rounded text-brand-primary focus:ring-brand-primary"/>
-                        <span className="text-sm font-bold text-brand-text/70">Save this address for future orders</span>
-                      </label>
+                      {user && (
+                        <label className="flex items-center gap-3 cursor-pointer p-4 rounded-xl border border-brand-primary/10 bg-[var(--ivory)] hover:bg-brand-primary/5 transition-colors">
+                          <input type="checkbox" checked={saveNewAddr} onChange={e => setSaveNew(e.target.checked)} className="w-5 h-5 rounded text-brand-primary focus:ring-brand-primary"/>
+                          <span className="text-sm font-bold text-brand-text/70">Save this address for future orders</span>
+                        </label>
+                      )}
                     </motion.div>
                   )}
                 </AnimatePresence>
@@ -346,26 +382,31 @@ const Checkout = () => {
               <StepHeader num="2" title="Payment Method" sub="Choose how to pay" active={true}/>
               <div className="p-8 grid sm:grid-cols-2 gap-4">
                 {[
-                  { id:'COD',    label:'Cash on Delivery', icon:<FiBox size={20}/>,    desc:'Pay when you receive' },
+                  { id:'COD',    label:'Cash on Delivery', icon:<FiBox size={20}/>,    desc:'Pay when you receive', disabled: !user },
                   { id:'Online', label:'Pay Online',       icon:<FiShield size={20}/>, desc:'Secure via Razorpay'  },
                 ].map(opt => (
-                  <div key={opt.id} onClick={() => setPayment(opt.id)}
-                    className={`p-5 rounded-3xl border-2 cursor-pointer transition-all flex items-center gap-4 ${
+                  <div key={opt.id} onClick={() => !opt.disabled && setPayment(opt.id)}
+                    className={`p-5 rounded-3xl border-2 transition-all flex items-center gap-4 relative overflow-hidden ${
+                      opt.disabled ? 'opacity-50 cursor-not-allowed bg-gray-50 border-gray-200' : 
                       paymentMethod === opt.id 
-                        ? 'border-brand-primary bg-brand-primary/5 shadow-sm' 
-                        : 'border-brand-primary/10 bg-white hover:border-brand-primary/30 hover:bg-[var(--ivory)]'
+                        ? 'border-brand-primary bg-brand-primary/5 shadow-sm cursor-pointer' 
+                        : 'border-brand-primary/10 bg-white hover:border-brand-primary/30 hover:bg-[var(--ivory)] cursor-pointer'
                     }`}
                   >
-                    <div className={`w-12 h-12 flex items-center justify-center rounded-xl shadow-sm transition-all ${
+                    <div className={`w-12 h-12 flex items-center justify-center rounded-xl shadow-sm transition-all z-10 ${
                       paymentMethod === opt.id ? 'bg-brand-primary text-white' : 'bg-white border border-brand-primary/10 text-brand-text/40'
                     }`}>
                       {opt.icon}
                     </div>
-                    <div>
-                      <div className="text-sm font-bold text-brand-primary">{opt.label}</div>
-                      <p className="text-xs font-medium text-brand-text/60 mt-0.5">{opt.desc}</p>
+                    <div className="z-10">
+                      <div className="text-sm font-bold text-brand-primary flex items-center gap-2">
+                        {opt.label}
+                      </div>
+                      <p className="text-xs font-medium text-brand-text/60 mt-0.5">
+                        {opt.disabled ? 'Requires Account' : opt.desc}
+                      </p>
                     </div>
-                    {paymentMethod === opt.id && <FiCheck size={18} className="ml-auto text-brand-primary"/>}
+                    {paymentMethod === opt.id && <FiCheck size={18} className="ml-auto text-brand-primary z-10"/>}
                   </div>
                 ))}
               </div>

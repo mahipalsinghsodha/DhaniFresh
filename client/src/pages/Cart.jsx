@@ -17,9 +17,8 @@ const Cart = () => {
   const { t } = useTranslation()
   const { user }           = useAuth()
   const navigate           = useNavigate()
-  const { fetchCartCount } = useCart()
-  const [cart,           setCart]           = useState(null)
-  const [loading,        setLoading]        = useState(true)
+  const { items: cartItems, removeItem: removeContextItem, updateQty: updateContextQty } = useCart()
+  const [loading,        setLoading]        = useState(false)
   const [updatingId,     setUpdatingId]     = useState(null)
   const [preview,        setPreview]        = useState(null)
   const [previewLoading, setPreviewLoading] = useState(false)
@@ -27,10 +26,13 @@ const Cart = () => {
   const [appliedCoupon,  setAppliedCoupon]  = useState(null)
   const [couponLoading,  setCouponLoading]  = useState(false)
 
+  const guestCartStr = !user ? JSON.stringify(cartItems) : '[]'
+
   useEffect(() => {
-    if (!user) { navigate('/login', { state: { from: '/cart' } }); return }
-    fetchCart()
-  }, [user])
+    if (cartItems.length > 0) {
+      fetchPreview()
+    }
+  }, [user, guestCartStr])
 
   const applyCoupon = async () => {
     if (!couponCode.trim()) return
@@ -62,20 +64,13 @@ const Cart = () => {
     toast.info('Coupon removed')
   }
 
-  const fetchCart = async () => {
-    try {
-      const res = await api.get('/api/cart')
-      setCart(res.data)
-      fetchCartCount()
-      if (res.data?.items?.length > 0) fetchPreview()
-    } catch (e) { console.error(e) }
-    finally { setLoading(false) }
-  }
+
 
   const fetchPreview = async () => {
     setPreviewLoading(true)
     try {
-      const res = await api.get('/api/orders/price-preview')
+      const guestCartItems = !user ? JSON.parse(guestCartStr) : undefined
+      const res = await api.post('/api/orders/price-preview', { guestCartItems })
       setPreview(res.data)
     } catch (e) { console.error('Price preview error:', e) }
     finally { setPreviewLoading(false) }
@@ -87,17 +82,17 @@ const Cart = () => {
     if (newQty > maxAllowed) { toast.error(`Max ${maxAllowed} of this item allowed`); return }
     setUpdatingId(itemId)
     try {
-      await api.put(`/api/cart/items/${itemId}`, { quantity: newQty })
-      fetchCart()
-    } catch (err) { toast.error(err.response?.data?.message || 'Failed to update quantity') }
+      await updateContextQty(itemId, newQty)
+      fetchPreview()
+    } catch (err) { toast.error('Failed to update quantity') }
     finally { setUpdatingId(null) }
   }
 
   const removeItem = async (itemId) => {
     try {
-      await api.delete(`/api/cart/items/${itemId}`)
+      await removeContextItem(itemId)
       toast.success('Item removed from cart')
-      fetchCart()
+      fetchPreview()
     } catch { toast.error('Failed to remove item') }
   }
 
@@ -107,8 +102,8 @@ const Cart = () => {
     </div>
   )
 
-  const hasItems = cart?.items?.length > 0
-  const subtotal = cart?.items?.reduce((acc, item) => acc + (item.product?.price || 0) * item.quantity, 0) || 0
+  const hasItems = cartItems?.length > 0
+  const subtotal = cartItems?.reduce((acc, item) => acc + (item.product?.price || 0) * item.quantity, 0) || 0
 
   return (
     <div className="min-h-screen pb-24 page-enter bg-[var(--ivory)] font-sans text-brand-text">
@@ -127,7 +122,7 @@ const Cart = () => {
             </div>
             {hasItems && (
               <span className="text-sm font-bold px-4 py-2 rounded-full shadow-sm bg-brand-primary/5 text-brand-primary border border-brand-primary/10">
-                {cart.items.length} {cart.items.length > 1 ? t('cart.itemsCountPlural', 'items') : t('cart.itemsCount', 'item')}
+                {cartItems.length} {cartItems.length > 1 ? t('cart.itemsCountPlural', 'items') : t('cart.itemsCount', 'item')}
               </span>
             )}
           </div>
@@ -164,7 +159,7 @@ const Cart = () => {
             {/* ── Cart Items ── */}
             <div className="lg:col-span-2 space-y-4">
               <AnimatePresence>
-                {cart.items.map((item, idx) => {
+                {cartItems.map((item, idx) => {
                   const stock       = item.product?.stock ?? 0
                   const maxQty      = Math.min(stock, MAX_CART_QTY)
                   const isOut       = stock === 0

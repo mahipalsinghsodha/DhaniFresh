@@ -1,4 +1,5 @@
 const { sendContactAdminEmail, sendContactAutoReply } = require('../services/emailService');
+const B2BInquiry = require('../models/B2BInquiry');
 
 const sendContactEmail = async (req, res) => {
   try {
@@ -36,4 +37,61 @@ const sendContactEmail = async (req, res) => {
   }
 };
 
-module.exports = { sendContactEmail };
+const createB2BInquiry = async (req, res) => {
+  try {
+    const { name, email, phone, company, quantity, message } = req.body;
+
+    if (!name || !phone || !quantity || !message) {
+      return res.status(400).json({ message: 'Name, phone, quantity, and message are required.' });
+    }
+
+    const inquiry = await B2BInquiry.create({
+      name,
+      email,
+      phone,
+      company,
+      quantity,
+      message
+    });
+
+    res.status(201).json({
+      success: true,
+      message: 'Your bulk order inquiry has been submitted successfully! We will contact you soon.',
+      inquiry
+    });
+  } catch (error) {
+    console.error('B2B Inquiry error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to submit inquiry. Please try again.',
+    });
+  }
+};
+
+const getB2BInquiries = async (req, res) => {
+  try {
+    const inquiries = await B2BInquiry.find({}).sort({ createdAt: -1 });
+    res.json(inquiries);
+  } catch (error) {
+    console.error('Fetch B2B Inquiries error:', error);
+    res.status(500).json({ message: 'Failed to fetch B2B inquiries' });
+  }
+};
+
+const updateB2BStatus = async (req, res) => {
+  try {
+    const { status } = req.body;
+    const inquiry = await B2BInquiry.findByIdAndUpdate(
+      req.params.id,
+      { status },
+      { new: true, runValidators: true }
+    );
+    if (!inquiry) return res.status(404).json({ message: 'Inquiry not found' });
+    res.json(inquiry);
+  } catch (error) {
+    console.error('Update B2B status error:', error);
+    res.status(500).json({ message: 'Failed to update status' });
+  }
+};
+
+module.exports = { sendContactEmail, createB2BInquiry, getB2BInquiries, updateB2BStatus };

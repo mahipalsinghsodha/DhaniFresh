@@ -59,7 +59,13 @@ const AdminSettings = () => {
     isMaintenanceMode: false,
     isComingSoon: false,
     comingSoonLaunchDate: '',
-    security: { twoFactorEnabled: false, otpEmail: '' }
+    security: { twoFactorEnabled: false, otpEmail: '' },
+    companyDetails: {
+      name: '',
+      email: '',
+      address: '',
+      gstin: ''
+    }
   })
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -135,6 +141,13 @@ const AdminSettings = () => {
     setSettings(p => ({
       ...p,
       security: { ...(p.security || {}), [key]: val }
+    }))
+  }
+
+  const handleCompanyChange = (key, val) => {
+    setSettings(p => ({
+      ...p,
+      companyDetails: { ...(p.companyDetails || {}), [key]: val }
     }))
   }
 
@@ -314,6 +327,32 @@ const AdminSettings = () => {
                   </p>
                 </div>
               )}
+            </div>
+          </div>
+
+          {/* ── Company Details (Invoice) ── */}
+          <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-card)', boxShadow: 'var(--shadow-sm)', overflow: 'hidden' }}>
+            <div style={{ padding: '16px 24px', borderBottom: '1px solid var(--border-color)', background: 'var(--bg-alt)' }}>
+              <h2 style={{ fontSize: 14, fontWeight: 800, color: 'var(--text-primary)', fontFamily: 'var(--font-display)', margin: 0 }}>Company Details (Invoice)</h2>
+              <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>These details will appear on the generated PDF invoices</p>
+            </div>
+            <div style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 20 }}>
+              <div>
+                <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 8, textTransform: 'uppercase' }}>Company Name</label>
+                <input type="text" value={settings.companyDetails?.name || ''} onChange={e => handleCompanyChange('name', e.target.value)} style={{ width: '100%', padding: '10px 12px', borderRadius: 8, border: '1.5px solid var(--border-color)', outline: 'none', fontSize: 14 }} />
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 8, textTransform: 'uppercase' }}>Contact Email</label>
+                <input type="email" value={settings.companyDetails?.email || ''} onChange={e => handleCompanyChange('email', e.target.value)} style={{ width: '100%', padding: '10px 12px', borderRadius: 8, border: '1.5px solid var(--border-color)', outline: 'none', fontSize: 14 }} />
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 8, textTransform: 'uppercase' }}>GSTIN Number</label>
+                <input type="text" value={settings.companyDetails?.gstin || ''} onChange={e => handleCompanyChange('gstin', e.target.value)} style={{ width: '100%', padding: '10px 12px', borderRadius: 8, border: '1.5px solid var(--border-color)', outline: 'none', fontSize: 14 }} />
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 8, textTransform: 'uppercase' }}>Full Address</label>
+                <textarea value={settings.companyDetails?.address || ''} onChange={e => handleCompanyChange('address', e.target.value)} rows={3} style={{ width: '100%', padding: '10px 12px', borderRadius: 8, border: '1.5px solid var(--border-color)', outline: 'none', fontSize: 14 }} />
+              </div>
             </div>
           </div>
 

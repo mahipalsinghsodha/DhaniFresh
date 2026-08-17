@@ -30,9 +30,13 @@ const NotifIcon = ({ type }) => {
 
 /* ── Single Notification Item ───────────────────────────────── */
 const NotifItem = ({ notif, onClick }) => {
-  const timeAgo = notif.createdAt
-    ? formatDistanceToNow(new Date(notif.createdAt), { addSuffix: true })
-    : 'just now'
+  let timeAgo = 'just now';
+  if (notif.createdAt) {
+    const d = new Date(notif.createdAt);
+    if (!isNaN(d.valueOf())) {
+      timeAgo = formatDistanceToNow(d, { addSuffix: true });
+    }
+  }
 
   return (
     <div
@@ -123,7 +127,10 @@ export default function NotificationDrawer() {
   // Notifications are fetched via the store/api or Socket.io. 
   // No demo notifications should be loaded.
   const groups = notifications.reduce((acc, n) => {
-    const d = new Date(n.createdAt || Date.now())
+    let d = new Date(n.createdAt || Date.now())
+    if (isNaN(d.valueOf())) {
+      d = new Date()
+    }
     const now = new Date()
     let group = 'Earlier'
     if (d.toDateString() === now.toDateString()) group = 'Today'

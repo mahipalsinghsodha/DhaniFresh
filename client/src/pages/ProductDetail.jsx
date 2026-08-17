@@ -56,7 +56,7 @@ const ProductDetail = () => {
   const navigate = useNavigate()
   const location = useLocation()
   const { user, toggleWishlist } = useAuth()
-  const { fetchCartCount } = useCart()
+  const { fetchCartCount, addItem } = useCart()
 
   const [product,    setProduct]    = useState(null)
   const [selectedImage, setSelectedImage] = useState(null)
@@ -197,19 +197,15 @@ const ProductDetail = () => {
   }
 
   const handleAddToCart = async ({ redirectTo } = {}) => {
-    if (!user) {
-      sessionStorage.setItem('pendingCartItem', JSON.stringify({ productId: product._id, quantity }))
-      navigate('/login', { state: { from: redirectTo || location.pathname } })
-      return
-    }
     setAdding(true)
     try {
-      await api.post('/api/cart/items', { productId: product._id, quantity })
-      fetchCartCount()
-      if (redirectTo) {
-        navigate(redirectTo)
-      } else {
-        toast.success('Added to cart!')
+      const success = await addItem(product, quantity)
+      if (success) {
+        if (redirectTo) {
+          navigate(redirectTo)
+        } else {
+          toast.success('Added to cart!')
+        }
       }
     } catch {
       toast.error('Failed to add to cart')
@@ -608,13 +604,34 @@ const ProductDetail = () => {
                     {adding ? 'Adding to Cart...' : `Add to Cart — ₹${(product.price * quantity).toLocaleString('en-IN')}`}
                   </button>
 
-                  <button
-                    onClick={() => handleAddToCart({ redirectTo: '/checkout' })}
-                    disabled={adding}
-                    className="w-full h-14 btn btn-accent rounded-full transition-all disabled:opacity-50 flex items-center justify-center gap-2 text-sm shadow-gold"
-                  >
-                    Buy Now
-                  </button>
+                  <div className="grid grid-cols-2 gap-3">
+                    <button
+                      onClick={() => handleAddToCart({ redirectTo: '/checkout' })}
+                      disabled={adding}
+                      className="w-full h-14 btn btn-accent rounded-full transition-all disabled:opacity-50 flex items-center justify-center gap-2 text-sm shadow-gold"
+                    >
+                      Buy Now
+                    </button>
+
+                    <a
+                      href={`https://wa.me/7665306403?text=${encodeURIComponent(
+                        `Hello Daatasa! I want to place an order.\n\n` +
+                        `*Product Details:*\n` +
+                        `*Item:* ${product.name}\n` +
+                        `*Quantity:* ${quantity}\n` +
+                        (product.size || product.weight ? `*Size/Weight:* ${product.size || product.weight}\n` : '') +
+                        `*Total Price:* ₹${(product.price * quantity).toLocaleString('en-IN')}\n` +
+                        `*Image:* ${product.image?.startsWith('http') ? product.image : product.image}\n\n` +
+                        `Please help me process this order!`
+                      )}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="w-full h-14 rounded-full transition-all flex items-center justify-center gap-2 text-sm font-bold text-white shadow-md hover:scale-[1.02]"
+                      style={{ background: '#25D366' }}
+                    >
+                      WhatsApp Order
+                    </a>
+                  </div>
 
                   {/* ── Subscriptions ── */}
                   {plans.length > 0 && (

@@ -4,6 +4,7 @@ import { FiArrowLeft, FiPrinter, FiX, FiRefreshCcw, FiExternalLink, FiHelpCircle
 import { toast } from 'react-toastify';
 import api from '../api/axios';
 import OrderTimeline from '../components/OrderTimeline';
+import { formatOrderId } from '../utils/formatOrderId';
 import { useSocket } from '../hooks/useSocket';
 
 const fmtINR = (val) => `₹${Number(val || 0).toLocaleString('en-IN')}`;
@@ -44,6 +45,24 @@ const OrderDetail = () => {
       toast.error('Failed to load order details');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleDownloadInvoice = async () => {
+    try {
+      const res = await api.get(`/api/invoices/${id}/download`, {
+        responseType: 'blob' // Important for file downloads
+      });
+      const url = window.URL.createObjectURL(new Blob([res.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `${order?.invoiceNumber || order?._id}.pdf`);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      toast.error('Could not download invoice. Make sure order is confirmed.');
     }
   };
 
@@ -96,14 +115,14 @@ const OrderDetail = () => {
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
           <div>
             <h1 className="text-2xl font-black" style={{ color: 'var(--text-primary)', fontFamily: 'var(--font-display)' }}>
-              Order #{order._id.slice(-8).toUpperCase()}
+              Order #{formatOrderId(order)}
             </h1>
             <p className="text-sm mt-1" style={{ color: 'var(--text-muted)' }}>
               Placed on {new Date(order.createdAt).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })}
             </p>
           </div>
           <div className="flex gap-3">
-            <button className="px-4 py-2 rounded-xl text-sm font-bold flex items-center gap-2" style={{ background: 'var(--bg-surface)', color: 'var(--text-primary)', border: '1px solid var(--border-color)' }}>
+            <button onClick={handleDownloadInvoice} className="px-4 py-2 rounded-xl text-sm font-bold flex items-center gap-2" style={{ background: 'var(--bg-surface)', color: 'var(--text-primary)', border: '1px solid var(--border-color)' }}>
               <FiPrinter /> Invoice
             </button>
             {isCancellable && (

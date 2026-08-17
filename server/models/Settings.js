@@ -68,6 +68,14 @@ const settingsSchema = new mongoose.Schema(
     // Temporary fields for active OTP flow
     adminOtpHash: { type: String, select: false },
     adminOtpExpires: { type: Date, select: false },
+
+    // 🏢 Company Details for Invoice 🏢
+    companyDetails: {
+      name: { type: String, default: 'Daatasa Retail Private Limited' },
+      email: { type: String, default: 'support@daatasa.com' },
+      address: { type: String, default: 'B-302, Phase 1, Industrial Area, Maharashtra - 410209' },
+      gstin: { type: String, default: '29AAAAA0000A1Z5' },
+    },
   },
   {
     timestamps: true,

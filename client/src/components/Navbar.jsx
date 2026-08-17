@@ -9,7 +9,7 @@ import { useNotificationStore } from '../store/notifications'
 import api from '../api/axios'
 import {
   ShoppingCart, User, LogOut, Menu, X, Package,
-  Heart, Bell, ChevronDown, Shield, Search, Sparkles, Loader2, HelpCircle, Globe
+  Heart, Bell, ChevronDown, Shield, Search, Sparkles, Loader2, HelpCircle, Globe, Briefcase
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
@@ -337,10 +337,10 @@ const Navbar = () => {
                       className="w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-extrabold"
                       style={{ background: 'var(--gold)', color: 'var(--navy)' }}
                     >
-                      {user.name?.charAt(0)?.toUpperCase()}
+                      {(user.name || 'U').charAt(0).toUpperCase()}
                     </div>
                     <span className="text-[13px] font-semibold text-white max-w-[72px] truncate hidden lg:block">
-                      {user.name?.split(' ')[0]}
+                      {(user.name || 'User').split(' ')[0]}
                     </span>
                     <ChevronDown size={13} className={`text-white/45 transition-transform duration-200 ${userMenuOpen ? 'rotate-180' : ''}`} />
                   </button>
@@ -361,12 +361,11 @@ const Navbar = () => {
                       >
                         <div className="px-4 py-3.5" style={{ borderBottom: '1px solid var(--border-color)', background: 'var(--bg-alt)' }}>
                           <div className="flex items-center gap-2.5">
-                            <div className="w-8 h-8 rounded-full flex items-center justify-center text-sm font-extrabold shrink-0"
-                              style={{ background: 'var(--brand-gradient)', color: 'white' }}>
-                              {user.name?.charAt(0)?.toUpperCase()}
+                            <div className="w-10 h-10 rounded-full flex items-center justify-center font-extrabold" style={{ background: 'var(--brand-gradient)', color: 'white' }}>
+                              {(user.name || 'U').charAt(0).toUpperCase()}
                             </div>
-                            <div>
-                              <p className="text-xs font-bold" style={{ color: 'var(--text-primary)' }}>{user.name}</p>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-xs font-bold" style={{ color: 'var(--text-primary)' }}>{user.name || 'User'}</p>
                               <p className="text-[11px] truncate max-w-[140px]" style={{ color: 'var(--text-muted)' }}>{user.email}</p>
                             </div>
                           </div>
@@ -376,6 +375,7 @@ const Navbar = () => {
                             { to: '/profile', icon: User, label: t('navbar.profile', 'My Profile') },
                             ...(isCustomer ? [
                               { to: '/orders', icon: Package, label: t('navbar.orders', 'My Orders') },
+                              { to: '/b2b', icon: Briefcase, label: t('navbar.bulkOrders', 'Bulk Orders') },
                               { to: '/wishlist', icon: Heart, label: t('navbar.wishlist', 'Wishlist') },
                               { to: '/support', icon: HelpCircle, label: t('navbar.helpCenter', 'Support Center') },
                             ] : []),
@@ -581,12 +581,12 @@ const Navbar = () => {
                 {user && (
                   <div className="flex items-center gap-3 px-4 py-3.5 rounded-2xl mb-4"
                     style={{ background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.10)' }}>
-                    <div className="w-10 h-10 rounded-full flex items-center justify-center text-sm font-extrabold shrink-0"
+                    <div className="w-12 h-12 rounded-full flex items-center justify-center text-lg font-extrabold shadow-md"
                       style={{ background: 'var(--gold)', color: 'var(--navy)' }}>
-                      {user.name?.charAt(0)?.toUpperCase()}
+                      {(user.name || 'U').charAt(0).toUpperCase()}
                     </div>
                     <div>
-                      <p className="text-[13px] font-bold text-white">{user.name}</p>
+                      <p className="text-[13px] font-bold text-white">{user.name || 'User'}</p>
                       <p className="text-[11px] truncate max-w-[200px]" style={{ color: 'rgba(255,255,255,0.50)' }}>{user.email}</p>
                     </div>
                   </div>
@@ -656,6 +656,7 @@ const Navbar = () => {
                       {isCustomer && (
                         <>
                           <Link to="/orders" className={mobileLinkCls('/orders')}><Package size={16} className="shrink-0" />{t('navbar.orders', 'My Orders')}</Link>
+                          <Link to="/b2b" className={mobileLinkCls('/b2b')}><Briefcase size={16} className="shrink-0" />{t('navbar.bulkOrders', 'Bulk Orders')}</Link>
                           <Link to="/wishlist" className={mobileLinkCls('/wishlist')}><Heart size={16} className="shrink-0" />{t('navbar.wishlist', 'Wishlist')}</Link>
                           <Link to="/support" className={mobileLinkCls('/support')}><HelpCircle size={16} className="shrink-0" />{t('navbar.help', 'Help')}</Link>
                         </>

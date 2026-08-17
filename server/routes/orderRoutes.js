@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const Order = require('../models/Order');
+const { getNextInvoiceNumber } = require('../utils/helpers');
 const Cart = require('../models/Cart');
 const Product = require('../models/Product');
 const Coupon = require('../models/Coupon');
@@ -36,21 +37,42 @@ async function pushStatusAndNotify(order, status, note, updatedBy, notificationD
 // ========================================================================
 // CREATE ORDER - IMPROVED FLOW
 // ========================================================================
-router.post('/', auth, async (req, res) => {
+router.post('/', auth.optional, async (req, res) => {
   try {
-    const { paymentMethod, couponCode } = req.body;
+    const { paymentMethod, couponCode, guestEmail, guestCartItems } = req.body;
 
-    // 1️⃣ GET CART WITH PRODUCT DETAILS
-    const cart = await Cart.findOne({ user: req.user._id }).populate('items.product');
+    if (!req.user && paymentMethod === 'COD') {
+      return res.status(400).json({ message: 'Cash on Delivery is not available for Guest Checkout' });
+    }
 
-    if (!cart || cart.items.length === 0) {
-      return res.status(400).json({ message: 'Cart is empty' });
+    let cartItems = [];
+    if (req.user) {
+      // 1️⃣ GET CART WITH PRODUCT DETAILS FOR LOGGED IN USERS
+      const cart = await Cart.findOne({ user: req.user._id }).populate('items.product');
+      if (!cart || cart.items.length === 0) {
+        return res.status(400).json({ message: 'Cart is empty' });
+      }
+      cartItems = cart.items;
+    } else {
+      // 1️⃣ PARSE GUEST CART ITEMS
+      if (!guestCartItems || guestCartItems.length === 0) {
+        return res.status(400).json({ message: 'Cart is empty' });
+      }
+      const productIds = guestCartItems.map(i => i.product._id || i.product);
+      const products = await Product.find({ _id: { $in: productIds } });
+      cartItems = guestCartItems.map(item => {
+        const dbProduct = products.find(p => p._id.toString() === (item.product._id || item.product).toString());
+        return {
+          product: dbProduct,
+          quantity: item.quantity
+        };
+      });
     }
 
     // 2️⃣ VALIDATE STOCK
     const stockIssues = [];
 
-    for (const item of cart.items) {
+    for (const item of cartItems) {
       if (!item.product) continue;
       if (item.product.stock < item.quantity) {
         stockIssues.push({
@@ -68,7 +90,7 @@ router.post('/', auth, async (req, res) => {
     // If there are stock issues, return them WITHOUT modifying the cart
     if (stockIssues.length > 0) {
       // Return all cart items with stock info so frontend can display the full cart
-      const allItems = cart.items
+      const allItems = cartItems
         .filter(i => i.product)
         .map(i => ({
           itemId: i._id,
@@ -89,7 +111,7 @@ router.post('/', auth, async (req, res) => {
     }
 
     // 3️⃣ PREPARE ORDER ITEMS (all items passed stock check if we reach here)
-    const orderItems = cart.items.filter(i => i.product).map(item => ({
+    const orderItems = cartItems.filter(i => i.product).map(item => ({
       product: item.product._id,
       name: item.product.name,
       image: item.product.image,
@@ -129,7 +151,7 @@ router.post('/', auth, async (req, res) => {
         }
 
         // Check user-specific usage
-        if (coupon.usagePerUser) {
+        if (coupon.usagePerUser && req.user) {
           const userUsage = await Order.countDocuments({
             user: req.user._id,
             'coupon.code': couponCode.toUpperCase()
@@ -194,7 +216,8 @@ router.post('/', auth, async (req, res) => {
 
     // 5️⃣ CREATE ORDER DATA
     const orderData = {
-      user: req.user._id,
+      user: req.user ? req.user._id : null,
+      guestEmail: guestEmail || null,
       orderItems,
       shippingAddress: addr,
       paymentMethod,
@@ -210,7 +233,7 @@ router.post('/', auth, async (req, res) => {
       statusHistory: [{
         status: 'PENDING',
         note: 'Order placed',
-        updatedBy: req.user._id,
+        updatedBy: req.user ? req.user._id : null,
         updatedAt: new Date()
       }]
     };
@@ -221,7 +244,7 @@ router.post('/', auth, async (req, res) => {
       await order.save({ session });
 
       // 7️⃣ REDUCE STOCK (ATOMIC)
-      for (const item of cart.items) {
+      for (const item of cartItems) {
         if (!item.product) continue; // Skip items where product was deleted
         const updated = await Product.findOneAndUpdate(
           { _id: item.product._id, stock: { $gte: item.quantity } },
@@ -239,21 +262,23 @@ router.post('/', auth, async (req, res) => {
         order.statusHistory.push({
           status: 'COD_CONFIRMED',
           note: 'Order confirmed (Cash on Delivery)',
-          updatedBy: req.user._id,
+          updatedBy: req.user ? req.user._id : null,
           updatedAt: new Date()
         });
         
-        // Generate unique invoice number using timestamp + order ID suffix (race-condition safe)
-        const year = new Date().getFullYear();
-        const ts = Date.now().toString(36).toUpperCase();          // base-36 timestamp
-        const suffix = order._id.toString().slice(-4).toUpperCase(); // last 4 chars of order ID
-        order.invoiceNumber = `INV-${year}-${ts}${suffix}`;
+        // Generate unique incremental invoice number (INV0000000001)
+        
         
         await order.save({ session });
 
         // Clear cart
-        cart.items = [];
-        await cart.save({ session });
+        if (req.user) {
+          const cart = await Cart.findOne({ user: req.user._id });
+          if (cart) {
+            cart.items = [];
+            await cart.save({ session });
+          }
+        }
 
         // Increment coupon usage
         if (appliedCoupon) {
@@ -281,18 +306,7 @@ router.post('/', auth, async (req, res) => {
     if (paymentMethod === 'COD') {
       try {
         const { sendOrderSuccessEmail } = require('../services/emailService');
-        await sendOrderSuccessEmail({
-          to: order.user.email,
-          userName: order.user.name,
-          orderId: order._id.toString(),
-          totalPrice: order.totalPrice,
-          paymentMethod: 'Cash on Delivery',
-          items: order.orderItems.map(i => ({
-            name: i.name,
-            quantity: i.quantity,
-            price: i.price
-          }))
-        });
+        await sendOrderSuccessEmail(order, req.user ? order.user.email : guestEmail);
       } catch (emailErr) {
         console.error('COD SUCCESS EMAIL ERROR:', emailErr);
       }
@@ -316,20 +330,41 @@ router.post('/', auth, async (req, res) => {
       }
 
       await UserActivity.create({
-        user: req.user._id,
+        user: req.user ? req.user._id : null,
         action: 'ORDER_PLACED',
         details: {
           orderId: order._id.toString(),
           invoiceNumber: order.invoiceNumber,
           totalPrice: order.totalPrice,
           paymentMethod: order.paymentMethod,
-          itemsCount: order.orderItems.length
+          itemsCount: order.orderItems.length,
+          guest: !req.user
         },
         ipAddress,
         location
       });
     } catch (activityErr) {
       console.error('Failed to log order activity:', activityErr);
+    }
+
+    if (paymentMethod === 'Online') {
+      const razorpay = require('../config/razorpay');
+      const razorpayOrder = await razorpay.orders.create({
+        amount: Math.round(order.totalPrice * 100),
+        currency: 'INR',
+        receipt: `receipt_${order._id}`,
+        notes: {
+          orderId: order._id.toString(),
+          userId: req.user ? req.user._id.toString() : 'guest'
+        }
+      });
+      
+      order.paymentInfo = {
+        razorpay_order_id: razorpayOrder.id
+      };
+      await order.save();
+      
+      return res.status(201).json({ order, razorpayOrder });
     }
 
     res.status(201).json(order);
@@ -344,10 +379,25 @@ router.post('/', auth, async (req, res) => {
 // PRICE PREVIEW — returns full cart breakdown using live DB settings
 // Called by Cart and Checkout pages to display accurate totals
 // ========================================================================
-router.get('/price-preview', auth, async (req, res) => {
+router.post('/price-preview', auth.optional, async (req, res) => {
   try {
-    const cart = await Cart.findOne({ user: req.user._id }).populate('items.product');
-    if (!cart || cart.items.length === 0) {
+    let cartItems = [];
+    if (req.user) {
+      const cart = await Cart.findOne({ user: req.user._id }).populate('items.product');
+      if (cart) cartItems = cart.items;
+    } else {
+      const { guestCartItems } = req.body;
+      if (guestCartItems && guestCartItems.length > 0) {
+        const productIds = guestCartItems.map(i => i.product._id || i.product);
+        const products = await Product.find({ _id: { $in: productIds } });
+        cartItems = guestCartItems.map(item => {
+          const dbProduct = products.find(p => p._id.toString() === (item.product._id || item.product).toString());
+          return { product: dbProduct, quantity: item.quantity };
+        });
+      }
+    }
+
+    if (!cartItems || cartItems.length === 0) {
       return res.json({ itemsPrice: 0, taxPrice: 0, shippingPrice: 0, totalPrice: 0, gstRate: 0, freeShippingThreshold: 500 });
     }
 
@@ -355,7 +405,7 @@ router.get('/price-preview', auth, async (req, res) => {
     const gstRatePct = settings.gstEnabled ? settings.gstRate : 0;
     const gstMultiplier = gstRatePct / 100;
 
-    const itemsPrice = cart.items.reduce(
+    const itemsPrice = cartItems.reduce(
       (total, item) => total + (item.product?.price || 0) * item.quantity,
       0
     );
@@ -442,17 +492,30 @@ router.post('/fail', auth, async (req, res) => {
 // ========================================================================
 // VERIFY COUPON (BEFORE CHECKOUT) — returns full price breakdown
 // ========================================================================
-router.post('/verify-coupon', auth, async (req, res) => {
+router.post('/verify-coupon', auth.optional, async (req, res) => {
   try {
-    const { couponCode } = req.body;
+    const { couponCode, guestCartItems } = req.body;
 
-    const cart = await Cart.findOne({ user: req.user._id }).populate('items.product');
+    let cartItems = [];
+    if (req.user) {
+      const cart = await Cart.findOne({ user: req.user._id }).populate('items.product');
+      if (cart) cartItems = cart.items;
+    } else {
+      if (guestCartItems && guestCartItems.length > 0) {
+        const productIds = guestCartItems.map(i => i.product._id || i.product);
+        const products = await Product.find({ _id: { $in: productIds } });
+        cartItems = guestCartItems.map(item => {
+          const dbProduct = products.find(p => p._id.toString() === (item.product._id || item.product).toString());
+          return { product: dbProduct, quantity: item.quantity };
+        });
+      }
+    }
 
-    if (!cart || cart.items.length === 0) {
+    if (!cartItems || cartItems.length === 0) {
       return res.status(400).json({ message: 'Cart is empty' });
     }
 
-    const itemsPrice = cart.items.reduce(
+    const itemsPrice = cartItems.reduce(
       (total, item) => total + (item.product?.price || 0) * item.quantity,
       0
     );
@@ -488,7 +551,7 @@ router.post('/verify-coupon', auth, async (req, res) => {
       return res.status(400).json({ message: 'Coupon usage limit exceeded' });
     }
 
-    if (coupon.usagePerUser) {
+    if (coupon.usagePerUser && req.user) {
       const userUsage = await Order.countDocuments({
         user: req.user._id,
         'coupon.code': couponCode.toUpperCase()
@@ -771,12 +834,17 @@ router.get('/', auth, auth.admin, auth.hasPermission('orders'), async (req, res)
 
     if (search) {
       const User = require('../models/User');
+const { getNextInvoiceNumber } = require('../utils/helpers');
       const users = await User.find({ name: { $regex: search, $options: 'i' } }).select('_id');
       const userIds = users.map(u => u._id);
       
       query.$or = [
         { user: { $in: userIds } },
-        { $expr: { $regexMatch: { input: { $toString: '$_id' }, regex: search, options: 'i' } } }
+        { $expr: { $regexMatch: { input: { $toString: '$_id' }, regex: search, options: 'i' } } },
+        { orderIdString: { $regex: search, $options: 'i' } },
+        { invoiceNumber: { $regex: search, $options: 'i' } },
+        { 'paymentInfo.razorpay_payment_id': { $regex: search, $options: 'i' } },
+        { 'paymentInfo.razorpay_order_id': { $regex: search, $options: 'i' } }
       ];
     }
 
@@ -910,6 +978,12 @@ router.put('/:id/deliver', auth, auth.admin, auth.hasPermission('orders'), async
       return res.status(404).json({ message: 'Order not found' });
     }
 
+    if (!order.invoiceNumber) {
+      order.invoiceNumber = await getNextInvoiceNumber();
+    }
+    
+    order.isPaid = true;
+    order.paymentStatus = 'PAID';
     order.isDelivered = true;
     order.deliveredAt = new Date();
     await pushStatusAndNotify(order, 'DELIVERED', 'Marked as delivered by admin', req.user._id, {
@@ -919,6 +993,13 @@ router.put('/:id/deliver', auth, auth.admin, auth.hasPermission('orders'), async
       link: `/orders/${order._id}`
     });
     await order.save();
+
+    const { sendInvoiceEmail } = require('../services/emailService');
+    const userEmail = order.user ? order.user.email : order.guestEmail;
+    if (userEmail) {
+      await sendInvoiceEmail(order, userEmail)
+        .catch(err => console.error('Error sending invoice email:', err));
+    }
 
     await logAction(req, 'MARK_ORDER_DELIVERED', 'ORDER', order._id);
 

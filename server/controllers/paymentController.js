@@ -1,6 +1,7 @@
 const crypto = require('crypto');
 const razorpay = require('../config/razorpay');
 const Order = require('../models/Order');
+const { getNextInvoiceNumber } = require('../utils/helpers');
 const Cart = require('../models/Cart');
 const Coupon = require('../models/Coupon');
 const Notification = require('../models/Notification');
@@ -15,14 +16,20 @@ exports.createRazorpayOrder = async (req, res) => {
   try {
     const { orderId } = req.body;
 
-    // Find order and verify it belongs to this user
-    const order = await Order.findOne({
-      _id: orderId,
-      user: req.user._id
-    });
+    const order = await Order.findById(orderId);
 
     if (!order) {
       return res.status(404).json({ message: 'Order not found' });
+    }
+
+    if (req.user) {
+      if (order.user && order.user.toString() !== req.user._id.toString()) {
+        return res.status(403).json({ message: 'Unauthorized access to this order' });
+      }
+    } else {
+      if (order.user) {
+        return res.status(403).json({ message: 'Unauthorized access to this order' });
+      }
     }
 
     // Security: Only create Razorpay order for PENDING payments
@@ -37,7 +44,7 @@ exports.createRazorpayOrder = async (req, res) => {
       receipt: `receipt_${order._id}`,
       notes: {
         orderId: order._id.toString(),
-        userId: req.user._id.toString()
+        ...(req.user && { userId: req.user._id.toString() })
       }
     });
 
@@ -70,15 +77,23 @@ exports.verifyPayment = async (req, res) => {
       razorpay_signature
     } = req.body;
 
-    // Find order
     const order = await Order.findOne({
-      user: req.user._id,
       'paymentInfo.razorpay_order_id': razorpay_order_id,
       paymentStatus: 'PENDING'
     });
 
     if (!order) {
       return res.status(404).json({ message: 'Order not found or already processed' });
+    }
+
+    if (req.user) {
+      if (order.user && order.user.toString() !== req.user._id.toString()) {
+        return res.status(403).json({ message: 'Unauthorized access to this order' });
+      }
+    } else {
+      if (order.user) {
+        return res.status(403).json({ message: 'Unauthorized access to this order' });
+      }
     }
 
     // 1️⃣ VERIFY SIGNATURE
@@ -93,8 +108,9 @@ exports.verifyPayment = async (req, res) => {
     }
 
     // 2️⃣ FETCH PAYMENT DETAILS FROM RAZORPAY (VERIFY AMOUNT)
+    let payment;
     try {
-      const payment = await razorpay.payments.fetch(razorpay_payment_id);
+      payment = await razorpay.payments.fetch(razorpay_payment_id);
       
       // Security: Verify amount matches
       const expectedAmount = Math.round(order.totalPrice * 100);
@@ -120,31 +136,39 @@ exports.verifyPayment = async (req, res) => {
     order.isPaid = true;
     order.paidAt = Date.now();
     order.paymentStatus = 'PAID';
-    order.statusHistory.push({ status: 'PAID', note: 'Payment verified successfully (Online)', updatedBy: req.user._id, updatedAt: new Date() });
-    try { const notif = new Notification({ user: order.user._id, type: 'ORDER_CONFIRMED', title: 'Payment Confirmed', message: 'Your online payment has been confirmed.', link: `/orders/${order._id}` }); await notif.save(); getIO().to(`user:${notif.user}`).emit('notification', notif); } catch(e) {}
+    order.statusHistory.push({ status: 'PAID', note: 'Payment verified successfully (Online)', updatedBy: req.user?._id || null, updatedAt: new Date() });
+    try { if (order.user) { const notif = new Notification({ user: order.user._id || order.user, type: 'ORDER_CONFIRMED', title: 'Payment Confirmed', message: 'Your online payment has been confirmed.', link: `/orders/${order._id}` }); await notif.save(); getIO().to(`user:${notif.user}`).emit('notification', notif); } } catch(e) {}
     try { getIO().to(`order:${order._id}`).emit('orderStatusUpdated', order); } catch(e) {}
     
     // Generate invoice number
     if (!order.invoiceNumber) {
-      const year = new Date().getFullYear();
-      const ts = Date.now().toString(36).toUpperCase();
-      const suffix = order._id.toString().slice(-4).toUpperCase();
-      order.invoiceNumber = `INV-${year}-${ts}${suffix}`;
+      order.invoiceNumber = await getNextInvoiceNumber();
     }
+
+    let method = payment?.method;
+    let vpa = payment?.vpa || (payment?.upi ? payment.upi.vpa : null);
+    let cardNetwork = payment?.card ? payment.card.network : null;
+    let bank = payment?.bank;
 
     order.paymentInfo = {
       razorpay_order_id,
       razorpay_payment_id,
-      razorpay_signature
+      razorpay_signature,
+      method,
+      vpa,
+      cardNetwork,
+      bank
     };
 
     await order.save();
 
     // 4️⃣ CLEAR USER'S CART (Only after successful payment)
-    await Cart.findOneAndUpdate(
-      { user: req.user._id },
-      { items: [] }
-    );
+    if (req.user) {
+      await Cart.findOneAndUpdate(
+        { user: req.user._id },
+        { items: [] }
+      );
+    }
 
     // 5️⃣ INCREMENT COUPON USAGE (if coupon was used)
     if (order.coupon && order.coupon.code) {
@@ -163,19 +187,17 @@ exports.verifyPayment = async (req, res) => {
     // ── 6️⃣ SEND SUCCESS EMAIL (Background) ───────────────────────────────
     try {
       const { sendOrderSuccessEmail } = require('../services/emailService');
-      const populatedOrder = await order.populate('user', 'name email');
-      await sendOrderSuccessEmail({
-        to:            populatedOrder.user.email,
-        userName:      populatedOrder.user.name,
-        orderId:       order._id.toString(),
-        totalPrice:    order.totalPrice,
-        paymentMethod: 'Online Payment',
-        items:         order.orderItems.map(i => ({
-          name:     i.name,
-          quantity: i.quantity,
-          price:    i.price
-        }))
-      });
+      let toEmail, toName;
+      if (order.user) {
+        const populatedOrder = await order.populate('user', 'name email');
+        toEmail = populatedOrder.user.email;
+        toName = populatedOrder.user.name;
+      } else {
+        toEmail = order.guestEmail;
+        toName = order.shippingAddress?.name || 'Valued Customer';
+      }
+      
+      await sendOrderSuccessEmail(order, toEmail);
     } catch (emailErr) {
       console.error('ONLINE SUCCESS EMAIL ERROR:', emailErr);
     }
@@ -241,10 +263,7 @@ exports.razorpayWebhook = async (req, res) => {
             try { getIO().to(`order:${order._id}`).emit('orderStatusUpdated', order); } catch(e) {}
 
             if (!order.invoiceNumber) {
-              const year   = new Date().getFullYear();
-              const ts     = Date.now().toString(36).toUpperCase();
-              const suffix = order._id.toString().slice(-4).toUpperCase();
-              order.invoiceNumber = `INV-${year}-${ts}${suffix}`;
+              order.invoiceNumber = await getNextInvoiceNumber();
             }
 
             order.paymentInfo = {
@@ -269,14 +288,7 @@ exports.razorpayWebhook = async (req, res) => {
             try {
               const { sendOrderSuccessEmail } = require('../services/emailService');
               const populatedOrder = await order.populate('user', 'name email');
-              await sendOrderSuccessEmail({
-                to:            populatedOrder.user.email,
-                userName:      populatedOrder.user.name,
-                orderId:       order._id.toString(),
-                totalPrice:    order.totalPrice,
-                paymentMethod: 'Online Payment',
-                items:         order.orderItems.map(i => ({ name: i.name, quantity: i.quantity, price: i.price }))
-              });
+              await sendOrderSuccessEmail(populatedOrder, populatedOrder.user.email);
             } catch (emailErr) {
               console.error('WEBHOOK EMAIL ERROR (non-fatal):', emailErr);
             }
@@ -340,10 +352,7 @@ exports.razorpayWebhook = async (req, res) => {
               }
             });
             
-            const year   = new Date().getFullYear();
-            const ts     = Date.now().toString(36).toUpperCase();
-            newOrder.invoiceNumber = `INV-${year}-${ts}SUB`;
-            
+            newOrder.invoiceNumber = await getNextInvoiceNumber();
             await newOrder.save();
             console.log(`WEBHOOK: Auto-generated subscription order ${newOrder._id} for user ${userId}`);
           }
@@ -368,4 +377,4 @@ exports.razorpayWebhook = async (req, res) => {
     console.error('WEBHOOK ERROR:', error);
     res.status(500).send('Server Error');
   }
-};
+};

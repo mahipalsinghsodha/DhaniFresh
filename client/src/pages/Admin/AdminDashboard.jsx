@@ -311,7 +311,8 @@ const AdminDashboard = () => {
 
           <SectionCard title="Analytics & Tools" icon={FiBarChart2} delay={0.20}>
             <QuickCard title="Analytics"         desc="Sales reports and insights"           icon={FiBarChart2}  to="/admin/analytics"      accent delay={0.25} />
-            <QuickCard title="Support Tickets"   desc="Customer support messages"            icon={FiActivity}   to="/admin/support"                   delay={0.30} />
+            <QuickCard title="Support Tickets"   desc="Customer support messages"            icon={FiActivity}   to="/support-panel"                   delay={0.30} />
+            {hasPermission('orders') && <QuickCard title="B2B Inquiries" desc="Manage bulk wholesale orders" icon={FiShoppingBag} to="/admin/b2b" delay={0.32} />}
             {isSuperAdmin && <>
               <QuickCard title="Platform Settings" desc="GST rate and shipping config"        icon={FiSettings}   to="/admin/settings"                  delay={0.35} />
               <QuickCard title="Admin Management" desc="Manage admin accounts"              icon={FiShield}     to="/admin/manage-admins"  accent delay={0.40} />

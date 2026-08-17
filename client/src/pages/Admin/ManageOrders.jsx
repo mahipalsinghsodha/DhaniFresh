@@ -12,6 +12,7 @@ import { useAuth } from '../../context/AuthContext'
 import RestrictedAccess from '../../components/RestrictedAccess'
 import { useSocket } from '../../hooks/useSocket'
 import { useConfirm } from '../../context/ConfirmContext'
+import { formatOrderId } from '../../utils/formatOrderId'
 
 const fmtINR = (val) => `₹${Number(val || 0).toLocaleString('en-IN')}`
 const qrUrl = (data, size = 120) => `https://api.qrserver.com/v1/create-qr-code/?size=${size}x${size}&data=${encodeURIComponent(data)}&margin=6`
@@ -64,7 +65,7 @@ const shippingLabelHTML = (o) => {
     </div>
     <div style="border-top: 2px dashed #000; border-bottom: 2px dashed #000; padding: 15px 0; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center;">
       <div>
-        <p style="font-size: 12px; font-weight: bold; margin: 0 0 4px 0;">ORDER #${o._id.slice(-8).toUpperCase()}</p>
+        <p style="font-size: 12px; font-weight: bold; margin: 0 0 4px 0;">ORDER #${formatOrderId(o)}</p>
         <p style="font-size: 12px; margin: 0 0 4px 0;">Date: ${new Date(o.createdAt).toLocaleDateString('en-IN')}</p>
         <p style="font-size: 12px; margin: 0 0 4px 0;">Items: ${o.orderItems?.length || 0}</p>
         <p style="font-size: 14px; font-weight: 900; margin: 10px 0 0 0;">Collect Amount: ${o.paymentMethod === 'COD' && o.paymentStatus !== 'PAID' ? '₹' + Number(o.totalPrice).toFixed(2) : '₹0.00'}</p>
@@ -112,6 +113,22 @@ const ManageOrders = () => {
     d.setDate(d.getDate() - days)
     return d.toISOString().split('T')[0]
   }
+
+  const downloadInvoice = async (orderId) => {
+    try {
+      const res = await api.get(`/api/invoices/${orderId}/download`, { responseType: 'blob' })
+      const url = window.URL.createObjectURL(new Blob([res.data]))
+      const link = document.createElement('a')
+      link.href = url
+      link.setAttribute('download', `INV-${orderId.slice(-8).toUpperCase()}.pdf`)
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      window.URL.revokeObjectURL(url)
+    } catch (err) { 
+      toast.error('Could not download invoice') 
+    }
+  }
   const [startDate, setStartDate] = useState(getDaysAgo(15))
   const [endDate, setEndDate] = useState(getDaysAgo(0))
 
@@ -137,7 +154,7 @@ const ManageOrders = () => {
       socket.on('newOrder', (newOrder) => {
         setOrders(prev => [newOrder, ...prev])
         setTotalOrders(prev => prev + 1)
-        toast.info(`New order received: #${newOrder._id.slice(-8).toUpperCase()}`)
+        toast.info(`New order received: #${formatOrderId(newOrder)}`)
       })
       
       socket.on('orderStatusUpdated', (updatedOrder) => {
@@ -438,7 +455,7 @@ const ManageOrders = () => {
 
                     <div style={{ flex: 1, minWidth: 0, cursor: 'pointer' }} onClick={() => setExpandedId(isExp ? null : o._id)}>
                       <div className="flex flex-wrap items-center gap-2 mb-1.5">
-                        <span style={{ fontSize: 14, fontWeight: 800, color: 'var(--text-primary)', fontFamily: 'monospace' }}>#{o._id.slice(-8).toUpperCase()}</span>
+                        <span style={{ fontSize: 14, fontWeight: 800, color: 'var(--text-primary)', fontFamily: 'monospace' }}>#{formatOrderId(o)}</span>
                         <StatusBadge order={o} />
                         <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', background: 'var(--bg-alt)', padding: '2px 8px', borderRadius: 99, border: '1px solid var(--border-color)' }}>{o.paymentMethod}</span>
                       </div>
@@ -531,10 +548,10 @@ const ManageOrders = () => {
 
                               {/* Actions */}
                               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, paddingTop: 4 }}>
-                                <button onClick={() => openPrint(invoiceHTML(o), `Invoice #${o._id.slice(-8).toUpperCase()}`)} className="btn btn-secondary text-xs h-auto py-2">
+                                <button onClick={() => downloadInvoice(o._id)} className="btn btn-secondary text-xs h-auto py-2">
                                   <FiPrinter size={13} /> Invoice
                                 </button>
-                                <button onClick={() => openPrint(shippingLabelHTML(o), `Label #${o._id.slice(-8).toUpperCase()}`)} className="btn btn-secondary text-xs h-auto py-2">
+                                <button onClick={() => openPrint(shippingLabelHTML(o), `Label #${formatOrderId(o)}`)} className="btn btn-secondary text-xs h-auto py-2">
                                   <FiTag size={13} /> Shipping Label
                                 </button>
                                 {o.orderStatus === 'PENDING_ACCEPTANCE' && !isVoid(o) && (

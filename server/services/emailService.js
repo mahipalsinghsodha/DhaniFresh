@@ -1,5 +1,5 @@
 const transporter = require('../config/nodemailer');
-const { generateInvoiceBuffer } = require('../utils/invoiceGenerator');
+const { generateInvoiceBuffer } = require('./invoiceService');
 
 // ── Premium Email Template System ─────────────────────────────────────────────
 const brandPrimary = '#1B2F6E';
@@ -75,11 +75,17 @@ const pStyle = "margin:0 0 20px;font-size:15px;color:#334155;line-height:1.8;";
 const h2Style = `margin:0 0 24px;font-size:24px;font-weight:800;color:${brandPrimary};letter-spacing:-0.5px;`;
 
 // ── 1. ORDER CONFIRMED ────────────────────────────────────────────────────────
-const sendOrderSuccessEmail = async ({ to, userName, orderId, totalPrice, items, paymentMethod, invoiceNumber }) => {
-  const sid = orderId.slice(-8).toUpperCase();
+const sendOrderSuccessEmail = async (order, to) => {
+  const userName = order.user ? order.user.name : (order.shippingAddress?.name || 'Customer');
+  const invoiceNumber = order.invoiceNumber;
+  const sid = order.orderIdString || order._id.toString().slice(-8).toUpperCase();
+  const paymentMethod = order.paymentMethod;
+  const items = order.orderItems;
+  const totalPrice = order.totalPrice;
+
   const itemsHtml = items.map(i => `
     <div style="display:flex;justify-content:space-between;padding:12px 0;border-bottom:1px solid #E2E8F0;font-size:14px;">
-      <div style="color:#334155;"><strong>${i.name}</strong> <span style="color:#94A3B8;">×${i.quantity}</span></div>
+      <div style="color:#334155;"><strong>${i.product ? i.product.name : i.name}</strong> <span style="color:#94A3B8;">×${i.quantity}</span></div>
       <div style="font-weight:700;color:${brandPrimary};">₹${(i.price * i.quantity).toFixed(2)}</div>
     </div>`).join('');
 
@@ -108,27 +114,51 @@ const sendOrderSuccessEmail = async ({ to, userName, orderId, totalPrice, items,
   // Hero image: Beautiful Indian spices/food aesthetic
   const heroImg = 'https://images.unsplash.com/photo-1596797882870-8c33deeac224?ixlib=rb-4.0.3&auto=format&fit=crop&w=1200&q=80';
 
-  // Generate PDF Invoice
-  const pdfBuffer = await generateInvoiceBuffer({
-    userName,
-    invoiceNumber: invoiceNumber || sid,
-    paymentMethod,
-    items,
-    totalPrice
-  });
+  // Generate PDF Invoice if invoiceNumber is present
+  const attachments = [];
+  if (invoiceNumber) {
+    try {
+      const invoicePayload = {
+        invoiceNumber,
+        orderId: order._id,
+        date: order.createdAt || new Date(),
+        customer: {
+          name: userName,
+          email: to,
+          address: order.shippingAddress || {}
+        },
+        paymentMethod: order.paymentMethod,
+        paymentStatus: order.paymentStatus === 'PAID' ? 'Paid' : 'Pending',
+        items: order.orderItems.map(item => ({
+          name: item.product ? item.product.name : item.name,
+          quantity: item.quantity,
+          price: item.price,
+          total: item.price * item.quantity
+        })),
+        subtotal: order.itemsPrice || 0,
+        shipping: order.shippingPrice || 0,
+        total: order.totalPrice || 0,
+        transactionId: order.paymentInfo?.razorpay_payment_id,
+        paymentInfo: order.paymentInfo
+      };
+      
+      const pdfBuffer = await generateInvoiceBuffer(invoicePayload);
+      attachments.push({
+        filename: `Invoice_${invoiceNumber}.pdf`,
+        content: pdfBuffer,
+        contentType: 'application/pdf'
+      });
+    } catch (e) {
+      console.error('Failed to generate invoice attachment for success email:', e);
+    }
+  }
 
   await sendWithRetry({ 
     from: FROM(), 
     to, 
     subject: `Order Confirmed: #${sid} | Daatasa`, 
     html: wrap(body, heroImg),
-    attachments: [
-      {
-        filename: `Invoice_${invoiceNumber || sid}.pdf`,
-        content: pdfBuffer,
-        contentType: 'application/pdf'
-      }
-    ]
+    attachments
   });
 };
 
@@ -230,6 +260,71 @@ const sendPasswordResetEmail = async ({ to, userName, resetUrl }) => {
   const heroImg = 'https://images.unsplash.com/photo-1510511459019-5efa325f6e80?ixlib=rb-4.0.3&auto=format&fit=crop&w=1200&q=80';
 
   await sendWithRetry({ from: FROM(), to: `${userName} <${to}>`, subject: 'Reset your Daatasa password', replyTo: process.env.SMTP_USER, html: wrap(body, heroImg) });
+};
+
+// ── 6. INVOICE EMAIL ────────────────────────────────────────────────────────
+const sendInvoiceEmail = async (order, to) => {
+  const userName = order.user ? order.user.name : (order.shippingAddress?.name || 'Customer');
+  const invoiceNumber = order.invoiceNumber;
+  const sid = order.orderIdString || order._id.toString().slice(-8).toUpperCase();
+  const paymentMethod = order.paymentMethod;
+
+  const body = `
+    <h2 style="${h2Style}">Your Invoice is Ready</h2>
+    <p style="${pStyle}">Hi <strong>${userName}</strong>,</p>
+    <p style="${pStyle}">Your order <strong>#${sid}</strong> has been successfully delivered and paid via ${paymentMethod}.</p>
+    <p style="${pStyle}">We have attached your official tax invoice to this email for your records.</p>
+    
+    ${btn('View My Orders', `${CLIENT_URL()}/orders`)}
+  `;
+
+  const heroImg = 'https://images.unsplash.com/photo-1596797882870-8c33deeac224?ixlib=rb-4.0.3&auto=format&fit=crop&w=1200&q=80';
+
+  let attachments = [];
+  if (invoiceNumber) {
+    try {
+      const invoicePayload = {
+        invoiceNumber,
+        orderId: order._id,
+        date: order.createdAt || new Date(),
+        customer: {
+          name: userName,
+          email: to,
+          address: order.shippingAddress || {}
+        },
+        paymentMethod: order.paymentMethod,
+        paymentStatus: order.paymentStatus === 'PAID' ? 'Paid' : 'Pending',
+        items: order.orderItems.map(item => ({
+          name: item.product ? item.product.name : item.name,
+          quantity: item.quantity,
+          price: item.price,
+          total: item.price * item.quantity
+        })),
+        subtotal: order.itemsPrice || 0,
+        shipping: order.shippingPrice || 0,
+        total: order.totalPrice || 0,
+        transactionId: order.paymentInfo?.razorpay_payment_id,
+        paymentInfo: order.paymentInfo
+      };
+      
+      const pdfBuffer = await generateInvoiceBuffer(invoicePayload);
+      attachments.push({
+        filename: `Invoice_${invoiceNumber}.pdf`,
+        content: pdfBuffer,
+        contentType: 'application/pdf'
+      });
+    } catch (e) {
+      console.error('Failed to generate invoice attachment for invoice email:', e);
+    }
+  }
+
+  await sendWithRetry({ 
+    from: FROM(), 
+    to, 
+    subject: `Your Invoice from Daatasa - Order #${sid}`, 
+    html: wrap(body, heroImg),
+    attachments
+  });
 };
 
 // ── 6. CONTACT FORM — Admin notification ──────────────────────────────────────
@@ -510,4 +605,5 @@ module.exports = {
   sendAbandonedCartEmail,
   sendSupportReplyEmail,
   sendAdminOtpEmail,
+  sendInvoiceEmail,
 };

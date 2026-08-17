@@ -200,13 +200,13 @@ export default function AdminSupport() {
   const filtered = sessions.filter(s => {
     const matchF = filter === "ALL" || s.status === filter;
     const q = search.toLowerCase();
-    const matchS = !q || s.guestName?.toLowerCase().includes(q) || s.userId?.name?.toLowerCase().includes(q) || s.sessionId.toLowerCase().includes(q);
-    const isRejectedByMe = s.agentActions?.some(a => a.action === 'REJECTED' && String(a.adminId) === String(user._id));
+    const matchS = !q || s.guestName?.toLowerCase().includes(q) || s.userId?.name?.toLowerCase().includes(q) || s.sessionId?.toLowerCase().includes(q);
+    const isRejectedByMe = s.agentActions?.some(a => a.action === 'REJECTED' && String(a.adminId) === String(user?._id));
     return matchF && matchS && !(isRejectedByMe && s.status === 'WAITING');
   });
 
   const counts = {
-    waiting: sessions.filter(s => s.status === 'WAITING' && !s.agentActions?.some(a => a.action === 'REJECTED' && String(a.adminId) === String(user._id))).length,
+    waiting: sessions.filter(s => s.status === 'WAITING' && !s.agentActions?.some(a => a.action === 'REJECTED' && String(a.adminId) === String(user?._id))).length,
     active: sessions.filter(s => s.status === 'ACTIVE').length,
   };
 
@@ -347,7 +347,7 @@ export default function AdminSupport() {
                       <button onClick={handleAccept} style={{ padding: '6px 12px', borderRadius: 8, border: 'none', background: 'var(--brand-secondary)', color: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Accept Chat</button>
                     </div>
                   )}
-                  {selected.status === 'ACTIVE' && (selected.agentId?._id === user._id || selected.agentId === user._id) && (
+                  {selected.status === 'ACTIVE' && (selected.agentId?._id === user?._id || selected.agentId === user?._id) && (
                     <button onClick={handleClose} style={{ padding: '6px 12px', borderRadius: 8, border: '1px solid var(--border-color)', background: 'var(--bg-alt)', color: 'var(--text-primary)', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Close Chat</button>
                   )}
                 </div>
@@ -373,7 +373,7 @@ export default function AdminSupport() {
                 </div>
 
                 {/* Input Area */}
-                {selected.status === 'ACTIVE' && (selected.agentId?._id === user._id || selected.agentId === user._id) ? (
+                {selected.status === 'ACTIVE' && (selected.agentId?._id === user?._id || selected.agentId === user?._id) ? (
                   <div style={{ padding: '16px 20px', borderTop: '1px solid var(--border-color)', background: 'var(--bg-surface)' }}>
                     <form onSubmit={handleSend} style={{ display: 'flex', gap: 12, alignItems: 'flex-end' }}>
                       <textarea

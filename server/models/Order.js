@@ -16,7 +16,18 @@ const orderSchema = new mongoose.Schema({
   user: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
-    required: true
+    required: false
+  },
+
+  orderIdString: {
+    type: String,
+    unique: true,
+    sparse: true
+  },
+
+  guestEmail: {
+    type: String,
+    trim: true
   },
 
   orderItems: [orderItemSchema],
@@ -74,7 +85,11 @@ refundInfo: {
   paymentInfo: {
     razorpay_order_id: String,
     razorpay_payment_id: String,
-    razorpay_signature: String
+    razorpay_signature: String,
+    method: String,
+    vpa: String,
+    cardNetwork: String,
+    bank: String
   },
 
   // Price breakdown
@@ -146,6 +161,21 @@ refundInfo: {
   }
 }, {
   timestamps: true
+});
+
+orderSchema.pre('save', function (next) {
+  if (this.isNew && !this.orderIdString) {
+    const d = new Date();
+    const yy = d.getFullYear().toString().slice(-2);
+    const mm = (d.getMonth() + 1).toString().padStart(2, '0');
+    const dd = d.getDate().toString().padStart(2, '0');
+    const hh = d.getHours().toString().padStart(2, '0');
+    const min = d.getMinutes().toString().padStart(2, '0');
+    const ss = d.getSeconds().toString().padStart(2, '0');
+    const ms = d.getMilliseconds().toString().padStart(3, '0').slice(0, 2); // 2 digit ms for uniqueness
+    this.orderIdString = `ORD${dd}${mm}${yy}${hh}${min}${ss}${ms}`;
+  }
+  next();
 });
 
 // Index for faster queries

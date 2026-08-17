@@ -41,7 +41,6 @@ const ProductCard = ({ product, categories = [], rank }) => {
 
   const handleQuickAdd = async (e) => {
     e.preventDefault(); e.stopPropagation()
-    if (!user) { navigate('/login', { state: { from: '/cart' } }); return }
     if (!inStock || isComingSoon) return
     setAddingToCart(true)
     const success = await addItem(product, 1)

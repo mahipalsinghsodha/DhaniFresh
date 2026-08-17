@@ -13,6 +13,7 @@ import api from '../api/axios'
 import { useCart } from '../context/CartContext'
 import OrderTimeline from '../components/OrderTimeline'
 import { useSocket } from '../hooks/useSocket'
+import { formatOrderId } from '../utils/formatOrderId'
 
 const getStatus = (order) => {
   if (order.isDelivered) return { label: 'Delivered', cls: 'badge-success', icon: FiCheckCircle }
@@ -202,7 +203,7 @@ const CancelModal = ({ order, onClose, onConfirm, loading }) => {
               </div>
               <div>
                 <h2 className="text-base font-extrabold text-slate-900" style={{ fontFamily: 'var(--font-display)' }}>Cancel Order?</h2>
-                <p className="text-xs text-slate-400">#{order._id.slice(-8).toUpperCase()}</p>
+                <p className="text-xs text-slate-400">#{formatOrderId(order)}</p>
               </div>
             </div>
             <button onClick={onClose} className="w-8 h-8 rounded-full flex items-center justify-center bg-slate-50 hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors">
@@ -281,7 +282,7 @@ const ReturnModal = ({ order, onClose, onConfirm, loading }) => {
               </div>
               <div>
                 <h2 className="text-base font-extrabold text-slate-900" style={{ fontFamily: 'var(--font-display)' }}>Request Return</h2>
-                <p className="text-xs text-slate-400">#{order._id.slice(-8).toUpperCase()}</p>
+                <p className="text-xs text-slate-400">#{formatOrderId(order)}</p>
               </div>
             </div>
             <button onClick={onClose} className="w-8 h-8 rounded-full flex items-center justify-center bg-slate-50 hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors">
@@ -338,34 +339,6 @@ const ReturnModal = ({ order, onClose, onConfirm, loading }) => {
   )
 }
 
-const buildInvoiceHTML = (inv, order) => {
-  const items = (inv.items || order.orderItems || []).map(i =>
-    `<tr><td style="padding:10px">${i.name}</td><td style="padding:10px;text-align:center">${i.quantity}</td>
-    <td style="padding:10px;text-align:right">₹${Number(i.price).toFixed(2)}</td>
-    <td style="padding:10px;text-align:right">₹${(i.price * i.quantity).toFixed(2)}</td></tr>`).join('')
-  const sub = Number(inv.subtotal ?? order.itemsPrice ?? 0).toFixed(2)
-  const discount = Number(order.discount ?? 0)
-  const tax = Number(inv.tax ?? order.taxPrice ?? 0).toFixed(2)
-  const ship = Number(inv.shipping ?? order.shippingPrice ?? 0).toFixed(2)
-  const tot = Number(inv.total ?? order.totalPrice ?? 0).toFixed(2)
-  const cust = inv.customer || { name: '', email: '', address: {} }
-  const addr = cust.address || order.shippingAddress || {}
-  const discountRow = discount > 0 ? `<tr><td colspan="3" style="color:#10b981">Discount</td><td style="color:#10b981">-₹${discount.toFixed(2)}</td></tr>` : ''
-  return `<div style="max-width:760px;margin:0 auto;padding:40px;font-family:sans-serif;color:#111827">
-    <div style="display:flex;justify-content:space-between;margin-bottom:32px;border-bottom:2px solid #E6A800;padding-bottom:16px">
-      <div><h1 style="color:#E6A800;margin:0">Daatasa</h1><p style="color:#6b7280;margin:4px 0">Pure & Natural Ghee</p></div>
-      <div style="text-align:right"><h2 style="margin:0">INVOICE</h2><p style="color:#E6A800;font-weight:bold;margin:4px 0">#${(inv.invoiceNumber || order._id.slice(-10)).toUpperCase()}</p></div>
-    </div>
-    <div style="display:flex;justify-content:space-between;margin-bottom:32px">
-      <div><p style="font-size:11px;color:#9ca3af;font-weight:bold;margin-bottom:6px">BILL TO</p><strong>${cust.name || ''}</strong><br/>${cust.email || ''}<br/>${addr.street || ''}<br/>${addr.city || ''}, ${addr.state || ''}</div>
-      <div style="text-align:right"><p style="font-size:11px;color:#9ca3af;font-weight:bold;margin-bottom:6px">DATE</p>${new Date(order.createdAt).toLocaleDateString()}</div>
-    </div>
-    <table style="width:100%;border-collapse:collapse;margin-bottom:32px">
-      <thead><tr style="background:#f9fafb"><th style="padding:10px;text-align:left">Item</th><th style="padding:10px">Qty</th><th style="padding:10px;text-align:right">Price</th><th style="padding:10px;text-align:right">Total</th></tr></thead>
-      <tbody>${items}</tbody>
-      <tfoot style="border-top:1px solid #e5e7eb"><tr><td></td><td></td><td style="padding:10px;text-align:right">Subtotal</td><td style="padding:10px;text-align:right">₹${sub}</td></tr>${discountRow}<tr><td></td><td></td><td style="padding:10px;text-align:right">Tax</td><td style="padding:10px;text-align:right">₹${tax}</td></tr><tr><td></td><td></td><td style="padding:10px;text-align:right;color:#E6A800;font-weight:bold">Total</td><td style="padding:10px;text-align:right;color:#E6A800;font-weight:bold">₹${tot}</td></tr></tfoot>
-    </table></div>`
-}
 
 const Orders = () => {
   const { user } = useAuth()
@@ -410,7 +383,7 @@ const Orders = () => {
 
     const handleStatusUpdate = (updatedOrder) => {
       setOrders(prev => prev.map(o => o._id === updatedOrder._id ? updatedOrder : o))
-      toast.success(`Order #${updatedOrder._id.slice(-8).toUpperCase()} status updated!`)
+      toast.success(`Order #${updatedformatOrderId(order)} status updated!`)
     }
 
     socket.on('orderStatusUpdated', handleStatusUpdate)
@@ -432,13 +405,18 @@ const Orders = () => {
   const printInvoice = async (order) => {
     setPrinting(order._id)
     try {
-      let inv = {}
-      try { const res = await api.get(`/api/invoices/${order._id}`); inv = res.data } catch {}
-      const html = buildInvoiceHTML(inv, order)
-      const win = window.open('', '_blank')
-      win.document.write(`<!DOCTYPE html><html><head><title>Invoice</title></head><body onload="window.print()">${html}</body></html>`)
-      win.document.close()
-    } catch { toast.error('Print failed') }
+      const res = await api.get(`/api/invoices/${order._id}/download`, {
+        responseType: 'blob'
+      })
+      const url = window.URL.createObjectURL(new Blob([res.data]))
+      const link = document.createElement('a')
+      link.href = url
+      link.setAttribute('download', `INV-${formatOrderId(order)}.pdf`)
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      window.URL.revokeObjectURL(url)
+    } catch { toast.error('Could not download invoice. Make sure order is confirmed.') }
     finally { setPrinting(null) }
   }
 
@@ -621,7 +599,7 @@ const Orders = () => {
                   <div className="p-6 sm:p-8 flex flex-col sm:flex-row sm:items-center justify-between gap-6 cursor-pointer" onClick={() => setExpanded(isExp ? null : o._id)}>
                     <div className="flex-1 min-w-0">
                       <div className="flex flex-wrap items-center gap-3 mb-3">
-                        <span className="text-lg font-bold font-display text-brand-primary">#{o._id.slice(-8).toUpperCase()}</span>
+                        <span className="text-lg font-bold font-display text-brand-primary">#{formatOrderId(o)}</span>
                         <StatusBadge order={o} />
                         <span className="px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest bg-brand-primary/5 text-brand-primary">{o.paymentMethod}</span>
                       </div>

@@ -20,7 +20,8 @@ router.get('/', async (req, res) => {
       isComingSoon: settings.isComingSoon,
       comingSoonLaunchDate: settings.comingSoonLaunchDate,
       // Pass security details only if they exist, but DO NOT pass hashes!
-      security: settings.security || { twoFactorEnabled: false, otpEmail: '' }
+      security: settings.security || { twoFactorEnabled: false, otpEmail: '' },
+      companyDetails: settings.companyDetails || { name: '', email: '', address: '', gstin: '' }
     });
   } catch (error) {
     console.error('Settings GET error:', error);
@@ -78,7 +79,7 @@ router.patch('/', auth, auth.admin, async (req, res) => {
 
     const { 
       gstRate, gstEnabled, freeShippingThreshold, shippingCharge, serviceablePincodes,
-      isMaintenanceMode, isComingSoon, comingSoonLaunchDate, security
+      isMaintenanceMode, isComingSoon, comingSoonLaunchDate, security, companyDetails
     } = req.body;
 
     // Validate
@@ -115,6 +116,14 @@ router.patch('/', auth, auth.admin, async (req, res) => {
         otpEmail: security.otpEmail || ''
       };
     }
+    if (companyDetails !== undefined) {
+      update.companyDetails = {
+        name: companyDetails.name || '',
+        email: companyDetails.email || '',
+        address: companyDetails.address || '',
+        gstin: companyDetails.gstin || ''
+      };
+    }
 
     const settings = await Settings.findByIdAndUpdate(
       'global',
@@ -134,6 +143,7 @@ router.patch('/', auth, auth.admin, async (req, res) => {
         isComingSoon: settings.isComingSoon,
         comingSoonLaunchDate: settings.comingSoonLaunchDate,
         security: settings.security,
+        companyDetails: settings.companyDetails,
       },
     });
   } catch (error) {

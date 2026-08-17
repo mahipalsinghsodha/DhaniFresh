@@ -663,7 +663,7 @@ export default function Support() {
                     <div className="text-center">
                       <div className="text-3xl mb-2">👋</div>
                       <p className="text-base font-bold" style={{ color: 'var(--text-primary)' }}>
-                        Hi{user ? `, ${user.name.split(' ')[0]}` : ' there'}!
+                        Hi{user ? `, ${(user.name || 'User').split(' ')[0]}` : ' there'}!
                       </p>
                       <p className="text-sm mt-1" style={{ color: 'var(--text-muted)' }}>What do you need help with?</p>
                     </div>

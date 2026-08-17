@@ -16,7 +16,8 @@ const getNavCols = (t) => [
   {
     title: t('footer.quickLinksTitle') || 'Quick Links',
     links: [
-      { label: t('footer.quickTrackOrder') || 'Track Order', to: '/track-order' },
+      { label: t('footer.bulkOrders', 'Bulk Orders & B2B'), to: '/b2b', highlight: true },
+      { label: t('footer.quickTrackOrder', 'Track Order'), to: '/track-order' },
       { label: t('footer.quickPrivacy') || 'Privacy Policy', to: '/privacy-policy' },
       { label: t('footer.quickTerms') || 'Terms & Conditions', to: '/terms' },
       { label: t('footer.quickDisclaimer') || 'Disclaimer', to: '/disclaimer' },
@@ -82,11 +83,16 @@ export default function Footer() {
                 <ul className="space-y-4">
                   {col.links.map(link => (
                     <li key={link.label}>
-                      <Link to={link.to} className="text-white/60 hover:text-brand-secondary transition-colors duration-300 font-medium text-sm flex items-center group">
+                      <Link to={link.to} className={`hover:text-brand-secondary transition-colors duration-300 font-medium text-sm flex items-center group ${link.highlight ? 'text-brand-secondary' : 'text-white/60'}`}>
                         <span className="w-0 overflow-hidden group-hover:w-3 transition-all duration-300 text-brand-secondary">
                           <FiArrowRight size={12} />
                         </span>
-                        {link.label}
+                        <span className={link.highlight ? 'animate-pulse flex items-center gap-2' : ''}>
+                          {link.label}
+                          {link.highlight && (
+                            <span className="bg-red-500/20 text-red-400 border border-red-500/30 text-[9px] font-bold px-1.5 py-0.5 rounded-full animate-pulse shadow-[0_0_10px_rgba(239,68,68,0.3)]">NEW</span>
+                          )}
+                        </span>
                       </Link>
                     </li>
                   ))}

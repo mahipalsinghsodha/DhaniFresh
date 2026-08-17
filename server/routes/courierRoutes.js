@@ -3,6 +3,8 @@ const router = express.Router();
 const Order = require('../models/Order');
 const auth = require('../middleware/auth');
 const { getIO } = require('../socket');
+const { getNextInvoiceNumber } = require('../utils/helpers');
+const { sendInvoiceEmail } = require('../services/emailService');
 
 // Middleware to ensure user is courier
 const isCourier = (req, res, next) => {
@@ -112,6 +114,12 @@ router.put('/orders/:id/status', auth, isCourier, async (req, res) => {
     if (status === 'DELIVERED') {
       order.isDelivered = true;
       order.deliveredAt = new Date();
+      order.isPaid = true;
+      order.paymentStatus = 'PAID';
+
+      if (!order.invoiceNumber) {
+        order.invoiceNumber = await getNextInvoiceNumber();
+      }
     }
 
     if (status === 'RETURNED') {
@@ -132,6 +140,16 @@ router.put('/orders/:id/status', auth, isCourier, async (req, res) => {
     });
 
     await order.save();
+
+    if (status === 'DELIVERED') {
+      await order.populate('user', 'name email phone');
+      await order.populate('orderItems.product', 'name price');
+      const userEmail = order.user ? order.user.email : order.guestEmail;
+      if (userEmail) {
+        await sendInvoiceEmail(order, userEmail)
+          .catch(err => console.error('Error sending invoice email from courier:', err));
+      }
+    }
 
     // Emit event to order room
     try {
