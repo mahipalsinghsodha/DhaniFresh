@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { X, Bell, Check, CheckCheck, Package, MessageSquare, Tag, Info, AlertCircle } from 'lucide-react'
 import { useNotificationStore } from '../store/notifications'
 import { formatDistanceToNow } from 'date-fns'
+import { useNavigate } from 'react-router-dom'
 
 /* ── Notification Icon ──────────────────────────────────────── */
 const NotifIcon = ({ type }) => {
@@ -28,7 +29,7 @@ const NotifIcon = ({ type }) => {
 }
 
 /* ── Single Notification Item ───────────────────────────────── */
-const NotifItem = ({ notif, onMarkRead }) => {
+const NotifItem = ({ notif, onClick }) => {
   const timeAgo = notif.createdAt
     ? formatDistanceToNow(new Date(notif.createdAt), { addSuffix: true })
     : 'just now'
@@ -40,7 +41,7 @@ const NotifItem = ({ notif, onMarkRead }) => {
         background: notif.isRead ? 'transparent' : 'rgba(245,197,24,0.04)',
         borderBottom: '1px solid var(--border-color)',
       }}
-      onClick={() => !notif.isRead && onMarkRead(notif._id)}
+      onClick={() => onClick(notif)}
       onMouseEnter={e => { e.currentTarget.style.background = notif.isRead ? 'var(--bg-alt)' : 'rgba(245,197,24,0.06)' }}
       onMouseLeave={e => {
         e.currentTarget.style.background = notif.isRead ? 'transparent' : 'rgba(245,197,24,0.04)'
@@ -85,10 +86,39 @@ const DEMO_NOTIFICATIONS = [
 ]
 
 export default function NotificationDrawer() {
+  const navigate = useNavigate()
   const {
     isDrawerOpen, closeDrawer, notifications, unreadCount,
     setNotifications, markRead, markAllRead,
   } = useNotificationStore()
+
+  const handleNotifClick = (notif) => {
+    if (!notif.isRead) markRead(notif._id)
+    
+    if (notif.link) {
+      navigate(notif.link)
+      closeDrawer()
+      return
+    }
+
+    if (notif.metadata?.orderId) {
+      navigate(`/orders/${notif.metadata.orderId}`)
+      closeDrawer()
+      return
+    }
+
+    // Fallback based on type
+    if (notif.type?.startsWith('ORDER_') || notif.type?.startsWith('REFUND_') || notif.type?.startsWith('RETURN_')) {
+      navigate('/orders')
+      closeDrawer()
+    } else if (notif.type === 'OFFER') {
+      navigate('/products')
+      closeDrawer()
+    } else if (notif.type === 'CHAT_REPLY') {
+      navigate('/support')
+      closeDrawer()
+    }
+  }
 
   // Notifications are fetched via the store/api or Socket.io. 
   // No demo notifications should be loaded.
@@ -182,7 +212,7 @@ export default function NotificationDrawer() {
                         style={{ color: 'var(--text-muted)' }}>{group}</span>
                     </div>
                     {groups[group].map(n => (
-                      <NotifItem key={n._id} notif={n} onMarkRead={markRead} />
+                      <NotifItem key={n._id} notif={n} onClick={handleNotifClick} />
                     ))}
                   </div>
                 ))
