@@ -161,6 +161,7 @@ app.use("/api/payment", require("./routes/paymentRoutes"));
 app.use("/api/support", require("./routes/supportRoutes"));
 app.use('/api/contact', require('./routes/contactRoute'));
 app.use('/api/coupons', require('./routes/couponRoutes'));
+app.use('/api/wallet', require('./routes/walletRoutes'));
 app.use('/api/categories', require('./routes/categoryRoutes'));
 app.use('/api/upload', require('./routes/upload'));
 app.use('/api/admin', require('./routes/adminRoutes'));
@@ -174,6 +175,8 @@ app.use('/api/subscribers', require('./routes/subscriberRoutes'));
 app.use('/api/subscriptions', require('./routes/subscriptionRoutes'));
 app.use('/api/activity', require('./routes/activityRoutes'));
 app.use('/api/courier', require('./routes/courierRoutes'));
+app.use('/api/blogs', require('./routes/blogRoutes'));
+app.use('/api/giftcards', require('./routes/giftCardRoutes'));
 
 // Dynamic sitemap — accessible at GET /sitemap.xml (no /api prefix, for search engines)
 app.use('/sitemap.xml', require('./routes/sitemapRoute'));

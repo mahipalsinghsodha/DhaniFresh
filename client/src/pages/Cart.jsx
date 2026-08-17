@@ -103,7 +103,14 @@ const Cart = () => {
   )
 
   const hasItems = cartItems?.length > 0
-  const subtotal = cartItems?.reduce((acc, item) => acc + (item.product?.price || 0) * item.quantity, 0) || 0
+  const subtotal = cartItems?.reduce((acc, item) => {
+    let price = item.product?.price || 0
+    if (item.variant && item.product?.variants) {
+      const v = item.product.variants.find(v => v._id === item.variant)
+      if (v) price = v.price
+    }
+    return acc + price * item.quantity
+  }, 0) || 0
 
   return (
     <div className="min-h-screen pb-24 page-enter bg-[var(--ivory)] font-sans text-brand-text">
@@ -160,7 +167,10 @@ const Cart = () => {
             <div className="lg:col-span-2 space-y-4">
               <AnimatePresence>
                 {cartItems.map((item, idx) => {
-                  const stock       = item.product?.stock ?? 0
+                  const variant = item.variant && item.product?.variants ? item.product.variants.find(v => v._id === item.variant) : null
+                  const stock       = variant ? variant.stock : (item.product?.stock ?? 0)
+                  const displayPrice = variant ? variant.price : (item.product?.price ?? 0)
+                  const displayWeight = variant ? variant.weight : item.product?.weight
                   const maxQty      = Math.min(stock, MAX_CART_QTY)
                   const isOut       = stock === 0
                   const atMax       = item.quantity >= maxQty
@@ -191,7 +201,7 @@ const Cart = () => {
                             </h3>
                             <p className="text-sm mt-1 capitalize flex items-center gap-2 font-medium text-brand-text/60">
                               <span className="px-2 py-0.5 rounded-md text-[10px] font-bold uppercase bg-brand-primary/5 text-brand-primary">{item.product?.category}</span>
-                              {item.product?.weight && <span>{item.product.weight}</span>}
+                              {displayWeight && <span>{displayWeight}</span>}
                             </p>
                             {isOut && <p className="text-xs font-bold mt-2 uppercase tracking-wide text-red-500">Currently Unavailable</p>}
                             {!isOut && atMax && <p className="text-xs font-bold mt-2 uppercase tracking-wide text-amber-500">Max {maxQty} per order</p>}
@@ -231,9 +241,9 @@ const Cart = () => {
                           {/* Price */}
                           <div className="text-right flex flex-col items-end">
                             <div className={`text-base sm:text-xl font-bold font-display leading-none ${isOut ? 'text-brand-text/40 line-through' : 'text-brand-primary'}`}>
-                              ₹{(item.product?.price * item.quantity).toLocaleString('en-IN')}
+                              ₹{(displayPrice * item.quantity).toLocaleString('en-IN')}
                             </div>
-                            <div className="text-[10px] sm:text-xs font-medium mt-0.5 text-brand-text/50">₹{item.product?.price?.toLocaleString('en-IN')} each</div>
+                            <div className="text-[10px] sm:text-xs font-medium mt-0.5 text-brand-text/50">₹{displayPrice?.toLocaleString('en-IN')} each</div>
                           </div>
                         </div>
                       </div>

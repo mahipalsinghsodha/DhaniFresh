@@ -30,11 +30,14 @@ router.get('/', auth, async (req, res) => {
 router.post('/items', auth, async (req, res) => {
  
   try {
-    const { productId, quantity } = req.body;
+    const { productId, variantId, quantity } = req.body;
 
     // Validate ObjectId format to prevent CastError HTML 500
     if (!productId || !isValidObjectId(productId)) {
       return res.status(400).json({ message: 'Invalid product ID format' });
+    }
+    if (variantId && !isValidObjectId(variantId)) {
+      return res.status(400).json({ message: 'Invalid variant ID format' });
     }
 
     const product = await Product.findById(productId);
@@ -42,9 +45,16 @@ router.post('/items', auth, async (req, res) => {
       return res.status(404).json({ message: 'Product not found' });
     }
 
+    let targetStock = product.stock;
+    if (variantId) {
+      const variant = product.variants.id(variantId);
+      if (!variant) return res.status(404).json({ message: 'Variant not found' });
+      targetStock = variant.stock;
+    }
+
     // Block adding out-of-stock products
-    if (product.stock <= 0) {
-      return res.status(400).json({ message: 'This product is currently not available' });
+    if (targetStock <= 0) {
+      return res.status(400).json({ message: 'This item is currently not available' });
     }
 
     let cart = await Cart.findOne({ user: req.user._id });
@@ -54,12 +64,13 @@ router.post('/items', auth, async (req, res) => {
     }
 
     const itemIndex = cart.items.findIndex(
-      item => item.product.toString() === productId
+      item => item.product.toString() === productId && 
+              (variantId ? item.variant?.toString() === variantId : !item.variant)
     );
 
     const requestedQty = quantity || 1;
-    // Cap = min(product.stock, MAX_QTY_PER_ITEM) — dynamic per product
-    const maxAllowed = Math.min(product.stock, MAX_QTY_PER_ITEM);
+    // Cap = min(targetStock, MAX_QTY_PER_ITEM)
+    const maxAllowed = Math.min(targetStock, MAX_QTY_PER_ITEM);
 
     if (itemIndex > -1) {
       const newQty = cart.items[itemIndex].quantity + requestedQty;
@@ -67,10 +78,12 @@ router.post('/items', auth, async (req, res) => {
     } else {
       cart.items.push({ 
         product: productId, 
+        variant: variantId || null,
         quantity: Math.min(requestedQty, maxAllowed)
       });
     }
 
+    cart.reminderSentAt = null;
     await cart.save();
     await cart.populate('items.product');
     
@@ -100,20 +113,27 @@ router.put('/items/:itemId', auth, async (req, res) => {
     if (!product) {
        return res.status(404).json({ message: 'Product not found' });
     }
+    
+    let targetStock = product.stock;
+    if (item.variant) {
+      const variant = product.variants.id(item.variant);
+      if (variant) targetStock = variant.stock;
+    }
 
-    // Dynamic cap: min(product.stock, MAX_QTY_PER_ITEM)
-    const maxAllowed = Math.min(product.stock, MAX_QTY_PER_ITEM);
+    // Dynamic cap: min(targetStock, MAX_QTY_PER_ITEM)
+    const maxAllowed = Math.min(targetStock, MAX_QTY_PER_ITEM);
 
     if (quantity < 1) {
       return res.status(400).json({ message: 'Quantity must be at least 1' });
     }
     if (quantity > maxAllowed) {
       return res.status(400).json({ 
-        message: `Max ${maxAllowed} of this item allowed (stock: ${product.stock})` 
+        message: `Max ${maxAllowed} of this item allowed (stock: ${targetStock})` 
       });
     }
 
     item.quantity = quantity;
+    cart.reminderSentAt = null;
     await cart.save();
     await cart.populate('items.product');
 
@@ -136,6 +156,7 @@ router.delete('/items/:itemId', auth, async (req, res) => {
       item => item._id.toString() !== req.params.itemId
     );
 
+    cart.reminderSentAt = null;
     await cart.save();
     await cart.populate('items.product');
 

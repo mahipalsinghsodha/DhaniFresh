@@ -59,6 +59,7 @@ const ProductDetail = () => {
   const { fetchCartCount, addItem } = useCart()
 
   const [product,    setProduct]    = useState(null)
+  const [selectedVariant, setSelectedVariant] = useState(null)
   const [selectedImage, setSelectedImage] = useState(null)
   const [plans,      setPlans]      = useState([])
   const [related,    setRelated]    = useState([])
@@ -95,6 +96,9 @@ const ProductDetail = () => {
       ])
       const prod = prodRes.data
       setProduct(prod)
+      if (prod.variants && prod.variants.length > 0) {
+        setSelectedVariant(prod.variants[0]._id)
+      }
       setSelectedImage(prod.image)
 
       // Check if current user already reviewed
@@ -199,7 +203,7 @@ const ProductDetail = () => {
   const handleAddToCart = async ({ redirectTo } = {}) => {
     setAdding(true)
     try {
-      const success = await addItem(product, quantity)
+      const success = await addItem(product, quantity, selectedVariant)
       if (success) {
         if (redirectTo) {
           navigate(redirectTo)
@@ -280,6 +284,17 @@ const ProductDetail = () => {
   const isCustomer = !user || (user.role !== 'admin' && user.role !== 'superadmin')
   const avgRating   = product.rating || 0
   const numReviews  = product.numReviews || 0
+
+  const currentVariant = product.variants?.find(v => v._id === selectedVariant)
+  let displayPrice = currentVariant ? currentVariant.price : product.price
+  
+  if (user && user.role === 'b2b_customer' && user.b2bDiscountPercentage > 0) {
+    displayPrice = displayPrice - (displayPrice * user.b2bDiscountPercentage) / 100;
+  }
+  
+  const displayMrp = currentVariant ? currentVariant.mrp : product.mrp
+  const displayWeight = currentVariant ? currentVariant.weight : product.weight
+  const displayStock = currentVariant ? currentVariant.stock : product.stock
 
   // Rating distribution
   const dist = [5,4,3,2,1].map(n => ({
@@ -452,34 +467,63 @@ const ProductDetail = () => {
               <span className="text-gray-200">|</span>
               {/* Show availability status — hide exact stock count from customers */}
               <div className="flex items-center gap-1.5">
-                <div className={`w-2 h-2 rounded-full ${product.stock > 0 ? 'bg-green-500 animate-pulse' : 'bg-red-400'}`} />
-                <span className={`text-sm font-medium ${product.stock > 0 ? 'text-green-600' : 'text-red-500'}`}>
-                  {product.stock > 0 ? 'In Stock' : 'Currently Not Available'}
+                <div className={`w-2 h-2 rounded-full ${displayStock > 0 ? 'bg-green-500 animate-pulse' : 'bg-red-400'}`} />
+                <span className={`text-sm font-medium ${displayStock > 0 ? 'text-green-600' : 'text-red-500'}`}>
+                  {displayStock > 0 ? 'In Stock' : 'Currently Not Available'}
                 </span>
               </div>
             </div>
 
             {/* Price */}
             <div className="flex items-baseline gap-2">
-              {product.mrp && product.mrp > product.price ? (
+              {displayMrp && displayMrp > displayPrice ? (
                 <div className="flex items-center gap-2">
                   <span className="text-3xl sm:text-4xl font-extrabold text-gray-900" style={{ fontFamily: 'var(--font-display)' }}>
-                    ₹{product.price.toLocaleString('en-IN')}
+                    ₹{displayPrice.toLocaleString('en-IN')}
                   </span>
                   <span className="text-sm line-through text-gray-400" style={{ fontFamily: 'var(--font-body)' }}>
-                    ₹{product.mrp.toLocaleString('en-IN')}
+                    ₹{displayMrp.toLocaleString('en-IN')}
                   </span>
                   <span className="text-xs font-bold text-green-600">
-                    You Save ₹{(product.mrp - product.price).toLocaleString('en-IN')}
+                    You Save ₹{(displayMrp - displayPrice).toLocaleString('en-IN')}
                   </span>
                 </div>
               ) : (
                 <span className="text-3xl sm:text-4xl font-extrabold text-gray-900" style={{ fontFamily: 'var(--font-display)' }}>
-                  ₹{product.price.toLocaleString('en-IN')}
+                  ₹{displayPrice?.toLocaleString('en-IN') || 0}
                 </span>
               )}
-              <span className="text-sm text-gray-400">/ {product.weight || 'unit'}</span>
+              <span className="text-sm text-gray-400">/ {displayWeight || 'unit'}</span>
             </div>
+
+            {/* ── Variant Selector ── */}
+            {product.variants && product.variants.length > 0 && (
+              <div className="pt-2">
+                <p className="text-sm font-semibold text-gray-900 mb-2 flex items-center gap-2">
+                  Select Size
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {product.variants.map((v) => (
+                    <button
+                      key={v._id}
+                      onClick={() => { setSelectedVariant(v._id); setQuantity(1); }}
+                      className={`relative px-4 py-2 border-2 rounded-xl text-sm font-bold transition-all ${
+                        selectedVariant === v._id
+                          ? 'border-brand-secondary bg-brand-secondary/5 text-brand-primary'
+                          : 'border-brand-primary/10 bg-white text-gray-500 hover:border-brand-primary/30'
+                      }`}
+                    >
+                      {v.weight}
+                      {v.stock === 0 && (
+                         <div className="absolute inset-0 bg-white/60 flex items-center justify-center rounded-xl cursor-not-allowed">
+                           <span className="text-[10px] text-red-500 bg-red-50 px-1 rounded">Out</span>
+                         </div>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
 
             <hr className="border-brand-primary/10" />
 
@@ -556,9 +600,9 @@ const ProductDetail = () => {
             </div>
 
             {/* Purchase controls — only for logged-in regular customers */}
-            {product.stock > 0 && isCustomer && (() => {
+            {displayStock > 0 && isCustomer && (() => {
               // Dynamic max: capped at 10, but never exceeds actual stock
-              const maxQty = Math.min(product.stock, 10)
+              const maxQty = Math.min(displayStock, 10)
               return (
               <div className="bg-white border border-brand-primary/10 rounded-[2rem] p-4 sm:p-6 space-y-5 shadow-sm">
 
@@ -588,7 +632,7 @@ const ProductDetail = () => {
                   {/* Total */}
                   <div className="flex justify-between items-center text-sm">
                     <span className="text-gray-500">Total for {quantity} {quantity === 1 ? 'item' : 'items'}</span>
-                    <span className="font-bold text-gray-900">₹{(product.price * quantity).toLocaleString('en-IN')}</span>
+                    <span className="font-bold text-gray-900">₹{(displayPrice * quantity).toLocaleString('en-IN')}</span>
                   </div>
 
                   {/* Add to cart button */}
@@ -601,7 +645,7 @@ const ProductDetail = () => {
                       ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
                       : <ShoppingCart size={17} />
                     }
-                    {adding ? 'Adding to Cart...' : `Add to Cart — ₹${(product.price * quantity).toLocaleString('en-IN')}`}
+                    {adding ? 'Adding to Cart...' : `Add to Cart — ₹${(displayPrice * quantity).toLocaleString('en-IN')}`}
                   </button>
 
                   <div className="grid grid-cols-2 gap-3">
@@ -619,8 +663,8 @@ const ProductDetail = () => {
                         `*Product Details:*\n` +
                         `*Item:* ${product.name}\n` +
                         `*Quantity:* ${quantity}\n` +
-                        (product.size || product.weight ? `*Size/Weight:* ${product.size || product.weight}\n` : '') +
-                        `*Total Price:* ₹${(product.price * quantity).toLocaleString('en-IN')}\n` +
+                        (displayWeight ? `*Size/Weight:* ${displayWeight}\n` : '') +
+                        `*Total Price:* ₹${(displayPrice * quantity).toLocaleString('en-IN')}\n` +
                         `*Image:* ${product.image?.startsWith('http') ? product.image : product.image}\n\n` +
                         `Please help me process this order!`
                       )}`}

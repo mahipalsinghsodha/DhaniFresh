@@ -25,8 +25,14 @@ const ProductCard = ({ product, categories = [], rank }) => {
   const isWishlisted = user?.wishlist?.some(id => String(id?._id || id) === String(product._id))
   const stars = Math.round(product.rating || 0)
   const inStock = product.stock > 0
-  const discount = product.mrp && product.mrp > product.price
-    ? Math.round(((product.mrp - product.price) / product.mrp) * 100)
+
+  let displayPrice = product.price;
+  if (user && user.role === 'b2b_customer' && user.b2bDiscountPercentage > 0) {
+    displayPrice = displayPrice - (displayPrice * user.b2bDiscountPercentage) / 100;
+  }
+
+  const discount = product.mrp && product.mrp > displayPrice
+    ? Math.round(((product.mrp - displayPrice) / product.mrp) * 100)
     : 0
   const isComingSoon = product.launchDate && new Date(product.launchDate) > new Date()
 
@@ -186,10 +192,10 @@ const ProductCard = ({ product, categories = [], rank }) => {
               {product.weight && (
                 <div className="text-[10px] font-bold mb-1 uppercase tracking-widest text-brand-secondary">{product.weight}</div>
               )}
-              {product.mrp && product.mrp > product.price ? (
+              {product.mrp && product.mrp > displayPrice ? (
                 <div className="flex flex-col xs:flex-row xs:items-center gap-0 sm:gap-1.5 flex-wrap mt-0.5 sm:mt-0">
                   <span className="text-base sm:text-lg font-bold text-brand-primary leading-none">
-                    ₹{product.price?.toLocaleString('en-IN')}
+                    ₹{displayPrice?.toLocaleString('en-IN')}
                   </span>
                   <span className="text-xs sm:text-sm line-through text-brand-text/40">
                     ₹{product.mrp?.toLocaleString('en-IN')}
@@ -197,7 +203,7 @@ const ProductCard = ({ product, categories = [], rank }) => {
                 </div>
               ) : (
                 <span className="text-lg font-bold text-brand-primary">
-                  ₹{product.price?.toLocaleString('en-IN')}
+                  ₹{displayPrice?.toLocaleString('en-IN')}
                 </span>
               )}
             </div>

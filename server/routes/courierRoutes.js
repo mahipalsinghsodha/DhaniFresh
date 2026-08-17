@@ -149,6 +149,33 @@ router.put('/orders/:id/status', auth, isCourier, async (req, res) => {
         await sendInvoiceEmail(order, userEmail)
           .catch(err => console.error('Error sending invoice email from courier:', err));
       }
+      
+      // Award Reward Points
+      if (order.user && !order.rewardPointsAwarded) {
+        try {
+          const User = require('../models/User');
+          const Notification = require('../models/Notification');
+          const userObj = await User.findById(order.user._id);
+          if (userObj) {
+            const points = Math.floor(order.totalPrice / 10);
+            userObj.rewardPoints += points;
+            await userObj.save();
+            order.rewardPointsAwarded = true;
+            await order.save();
+            
+            const notif = new Notification({
+              user: userObj._id,
+              type: 'REWARD_EARNED',
+              title: 'Reward Points Earned!',
+              message: `You earned ${points} reward points for your recent order.`,
+              link: '/profile'
+            });
+            await notif.save();
+          }
+        } catch (err) {
+          console.error('Error awarding reward points from courier route:', err);
+        }
+      }
     }
 
     // Emit event to order room

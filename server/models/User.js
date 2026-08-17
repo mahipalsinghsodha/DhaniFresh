@@ -19,14 +19,26 @@ const userSchema = new mongoose.Schema({
   name:     { type: String, required: true, trim: true },
   email:    { type: String, required: true, unique: true, lowercase: true, trim: true },
   password: { type: String, minlength: 6, select: false },
-  role:     { type: String, enum: ['user', 'admin', 'superadmin', 'support', 'courier'], default: 'user' },
+  role:     { type: String, enum: ['user', 'admin', 'superadmin', 'support', 'courier', 'b2b_customer'], default: 'user' },
   permissions: [{ type: String }], // e.g., ['products', 'orders', 'users']
   phone:    String,
+  
+  // B2B Details
+  companyName: String,
+  gstin: String,
+  b2bDiscountPercentage: { type: Number, default: 0 },
+
   avatar:   String, // Cloudinary URL for profile photo
   addresses:[addressSchema],
   language: { type: String, default: 'en', enum: ['en', 'hi'] },
 
   isBlocked: { type: Boolean, default: false },
+
+  // ── Loyalty & Wallet System ───────────────────────────────────────────────
+  walletBalance: { type: Number, default: 0 },
+  rewardPoints: { type: Number, default: 0 },
+  referralCode: { type: String, unique: true, sparse: true },
+  referredBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
 
   // Legacy single address for backward compat
   address: {

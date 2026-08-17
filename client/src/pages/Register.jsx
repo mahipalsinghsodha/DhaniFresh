@@ -69,6 +69,7 @@ const Register = () => {
   const [email,    setEmail]    = useState('')
   const [password, setPassword] = useState('')
   const [confirm,  setConfirm]  = useState('')
+  const [referralCode, setReferralCode] = useState('')
   const [showPass, setShowPass] = useState(false)
   const [showConf, setShowConf] = useState(false)
   const [loading,  setLoading]  = useState(false)
@@ -79,6 +80,9 @@ const Register = () => {
   useEffect(() => {
     const params = new URLSearchParams(location.search)
     const token = params.get('token')
+    const ref = params.get('ref')
+    if (ref) setReferralCode(ref)
+    
     if (token) {
       setLoading(true)
       googleLogin(token).then(() => {
@@ -112,12 +116,12 @@ const Register = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault()
-    if (!name.trim() || !email.trim() || !password || !confirm) { toast.error('Please fill all fields'); return }
+    if (!name.trim() || !email.trim() || !password || !confirm) { toast.error('Please fill all required fields'); return }
     if (password.length < 8) { toast.error('Password must be at least 8 characters'); return }
     if (password !== confirm) { toast.error('Passwords do not match'); return }
     setLoading(true)
     try {
-      await register(name.trim(), email.trim(), password)
+      await register(name.trim(), email.trim(), password, referralCode.trim())
       toast.success('Account created! Welcome to Daatasa 🎉')
       navigate('/', { replace: true })
     } catch (err) {
@@ -285,6 +289,12 @@ const Register = () => {
                     {showConf ? <EyeOff size={16} /> : <Eye size={16} />}
                   </button>
                 }
+              />
+
+              <FloatingInput
+                id="reg-referral" label={t('auth.referralCode', 'Referral Code (Optional)')} type="text"
+                value={referralCode} onChange={e => setReferralCode(e.target.value)}
+                icon={Sparkles}
               />
 
               <button type="submit" disabled={loading}

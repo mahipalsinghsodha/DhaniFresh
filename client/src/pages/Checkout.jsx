@@ -54,11 +54,18 @@ const Checkout = () => {
   const [couponCode, setCoupon]       = useState('')
   const [appliedCoupon, setApplied]   = useState(null)
   const [couponLoading, setCouponL]   = useState(false)
+  
+  const [giftCardCode, setGiftCard]     = useState('')
+  const [appliedGiftCard, setAppliedGC] = useState(null)
+  const [gcLoading, setGcLoading]       = useState(false)
+
   const [stockModal, setStockModal]   = useState(null)
   const [pinLoading, setPinL]         = useState(false)
   const [pinError, setPinErr]         = useState('')
   const [preview, setPreview]         = useState(null)
   const [previewLoad, setPreviewLoad] = useState(false)
+  const [useWallet, setUseWallet]     = useState(false)
+  const [walletBalance, setWalletBalance] = useState(0)
 
   // Memoize guestCartItems string for dependency arrays
   const guestCartStr = !user ? JSON.stringify(cartItems) : '[]';
@@ -67,6 +74,7 @@ const Checkout = () => {
     fetchCart(); 
     if (user) {
       fetchAddresses()
+      api.get('/api/wallet').then(res => setWalletBalance(res.data.walletBalance)).catch(console.error)
     } else {
       setShowNew(true)
     }
@@ -169,8 +177,14 @@ const Checkout = () => {
     const guestEmail = !user ? shippingAddress.email : null;
     const guestCartItems = !user ? JSON.parse(guestCartStr) : undefined;
     
-    const payload = { shippingAddress, paymentMethod, couponCode: appliedCoupon?.code || null, guestEmail, guestCartItems }
-    if (paymentMethod === 'COD') {
+    const payload = { shippingAddress, paymentMethod, couponCode: appliedCoupon?.code || null, giftCardCode: appliedGiftCard?.code || null, guestEmail, guestCartItems, useWallet }
+    
+    // Calculate final total on frontend to check if online payment is needed
+    let finalTotal = preview?.totalPrice || 0
+    if (useWallet && walletBalance > 0) finalTotal = Math.max(0, finalTotal - walletBalance)
+    if (appliedGiftCard) finalTotal = Math.max(0, finalTotal - appliedGiftCard.balance)
+
+    if (paymentMethod === 'COD' || finalTotal === 0) {
       await api.post('/api/orders', payload); 
       clearCart();
       fetchCartCount();
@@ -418,18 +432,25 @@ const Checkout = () => {
                 <h3 className="text-lg font-bold font-display text-brand-primary">Order Items ({cart.items.length})</h3>
               </div>
               <div className="divide-y divide-brand-primary/5">
-                {cart.items.map(item => (
+                {cart.items.map(item => {
+                  const variant = item.variant && item.product?.variants ? item.product.variants.find(v => v._id === item.variant) : null
+                  const displayPrice = variant ? variant.price : item.product?.price
+                  const displayWeight = variant ? variant.weight : item.product?.weight
+                  return (
                   <div key={item._id} className="px-8 py-5 flex items-center gap-5">
                     <div className="w-16 h-16 rounded-[1rem] overflow-hidden shrink-0 bg-[var(--ivory)] border border-brand-primary/5">
                       <img src={item.product?.image} alt={item.product?.name} className="w-full h-full object-cover"/>
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="text-base font-bold font-display text-brand-primary truncate">{item.product?.name}</p>
-                      <p className="text-sm font-medium mt-1 text-brand-text/60">Qty: {item.quantity} × ₹{item.product?.price?.toLocaleString('en-IN')}</p>
+                      <p className="text-sm font-medium mt-1 text-brand-text/60 flex items-center">
+                        {displayWeight && <span className="mr-2 px-2 py-0.5 rounded text-[10px] bg-brand-primary/10 text-brand-primary">{displayWeight}</span>}
+                        Qty: {item.quantity} × ₹{displayPrice?.toLocaleString('en-IN')}
+                      </p>
                     </div>
-                    <span className="text-base font-bold font-display text-brand-primary shrink-0">₹{(item.product?.price * item.quantity).toLocaleString('en-IN')}</span>
+                    <span className="text-base font-bold font-display text-brand-primary shrink-0">₹{(displayPrice * item.quantity).toLocaleString('en-IN')}</span>
                   </div>
-                ))}
+                )})}
               </div>
             </div>
           </div>
@@ -460,9 +481,56 @@ const Checkout = () => {
                 <span className="font-extrabold text-lg text-brand-primary">Total Amount</span>
                 {previewLoad
                   ? <span className="inline-block w-24 h-8 bg-brand-primary/5 rounded-full animate-pulse"/>
-                  : <span className="text-3xl font-extrabold font-display text-brand-primary">₹{Math.round(preview?.totalPrice ?? 0).toLocaleString('en-IN')}</span>
+                  : <span className="text-3xl font-extrabold font-display text-brand-primary">₹{Math.max(0, Math.round((preview?.totalPrice ?? 0) - (appliedGiftCard ? appliedGiftCard.balance : 0))).toLocaleString('en-IN')}</span>
                 }
               </div>
+
+              {/* Gift Card Section */}
+              <div className="p-4 rounded-xl border border-brand-primary/10 bg-[var(--ivory)] mb-6">
+                <label className="text-sm font-bold text-brand-primary mb-2 block">Gift Card</label>
+                {appliedGiftCard ? (
+                  <div className="flex items-center justify-between p-3 rounded-lg bg-green-50 border border-green-200">
+                    <div>
+                      <p className="text-sm font-bold text-green-700">{appliedGiftCard.code}</p>
+                      <p className="text-xs text-green-600">Balance: ₹{appliedGiftCard.balance}</p>
+                    </div>
+                    <button type="button" onClick={() => { setAppliedGC(null); setGiftCard(''); }} className="text-xs font-bold text-red-500 hover:underline">Remove</button>
+                  </div>
+                ) : (
+                  <div className="flex gap-2">
+                    <input type="text" value={giftCardCode} onChange={e => setGiftCard(e.target.value.toUpperCase())} placeholder="Enter Code" className="flex-1 h-10 px-3 rounded-lg border border-brand-primary/20 text-sm focus:border-brand-primary outline-none uppercase" />
+                    <button type="button" onClick={async () => {
+                      if (!giftCardCode) return;
+                      setGcLoading(true);
+                      try {
+                        const res = await api.get(`/api/giftcards/check/${giftCardCode}`);
+                        setAppliedGC({ code: giftCardCode, balance: res.data.balance });
+                        toast.success(`Gift card applied! Balance: ₹${res.data.balance}`);
+                      } catch (err) {
+                        toast.error(err.response?.data?.message || 'Invalid gift card');
+                      } finally { setGcLoading(false); }
+                    }} disabled={gcLoading || !giftCardCode} className="px-4 h-10 rounded-lg bg-brand-primary text-white text-sm font-bold disabled:opacity-50">
+                      {gcLoading ? '...' : 'Apply'}
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {walletBalance > 0 && (
+                <div className="p-4 rounded-xl border border-brand-secondary/20 bg-brand-secondary/5 mb-6 flex items-start gap-3">
+                  <input type="checkbox" id="useWallet" checked={useWallet} onChange={e => setUseWallet(e.target.checked)} className="mt-1 w-4 h-4 text-brand-secondary rounded border-gray-300 focus:ring-brand-secondary cursor-pointer"/>
+                  <div>
+                    <label htmlFor="useWallet" className="text-sm font-bold text-brand-primary cursor-pointer">Use Wallet Balance (₹{walletBalance.toFixed(2)})</label>
+                    <p className="text-xs font-medium text-brand-text/60 mt-1">
+                      {useWallet 
+                        ? (walletBalance >= (preview?.totalPrice || 0) 
+                           ? 'Your order will be fully paid using your wallet.' 
+                           : `Remaining ₹${((preview?.totalPrice || 0) - walletBalance).toLocaleString('en-IN')} to be paid.`) 
+                        : 'Check to apply wallet balance towards this order.'}
+                    </p>
+                  </div>
+                </div>
+              )}
 
               {(preview?.discount ?? 0) > 0 && (
                 <div className="bg-[#e6fcf5] text-[#0ca678] text-sm font-bold text-center p-3 rounded-xl mb-6 mt-2">
@@ -474,7 +542,7 @@ const Checkout = () => {
                 className="w-full h-14 btn btn-primary rounded-full flex items-center justify-center gap-2 text-base transition-all disabled:opacity-60"
               >
                 {loading ? <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"/> : <FiArrowRight size={18}/>}
-                {loading ? 'Placing Order…' : paymentMethod === 'COD' ? 'Place Order' : 'Pay Now'}
+                {loading ? 'Placing Order…' : (paymentMethod === 'COD' ? 'Place Order' : ((useWallet && walletBalance >= (preview?.totalPrice || 0)) ? 'Pay via Wallet' : 'Pay Now'))}
               </button>
 
               <div className="mt-6 grid grid-cols-2 gap-3">

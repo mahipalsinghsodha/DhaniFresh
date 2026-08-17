@@ -68,6 +68,7 @@ const safeUser = (u) => ({
   wishlist:    u.wishlist   || [],
   language:    u.language   || 'en',
   isBlocked:   u.isBlocked  || false,
+  referralCode:u.referralCode|| null,
 });
 
 /* ── Device fingerprint helper ──────────────────────────────────────────────── */
@@ -91,17 +92,84 @@ router.post('/register', authLimiter, dbCheck, [
       return res.status(400).json({ message: errors.array()[0].msg });
     }
 
-    const { name, email, password } = req.body;
+    const { name, email, password, referralCode } = req.body;
     if (await User.findOne({ email }))
       return res.status(400).json({ message: 'User already exists' });
 
-    const user = new User({ name, email, password });
+    // Generate a unique referral code for the new user
+    const crypto = require('crypto');
+    let newReferralCode = crypto.randomBytes(3).toString('hex').toUpperCase();
+    while (await User.findOne({ referralCode: newReferralCode })) {
+      newReferralCode = crypto.randomBytes(3).toString('hex').toUpperCase();
+    }
+
+    const user = new User({ name, email, password, referralCode: newReferralCode });
+    
+    // Handle Referral Bonus
+    let referrer = null;
+    if (referralCode) {
+      referrer = await User.findOne({ referralCode: referralCode.toUpperCase() });
+      if (referrer) {
+        user.referredBy = referrer._id;
+        user.walletBalance += 50; // New user bonus
+        referrer.walletBalance += 50; // Referrer bonus
+      }
+    }
+
     await user.save();
+
+    if (referrer) {
+      await referrer.save();
+      const WalletTransaction = require('../models/WalletTransaction');
+      
+      // Transaction for new user
+      await WalletTransaction.create({
+        user: user._id,
+        type: 'CREDIT',
+        amount: 50,
+        balanceAfter: user.walletBalance,
+        description: 'Sign up referral bonus',
+        transactionType: 'REWARD_CONVERSION' // Re-using enum or TOPUP
+      });
+
+      // Transaction for referrer
+      await WalletTransaction.create({
+        user: referrer._id,
+        type: 'CREDIT',
+        amount: 50,
+        balanceAfter: referrer.walletBalance,
+        description: 'Referral bonus for inviting a friend',
+        transactionType: 'REWARD_CONVERSION'
+      });
+      
+      try {
+        const Notification = require('../models/Notification');
+        const notif = new Notification({
+          user: referrer._id,
+          type: 'REWARD_EARNED',
+          title: 'Referral Bonus!',
+          message: `You earned ₹50 for referring ${user.name}.`,
+          link: '/profile'
+        });
+        await notif.save();
+      } catch (err) {}
+    }
 
     // Welcome email (non-fatal)
     sendWelcomeEmail({ to: user.email, userName: user.name }).catch(err => {
       console.error('Welcome email error (non-fatal):', err.message);
     });
+
+    // Link previous guest orders to this new account
+    try {
+      const Order = require('../models/Order');
+      await Order.updateMany(
+        { guestEmail: user.email, user: null },
+        { $set: { user: user._id, guestEmail: null } }
+      );
+    } catch (err) {
+      console.error('Error linking guest orders:', err);
+    }
 
     const accessToken  = makeAccessToken(user);
     const refreshToken = makeRefreshToken(user);
@@ -631,7 +699,7 @@ router.put('/users/:id/block', auth, auth.admin, auth.hasPermission('users'), as
 router.put('/users/:id/role', auth, auth.admin, auth.hasPermission('users'), async (req, res) => {
   try {
     const { role } = req.body;
-    const allowedRoles = ['user', 'admin', 'superadmin', 'support', 'courier'];
+    const allowedRoles = ['user', 'admin', 'superadmin', 'support', 'courier', 'b2b_customer'];
     
     if (!allowedRoles.includes(role)) {
       return res.status(400).json({ message: 'Invalid role' });
@@ -656,6 +724,36 @@ router.put('/users/:id/role', auth, auth.admin, auth.hasPermission('users'), asy
       message: 'User role updated successfully',
       role: target.role,
       userId: target._id
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+/* ─────────────────────────────────────────────────────────────────────────── */
+/*  ADMIN: Update B2B Details                                                  */
+/* ─────────────────────────────────────────────────────────────────────────── */
+router.put('/users/:id/b2b', auth, auth.admin, auth.hasPermission('users'), async (req, res) => {
+  try {
+    const { b2bDiscountPercentage, companyName, gstin } = req.body;
+    const target = await User.findById(req.params.id);
+    
+    if (!target) return res.status(404).json({ message: 'User not found' });
+    
+    if (b2bDiscountPercentage !== undefined) target.b2bDiscountPercentage = b2bDiscountPercentage;
+    if (companyName !== undefined) target.companyName = companyName;
+    if (gstin !== undefined) target.gstin = gstin;
+
+    await target.save({ validateBeforeSave: false });
+
+    res.json({
+      message: 'B2B details updated successfully',
+      user: {
+        _id: target._id,
+        b2bDiscountPercentage: target.b2bDiscountPercentage,
+        companyName: target.companyName,
+        gstin: target.gstin
+      }
     });
   } catch (error) {
     res.status(500).json({ message: error.message });

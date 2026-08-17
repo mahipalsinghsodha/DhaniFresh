@@ -34,28 +34,26 @@ const productSchema = new mongoose.Schema({
   },
   price: {
     type: Number,
-    required: true,
-    min: 0
+    min: 0,
+    default: null
   },
   mrp: {
     type: Number,
     min: 0,
-    default: null,
-    validate: {
-      validator: function(v) {
-        // Allow null, otherwise ensure mrp >= price
-        return v === null || v >= this.price;
-      },
-      message: 'MRP must be greater than or equal to price'
-    }
+    default: null
   },
   tags: [{ type: String, lowercase: true, trim: true }],  // e.g. ['a2', 'cow', 'organic']
   stock: {
     type: Number,
-    required: true,
     min: 0,
     default: 0
   },
+  variants: [{
+    weight: { type: String, required: true },
+    price: { type: Number, required: true, min: 0 },
+    mrp: { type: Number, min: 0, default: null },
+    stock: { type: Number, required: true, min: 0, default: 0 }
+  }],
   seller: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
@@ -86,7 +84,7 @@ const productSchema = new mongoose.Schema({
   }],
   weight: {
     type: String,
-    required: true
+    default: ''
   },
   rating: {
     type: Number,

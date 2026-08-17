@@ -117,16 +117,28 @@ const AdminProducts = () => {
       imageRight: prod.imageRight || '',
       imageTop: prod.imageTop || '',
       imagePackage: prod.imagePackage || '',
+      variants: prod.variants || [],
     })
   }
 
   const handleSave = async () => {
-    if (!form.name || !form.price || !form.category) return toast.error('Name, price, and category are required');
-    if (form.mrp && Number(form.mrp) < Number(form.price)) return toast.error('MRP must be greater than or equal to price');
+    if (!form.name || !form.category) return toast.error('Name and category are required');
     if (!(await confirm(`Save changes to "${form.name}"?`))) return
     setSaving(true)
     try {
-      await api.put(`/api/products/${selectedProduct._id}`, form)
+      const payload = {
+        ...form,
+        price: Number(form.price || 0),
+        stock: Number(form.stock || 0),
+        mrp: form.mrp ? Number(form.mrp) : undefined,
+        variants: form.variants?.map(v => ({
+          ...v,
+          price: Number(v.price),
+          mrp: v.mrp ? Number(v.mrp) : undefined,
+          stock: Number(v.stock)
+        })) || []
+      }
+      await api.put(`/api/products/${selectedProduct._id}`, payload)
       toast.success('Product updated successfully')
       fetchData()
     } catch (e) {
@@ -134,6 +146,26 @@ const AdminProducts = () => {
     } finally {
       setSaving(false)
     }
+  }
+
+  const handleAddVariant = () => {
+    setForm(prev => ({ ...prev, variants: [...(prev.variants || []), { weight: '500g', price: '', mrp: '', stock: '' }] }))
+  }
+
+  const handleVariantChange = (index, field, value) => {
+    setForm(prev => {
+      const newVariants = [...(prev.variants || [])]
+      newVariants[index][field] = value
+      return { ...prev, variants: newVariants }
+    })
+  }
+
+  const handleRemoveVariant = (index) => {
+    setForm(prev => {
+      const newVariants = [...(prev.variants || [])]
+      newVariants.splice(index, 1)
+      return { ...prev, variants: newVariants }
+    })
   }
 
   const handleDelete = async (id) => {
@@ -418,7 +450,7 @@ const AdminProducts = () => {
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
                     <div>
-                      <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Price (₹)</label>
+                      <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Base Price (₹)</label>
                       <input type="number" value={form.price} onChange={e => setForm({ ...form, price: e.target.value })} style={{ width: '100%', padding: '12px 16px', borderRadius: 'var(--radius-input)', border: '1.5px solid var(--border-color)', background: 'var(--bg-surface)', fontSize: 14, color: 'var(--text-primary)', outline: 'none', transition: 'border-color 0.2s', fontFamily: 'var(--font)' }}
                         onFocus={e => e.currentTarget.style.borderColor = 'var(--brand-secondary)'} onBlur={e => e.currentTarget.style.borderColor = 'var(--border-color)'} />
                       {form.price > 0 && gstRate > 0 && (
@@ -428,12 +460,12 @@ const AdminProducts = () => {
                       )}
                     </div>
                     <div>
-                      <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.06em' }}>MRP (₹)</label>
+                      <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Base MRP (₹)</label>
                       <input type="number" value={form.mrp} onChange={e => setForm({ ...form, mrp: e.target.value })} placeholder="Optional" style={{ width: '100%', padding: '12px 16px', borderRadius: 'var(--radius-input)', border: '1.5px solid var(--border-color)', background: 'var(--bg-surface)', fontSize: 14, color: 'var(--text-primary)', outline: 'none', transition: 'border-color 0.2s', fontFamily: 'var(--font)' }}
                         onFocus={e => e.currentTarget.style.borderColor = 'var(--brand-secondary)'} onBlur={e => e.currentTarget.style.borderColor = 'var(--border-color)'} />
                     </div>
                     <div>
-                      <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Stock Quantity</label>
+                      <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Base Stock Quantity</label>
                       <input type="number" value={form.stock} onChange={e => setForm({ ...form, stock: e.target.value })} style={{ width: '100%', padding: '12px 16px', borderRadius: 'var(--radius-input)', border: '1.5px solid var(--border-color)', background: 'var(--bg-surface)', fontSize: 14, color: 'var(--text-primary)', outline: 'none', transition: 'border-color 0.2s', fontFamily: 'var(--font)' }}
                         onFocus={e => e.currentTarget.style.borderColor = 'var(--brand-secondary)'} onBlur={e => e.currentTarget.style.borderColor = 'var(--border-color)'} />
                     </div>
@@ -451,6 +483,35 @@ const AdminProducts = () => {
                         ))}
                       </select>
                     </div>
+                  </div>
+
+                  <div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                      <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Product Variants</label>
+                      <button type="button" onClick={handleAddVariant} className="btn btn-secondary" style={{ padding: '6px 12px', fontSize: 12 }}>+ Add Variant</button>
+                    </div>
+                    {form.variants?.map((v, i) => (
+                      <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr auto', gap: 12, marginBottom: 12, alignItems: 'center', background: 'var(--bg-alt)', padding: 12, borderRadius: 8 }}>
+                        <div>
+                          <select value={v.weight} onChange={e => handleVariantChange(i, 'weight', e.target.value)} style={{ width: '100%', padding: '8px 12px', borderRadius: 'var(--radius-input)', border: '1.5px solid var(--border-color)', background: 'var(--bg-surface)', fontSize: 14, outline: 'none' }}>
+                            {WEIGHT_OPTIONS.map(w => <option key={w} value={w}>{w}</option>)}
+                          </select>
+                        </div>
+                        <div>
+                          <input type="number" placeholder="Price" value={v.price} onChange={e => handleVariantChange(i, 'price', e.target.value)} style={{ width: '100%', padding: '8px 12px', borderRadius: 'var(--radius-input)', border: '1.5px solid var(--border-color)', background: 'var(--bg-surface)', fontSize: 14, outline: 'none' }} />
+                        </div>
+                        <div>
+                          <input type="number" placeholder="MRP" value={v.mrp} onChange={e => handleVariantChange(i, 'mrp', e.target.value)} style={{ width: '100%', padding: '8px 12px', borderRadius: 'var(--radius-input)', border: '1.5px solid var(--border-color)', background: 'var(--bg-surface)', fontSize: 14, outline: 'none' }} />
+                        </div>
+                        <div>
+                          <input type="number" placeholder="Stock" value={v.stock} onChange={e => handleVariantChange(i, 'stock', e.target.value)} style={{ width: '100%', padding: '8px 12px', borderRadius: 'var(--radius-input)', border: '1.5px solid var(--border-color)', background: 'var(--bg-surface)', fontSize: 14, outline: 'none' }} />
+                        </div>
+                        <button type="button" onClick={() => handleRemoveVariant(i)} style={{ color: 'var(--danger)', background: 'transparent', border: 'none', cursor: 'pointer', padding: 8 }}>X</button>
+                      </div>
+                    ))}
+                    {(!form.variants || form.variants.length === 0) && (
+                      <p style={{ fontSize: 13, color: 'var(--text-muted)' }}>No variants added. Product will use the base price, MRP, and stock.</p>
+                    )}
                   </div>
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

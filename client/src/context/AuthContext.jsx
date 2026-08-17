@@ -83,8 +83,8 @@ export const AuthProvider = ({ children }) => {
     return res.data
   }
 
-  const register = async (name, email, password) => {
-    const res = await api.post('/api/auth/register', { name, email, password })
+  const register = async (name, email, password, referralCode) => {
+    const res = await api.post('/api/auth/register', { name, email, password, referralCode })
     setAccessToken(res.data.token)
     if (res.data.refreshToken) setRefreshToken(res.data.refreshToken)
     setUser(res.data.user)

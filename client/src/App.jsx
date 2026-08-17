@@ -59,6 +59,9 @@ const HowItWorks      = lazy(() => import('./pages/HowItWorks'))
 
 const CheckoutSubscription = lazy(() => import('./pages/CheckoutSubscription'))
 const B2B = lazy(() => import('./pages/B2B'))
+const Blogs = lazy(() => import('./pages/Blogs'))
+const BlogDetail = lazy(() => import('./pages/BlogDetail'))
+const GiftCards = lazy(() => import('./pages/GiftCards'))
 
 // Support Admin pages
 const SupportDashboard = lazy(() => import('./pages/Admin/SupportDashboard.jsx'))
@@ -77,6 +80,7 @@ const AdminReviews = lazy(() => import('./pages/Admin/AdminReviews.jsx'))
 const ManageB2B = lazy(() => import('./pages/Admin/ManageB2B.jsx'))
 const AdminSupport = lazy(() => import('./pages/Admin/AdminSupport.jsx'))
 const AdminCoupons = lazy(() => import('./pages/Admin/AdminCoupons.jsx'))
+const ManageBlogs = lazy(() => import('./pages/Admin/ManageBlogs.jsx'))
 const AdminUsers = lazy(() => import('./pages/Admin/AdminUsers.jsx'))
 const AdminCategories = lazy(() => import('./pages/Admin/AdminCategories.jsx'))
 const AdminProducts = lazy(() => import('./pages/Admin/AdminProducts.jsx'))
@@ -218,6 +222,9 @@ function AnimatedRoutes() {
             <Route path="/checkout-subscription"  element={<ProtectedRoute><CheckoutSubscription /></ProtectedRoute>} />
             <Route path="/contact"                element={<Contact />} />
             <Route path="/b2b"                    element={<B2B />} />
+            <Route path="/blogs"                  element={<Blogs />} />
+            <Route path="/blog/:slug"             element={<BlogDetail />} />
+            <Route path="/gift-cards"             element={<GiftCards />} />
 
             {/* ── Static ── */}
             <Route path="/about"                  element={<AboutUs />} />
@@ -266,6 +273,7 @@ function AnimatedRoutes() {
             <Route path="/admin/media"             element={<ProtectedRoute adminOnly><AdminMedia /></ProtectedRoute>} />
             <Route path="/admin/products/:id/images" element={<ProtectedRoute adminOnly><AdminProductImages /></ProtectedRoute>} />
             <Route path="/admin/reviews"          element={<ProtectedRoute adminOnly><AdminReviews /></ProtectedRoute>} />
+            <Route path="/admin/blogs"            element={<ProtectedRoute adminOnly><ManageBlogs /></ProtectedRoute>} />
             <Route path="/admin/b2b"              element={<ProtectedRoute adminOnly><ManageB2B /></ProtectedRoute>} />
 
             {/* ── Support ── */}

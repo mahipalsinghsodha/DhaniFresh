@@ -90,6 +90,21 @@ const AdminUsers = () => {
     }
   }
 
+  const handleB2BUpdate = async (userId, data) => {
+    try {
+      setProcessingId(userId)
+      const res = await api.put(`/api/auth/users/${userId}/b2b`, data)
+      const updatedUser = { ...users.find(u => u._id === userId), ...res.data.user }
+      setUsers(u => u.map(x => x._id === userId ? updatedUser : x))
+      if (selectedUser?._id === userId) setSelectedUser(updatedUser)
+      toast.success('B2B details updated')
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to update B2B details')
+    } finally {
+      setProcessingId(null)
+    }
+  }
+
   const filtered = users.filter(u => {
     const matchSearch = u.name.toLowerCase().includes(search.toLowerCase()) ||
       u.email.toLowerCase().includes(search.toLowerCase()) ||
@@ -427,6 +442,7 @@ const AdminUsers = () => {
                             <option value="user">User</option>
                             <option value="courier">Courier</option>
                             <option value="support">Support</option>
+                            <option value="b2b_customer">B2B Customer</option>
                             <option value="admin">Admin</option>
                             <option value="superadmin">Superadmin</option>
                           </select>
@@ -443,6 +459,29 @@ const AdminUsers = () => {
                     ))}
                   </div>
                 </div>
+
+                {/* B2B Details */}
+                {selectedUser.role === 'b2b_customer' && (
+                  <div style={{ background: 'var(--bg-alt)', borderRadius: 'var(--radius-card)', border: '1px solid var(--brand-secondary)', overflow: 'hidden' }}>
+                    <div style={{ padding: '10px 16px', borderBottom: '1px solid var(--border-color)', background: 'rgba(245, 166, 35, 0.1)' }}>
+                      <h3 style={{ fontSize: 11, fontWeight: 800, color: 'var(--brand-secondary)', textTransform: 'uppercase', letterSpacing: '0.08em', margin: 0 }}>B2B Information</h3>
+                    </div>
+                    <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+                      <div>
+                        <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)' }}>Company Name</label>
+                        <input type="text" defaultValue={selectedUser.companyName || ''} onBlur={e => handleB2BUpdate(selectedUser._id, { companyName: e.target.value })} style={{ width: '100%', padding: '6px 10px', fontSize: 13, border: '1px solid var(--border-color)', borderRadius: 6, background: 'var(--bg-surface)' }} placeholder="Enter Company Name" />
+                      </div>
+                      <div>
+                        <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)' }}>GSTIN</label>
+                        <input type="text" defaultValue={selectedUser.gstin || ''} onBlur={e => handleB2BUpdate(selectedUser._id, { gstin: e.target.value })} style={{ width: '100%', padding: '6px 10px', fontSize: 13, border: '1px solid var(--border-color)', borderRadius: 6, background: 'var(--bg-surface)' }} placeholder="Enter GSTIN" />
+                      </div>
+                      <div>
+                        <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)' }}>B2B Discount Percentage (%)</label>
+                        <input type="number" defaultValue={selectedUser.b2bDiscountPercentage || 0} min="0" max="100" onBlur={e => handleB2BUpdate(selectedUser._id, { b2bDiscountPercentage: Number(e.target.value) })} style={{ width: '100%', padding: '6px 10px', fontSize: 13, border: '1px solid var(--border-color)', borderRadius: 6, background: 'var(--bg-surface)' }} />
+                      </div>
+                    </div>
+                  </div>
+                )}
 
                 {/* Recent Orders */}
                 <div>

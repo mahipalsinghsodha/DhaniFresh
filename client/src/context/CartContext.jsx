@@ -36,7 +36,11 @@ export const CartProvider = ({ children }) => {
   // ── Derived values ──────────────────────────────────────────────────────────
   const cartCount = items.reduce((sum, item) => sum + (item.quantity || 0), 0)
   const cartTotal = items.reduce((sum, item) => {
-    const price = item.product?.price || item.price || 0
+    let price = item.product?.price || item.price || 0
+    if (item.variant && item.product?.variants) {
+      const v = item.product.variants.find(v => v._id === item.variant)
+      if (v) price = v.price
+    }
     return sum + price * (item.quantity || 0)
   }, 0)
 
@@ -68,6 +72,7 @@ export const CartProvider = ({ children }) => {
         await api.post('/api/cart/items', {
           productId,
           quantity: item.quantity || 1,
+          variantId: item.variant || null
         }).catch(() => { /* ignore individual item errors */ })
       }
       localStorage.removeItem(GUEST_CART_KEY)
@@ -91,13 +96,13 @@ export const CartProvider = ({ children }) => {
   }, [user?._id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── ADD ITEM ────────────────────────────────────────────────────────────────
-  const addItem = async (product, quantity = 1) => {
+  const addItem = async (product, quantity = 1, variantId = null) => {
     const productId = product._id || product
 
     if (user) {
       // DB cart
       try {
-        const res = await api.post('/api/cart/items', { productId, quantity })
+        const res = await api.post('/api/cart/items', { productId, quantity, variantId })
         setItems(res.data.items || [])
         return true
       } catch (err) {
@@ -109,7 +114,7 @@ export const CartProvider = ({ children }) => {
       // Guest cart (localStorage)
       const currentItems = loadGuestCart()
       const existingIdx  = currentItems.findIndex(
-        i => (i.product?._id || i.product) === String(productId)
+        i => (i.product?._id || i.product) === String(productId) && i.variant === variantId
       )
 
       if (existingIdx > -1) {
@@ -121,7 +126,8 @@ export const CartProvider = ({ children }) => {
         currentItems.push({
           product:  typeof product === 'object' ? product : { _id: productId },
           quantity: Math.min(quantity, 10),
-          _id:      productId, // temp id for guest
+          variant:  variantId,
+          _id:      Date.now().toString(), // temp id for guest
         })
       }
 
@@ -192,12 +198,12 @@ export const CartProvider = ({ children }) => {
   }
 
   // ── Check if product is in cart ─────────────────────────────────────────────
-  const isInCart = (productId) => {
-    return items.some(i => (i.product?._id || i.product) === String(productId))
+  const isInCart = (productId, variantId = null) => {
+    return items.some(i => (i.product?._id || i.product) === String(productId) && i.variant === variantId)
   }
 
-  const getItemQty = (productId) => {
-    const item = items.find(i => (i.product?._id || i.product) === String(productId))
+  const getItemQty = (productId, variantId = null) => {
+    const item = items.find(i => (i.product?._id || i.product) === String(productId) && i.variant === variantId)
     return item?.quantity || 0
   }
 

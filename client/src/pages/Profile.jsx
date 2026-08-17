@@ -3,7 +3,7 @@ import { useAuth } from '../context/AuthContext'
 import { useNavigate } from 'react-router-dom'
 import { useConfirm } from '../context/ConfirmContext'
 import api from '../api/axios'
-import { FiUser, FiMapPin, FiChevronRight, FiPackage, FiLogOut, FiAlertCircle, FiPhone, FiMail, FiRefreshCw, FiClock, FiLock } from 'react-icons/fi'
+import { FiUser, FiMapPin, FiChevronRight, FiPackage, FiLogOut, FiAlertCircle, FiPhone, FiMail, FiRefreshCw, FiClock, FiLock, FiCreditCard, FiCopy, FiShare2 } from 'react-icons/fi'
 import { motion, AnimatePresence } from 'framer-motion'
 import { toast } from 'react-toastify'
 
@@ -57,12 +57,15 @@ const Profile = () => {
   const [phone, setPhone]         = useState('')
   const [profLoading, setProfLoading] = useState(false)
   const [subscriptions, setSubscriptions] = useState([])
+  const [walletData, setWalletData] = useState({ walletBalance: 0, rewardPoints: 0, transactions: [] })
+  const [walletLoading, setWalletLoading] = useState(false)
 
   useEffect(() => {
     if (user) {
       setName(user.name || '')
       setPhone(user.phone || '')
       fetchSubscriptions()
+      fetchWallet()
     }
   }, [user])
 
@@ -75,12 +78,40 @@ const Profile = () => {
     }
   }
 
+  const fetchWallet = async () => {
+    try {
+      const res = await api.get('/api/wallet')
+      setWalletData(res.data)
+    } catch (err) {
+      console.error('Failed to fetch wallet data', err)
+    }
+  }
+
   const handleCancelSubscription = async (id) => {
     try {
       await api.post('/api/subscriptions/cancel', { subscriptionId: id });
       toast.success('Subscription cancelled');
       fetchSubscriptions();
     } catch(e) { toast.error('Failed to cancel'); }
+  }
+
+  const handleConvertPoints = async () => {
+    if (walletData.rewardPoints < 10) {
+      toast.error('Minimum 10 points required to convert.');
+      return;
+    }
+    if (await confirm(`Convert ${walletData.rewardPoints} points to ₹${(walletData.rewardPoints * 0.1).toFixed(2)} wallet balance?`)) {
+      setWalletLoading(true);
+      try {
+        await api.post('/api/wallet/rewards/convert', { points: walletData.rewardPoints });
+        toast.success('Points converted successfully!');
+        fetchWallet();
+      } catch (err) {
+        toast.error(err.response?.data?.message || 'Failed to convert points');
+      } finally {
+        setWalletLoading(false);
+      }
+    }
   }
 
   const handleProfileSubmit = async (e) => {
@@ -140,8 +171,9 @@ const Profile = () => {
                 { label: 'Profile', icon: FiUser, to: '/profile', active: true },
                 { label: 'My Addresses', icon: FiMapPin, to: '/addresses' },
                 { label: 'My Orders', icon: FiPackage, to: '/orders' },
+                { label: 'Wallet & Rewards', icon: FiCreditCard, action: () => document.getElementById('wallet-section')?.scrollIntoView({ behavior: 'smooth' }) },
                 { label: 'Change Password', icon: FiLock, to: '/change-password' },
-                { label: 'My Subscriptions', icon: FiRefreshCw, action: () => document.getElementById('subscriptions-section').scrollIntoView({ behavior: 'smooth' }) },
+                { label: 'My Subscriptions', icon: FiRefreshCw, action: () => document.getElementById('subscriptions-section')?.scrollIntoView({ behavior: 'smooth' }) },
                 { label: 'Sign Out', icon: FiLogOut, danger: true, action: () => { logout(); navigate('/') } },
               ].map((item, i, arr) => (
                 <button
@@ -198,6 +230,64 @@ const Profile = () => {
                   </motion.button>
                 </div>
               </form>
+            </div>
+
+            {/* ── Wallet & Rewards ── */}
+            <div id="wallet-section" className="rounded-[2rem] p-8 lg:p-10 shadow-sm bg-white border border-brand-primary/10">
+              <div className="flex items-center justify-between mb-8 border-b border-brand-primary/5 pb-4">
+                <h2 className="text-xl font-bold font-display text-brand-primary flex items-center gap-3">
+                  <FiCreditCard size={20} className="text-brand-secondary" /> Wallet & Rewards
+                </h2>
+              </div>
+              
+              <div className="grid sm:grid-cols-2 gap-6 mb-8">
+                <div className="bg-[var(--ivory)] border border-brand-primary/5 rounded-[1.5rem] p-6 text-center">
+                  <p className="text-sm font-bold text-brand-text/60 mb-2">Wallet Balance</p>
+                  <p className="text-3xl font-display font-bold text-brand-primary">₹{walletData.walletBalance.toFixed(2)}</p>
+                </div>
+                <div className="bg-brand-secondary/10 border border-brand-secondary/20 rounded-[1.5rem] p-6 text-center">
+                  <p className="text-sm font-bold text-brand-text/60 mb-2">Reward Points</p>
+                  <p className="text-3xl font-display font-bold text-brand-secondary">{walletData.rewardPoints}</p>
+                  <button 
+                    onClick={handleConvertPoints}
+                    disabled={walletLoading || walletData.rewardPoints < 10}
+                    className="mt-4 px-4 py-2 bg-white text-brand-primary text-xs font-bold rounded-full border border-brand-primary/10 hover:bg-gray-50 disabled:opacity-50 transition-colors"
+                  >
+                    {walletLoading ? 'Converting...' : 'Convert to ₹'}
+                  </button>
+                  <p className="text-[10px] text-brand-text/50 mt-2 font-medium">10 Points = ₹1</p>
+                </div>
+              </div>
+
+              {/* Refer & Earn */}
+              {user.referralCode && (
+                <div className="bg-gradient-to-r from-brand-primary to-[#2a4399] rounded-[1.5rem] p-6 text-white shadow-lg relative overflow-hidden">
+                  <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/stardust.png')] opacity-20 mix-blend-overlay" />
+                  <div className="relative z-10 flex flex-col sm:flex-row items-center justify-between gap-6">
+                    <div>
+                      <h3 className="text-lg font-bold font-display flex items-center gap-2 mb-1">
+                        <FiShare2 /> Refer & Earn ₹50!
+                      </h3>
+                      <p className="text-sm text-white/80">
+                        Share your unique code. When a friend signs up, you both get ₹50 in your wallet.
+                      </p>
+                    </div>
+                    <div className="shrink-0 flex items-center gap-2 bg-white/10 p-2 rounded-xl backdrop-blur-sm border border-white/20">
+                      <span className="text-xl font-bold font-display px-4 tracking-widest">{user.referralCode}</span>
+                      <button 
+                        onClick={() => {
+                          navigator.clipboard.writeText(`${window.location.origin}/register?ref=${user.referralCode}`);
+                          toast.success('Referral link copied to clipboard!');
+                        }}
+                        className="w-10 h-10 flex items-center justify-center bg-white text-brand-primary rounded-lg hover:bg-brand-secondary transition-colors"
+                        title="Copy Referral Link"
+                      >
+                        <FiCopy size={18} />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* ── Subscriptions ── */}

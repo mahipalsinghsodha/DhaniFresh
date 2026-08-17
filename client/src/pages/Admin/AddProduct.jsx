@@ -119,7 +119,8 @@ const AddProduct = () => {
   const [gstRate, setGstRate] = useState(0)
   const [formData, setFormData] = useState({
     name: '', description: '', category: '',
-    price: '', stock: '', weight: '500g', image: '', imageLeft: '', imageRight: '', imageTop: '', imagePackage: '', featured: false, launchDate: ''
+    price: '', mrp: '', stock: '', weight: '500g', image: '', imageLeft: '', imageRight: '', imageTop: '', imagePackage: '', featured: false, launchDate: '',
+    variants: []
   })
 
   const WEIGHT_OPTIONS = ['250g', '500g', '1kg', '3kg', '5kg', '10kg', '15kg']
@@ -157,12 +158,43 @@ const AddProduct = () => {
     setFormData(prev => ({ ...prev, [name]: type === 'checkbox' ? checked : value }))
   }
 
+  const handleAddVariant = () => {
+    setFormData(prev => ({ ...prev, variants: [...(prev.variants || []), { weight: '500g', price: '', mrp: '', stock: '' }] }))
+  }
+
+  const handleVariantChange = (index, field, value) => {
+    setFormData(prev => {
+      const newVariants = [...(prev.variants || [])]
+      newVariants[index][field] = value
+      return { ...prev, variants: newVariants }
+    })
+  }
+
+  const handleRemoveVariant = (index) => {
+    setFormData(prev => {
+      const newVariants = [...(prev.variants || [])]
+      newVariants.splice(index, 1)
+      return { ...prev, variants: newVariants }
+    })
+  }
+
   const handleSubmit = async e => {
     e.preventDefault()
     setLoading(true)
     setError('')
     try {
-      const payload = { ...formData, price: Number(formData.price), stock: Number(formData.stock) }
+      const payload = { 
+        ...formData, 
+        price: Number(formData.price || 0), 
+        stock: Number(formData.stock || 0),
+        mrp: formData.mrp ? Number(formData.mrp) : undefined,
+        variants: formData.variants?.map(v => ({
+          ...v,
+          price: Number(v.price),
+          mrp: v.mrp ? Number(v.mrp) : undefined,
+          stock: Number(v.stock)
+        })) || []
+      }
       // Let the Axios interceptor attach the auth token automatically (no manual headers needed)
       if (isEdit) {
         await api.put(`/api/products/${id}`, payload)
@@ -351,9 +383,9 @@ const AddProduct = () => {
               </Field>
 
               {/* Price */}
-              <Field label="Price (₹)" required half>
+              <Field label="Base Price (₹)" half>
                 <input type="number" name="price" value={formData.price} onChange={handleChange}
-                  required min="0" step="0.01" placeholder="0.00"
+                  min="0" step="0.01" placeholder="0.00"
                   style={inputStyle} onFocus={handleFocus} onBlur={handleBlur} />
                 {formData.price > 0 && gstRate > 0 && (
                   <p style={{ margin: '6px 0 0', fontSize: 11, color: 'var(--success)', fontWeight: 700 }}>
@@ -363,12 +395,49 @@ const AddProduct = () => {
                 )}
               </Field>
 
-              {/* Stock */}
-              <Field label="Stock (Units)" required half>
-                <input type="number" name="stock" value={formData.stock} onChange={handleChange}
-                  required min="0" placeholder="0"
+              {/* MRP */}
+              <Field label="Base MRP (₹)" half>
+                <input type="number" name="mrp" value={formData.mrp} onChange={handleChange}
+                  min="0" step="0.01" placeholder="0.00"
                   style={inputStyle} onFocus={handleFocus} onBlur={handleBlur} />
               </Field>
+
+              {/* Stock */}
+              <Field label="Base Stock (Units)" half>
+                <input type="number" name="stock" value={formData.stock} onChange={handleChange}
+                  min="0" placeholder="0"
+                  style={inputStyle} onFocus={handleFocus} onBlur={handleBlur} />
+              </Field>
+
+              {/* Variants */}
+              <div style={{ gridColumn: 'span 2' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                  <label style={{ fontSize: 12, fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Product Variants</label>
+                  <button type="button" onClick={handleAddVariant} className="btn btn-secondary" style={{ padding: '6px 12px', fontSize: 12 }}>+ Add Variant</button>
+                </div>
+                {formData.variants?.map((v, i) => (
+                  <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr auto', gap: 12, marginBottom: 12, alignItems: 'center', background: 'var(--bg-alt)', padding: 12, borderRadius: 8 }}>
+                    <div>
+                      <select value={v.weight} onChange={e => handleVariantChange(i, 'weight', e.target.value)} style={{ ...inputStyle, padding: '8px', height: 'auto' }}>
+                        {WEIGHT_OPTIONS.map(w => <option key={w} value={w}>{w}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <input type="number" placeholder="Price" value={v.price} onChange={e => handleVariantChange(i, 'price', e.target.value)} style={{ ...inputStyle, padding: '8px' }} />
+                    </div>
+                    <div>
+                      <input type="number" placeholder="MRP" value={v.mrp} onChange={e => handleVariantChange(i, 'mrp', e.target.value)} style={{ ...inputStyle, padding: '8px' }} />
+                    </div>
+                    <div>
+                      <input type="number" placeholder="Stock" value={v.stock} onChange={e => handleVariantChange(i, 'stock', e.target.value)} style={{ ...inputStyle, padding: '8px' }} />
+                    </div>
+                    <button type="button" onClick={() => handleRemoveVariant(i)} style={{ color: 'var(--danger)', background: 'transparent', border: 'none', cursor: 'pointer', padding: 8 }}>X</button>
+                  </div>
+                ))}
+                {(!formData.variants || formData.variants.length === 0) && (
+                  <p style={{ fontSize: 13, color: 'var(--text-muted)' }}>No variants added. The product will use the base price, MRP, and stock.</p>
+                )}
+              </div>
 
               {/* Launch Date */}
               <Field label="Launch Date (Coming Soon)" hint="If set in the future, product will appear as 'Coming Soon'." half>

@@ -6,7 +6,12 @@ const orderItemSchema = new mongoose.Schema({
     ref: 'Product',
     required: true
   },
+  variant: {
+    type: mongoose.Schema.Types.ObjectId, // ID of the variant from Product.variants
+    default: null
+  },
   name: String,
+  weight: String, // Storing the weight at time of order
   image: String,
   price: Number,
   quantity: Number
@@ -54,7 +59,7 @@ refundInfo: {
   paymentMethod: {
     type: String,
     required: true,
-    enum: ['COD', 'Online']
+    enum: ['COD', 'Online', 'Wallet']
   },
 
   paymentStatus: {
@@ -113,6 +118,12 @@ refundInfo: {
     discountAmount: Number
   },
 
+  // ✅ NEW: Applied gift card details
+  giftCard: {
+    code: String,
+    amountUsed: Number
+  },
+
   taxPrice: {
     type: Number,
     required: true,
@@ -135,6 +146,16 @@ refundInfo: {
   gstRate: {
     type: Number,
     default: 0
+  },
+
+  walletUsed: {
+    type: Number,
+    default: 0
+  },
+
+  rewardPointsAwarded: {
+    type: Boolean,
+    default: false
   },
 
   isPaid: {

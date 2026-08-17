@@ -3,6 +3,7 @@ const router = express.Router();
 const Order = require('../models/Order');
 const { getNextInvoiceNumber } = require('../utils/helpers');
 const Cart = require('../models/Cart');
+const GiftCard = require('../models/GiftCard');
 const Product = require('../models/Product');
 const Coupon = require('../models/Coupon');
 const Settings = require('../models/Settings');
@@ -17,6 +18,32 @@ const { getIO } = require('../socket');
 
 async function pushStatusAndNotify(order, status, note, updatedBy, notificationData) {
   order.statusHistory.push({ status, note, updatedBy, updatedAt: new Date() });
+  
+  if (status === 'DELIVERED' && order.user && !order.rewardPointsAwarded) {
+    try {
+      const User = require('../models/User');
+      const user = await User.findById(order.user._id || order.user);
+      if (user) {
+        // e.g. 1 point for every 10 Rs spent
+        const points = Math.floor(order.totalPrice / 10);
+        user.rewardPoints += points;
+        await user.save();
+        order.rewardPointsAwarded = true;
+        
+        const notif = new Notification({
+          user: user._id,
+          type: 'REWARD_EARNED',
+          title: 'Reward Points Earned!',
+          message: `You earned ${points} reward points for your recent order.`,
+          link: '/profile'
+        });
+        await notif.save();
+      }
+    } catch (err) {
+      console.error('Error awarding reward points:', err);
+    }
+  }
+
   if (notificationData && (order.user._id || order.user)) {
     const notif = new Notification({
       user: order.user._id || order.user,
@@ -74,15 +101,28 @@ router.post('/', auth.optional, async (req, res) => {
 
     for (const item of cartItems) {
       if (!item.product) continue;
-      if (item.product.stock < item.quantity) {
+      
+      let targetStock = item.product.stock;
+      let targetPrice = item.product.price;
+      
+      if (item.variant) {
+        const variant = item.product.variants.id(item.variant);
+        if (variant) {
+          targetStock = variant.stock;
+          targetPrice = variant.price;
+        }
+      }
+
+      if (targetStock < item.quantity) {
         stockIssues.push({
           itemId: item._id,
           productId: item.product._id,
+          variantId: item.variant,
           name: item.product.name,
           image: item.product.image,
-          price: item.product.price,
+          price: targetPrice,
           requested: item.quantity,
-          available: item.product.stock,
+          available: targetStock,
         });
       }
     }
@@ -92,16 +132,27 @@ router.post('/', auth.optional, async (req, res) => {
       // Return all cart items with stock info so frontend can display the full cart
       const allItems = cartItems
         .filter(i => i.product)
-        .map(i => ({
-          itemId: i._id,
-          productId: i.product._id,
-          name: i.product.name,
-          image: i.product.image,
-          price: i.product.price,
-          quantity: i.quantity,
-          stock: i.product.stock,
-          hasIssue: i.product.stock < i.quantity,
-        }));
+        .map(i => {
+          let vPrice = i.product.price;
+          let vStock = i.product.stock;
+          if (i.variant) {
+            const v = i.product.variants.id(i.variant);
+            if (v) {
+              vPrice = v.price;
+              vStock = v.stock;
+            }
+          }
+          return {
+            itemId: i._id,
+            productId: i.product._id,
+            name: i.product.name,
+            image: i.product.image,
+            price: vPrice,
+            quantity: i.quantity,
+            stock: vStock,
+            hasIssue: vStock < i.quantity,
+          }
+        });
 
       return res.status(409).json({
         message: 'Some items have stock issues',
@@ -111,13 +162,26 @@ router.post('/', auth.optional, async (req, res) => {
     }
 
     // 3️⃣ PREPARE ORDER ITEMS (all items passed stock check if we reach here)
-    const orderItems = cartItems.filter(i => i.product).map(item => ({
-      product: item.product._id,
-      name: item.product.name,
-      image: item.product.image,
-      price: item.product.price,
-      quantity: item.quantity
-    }));
+    const orderItems = cartItems.filter(i => i.product).map(item => {
+      let finalPrice = item.product.price;
+      let finalWeight = item.product.weight;
+      if (item.variant) {
+        const variant = item.product.variants.id(item.variant);
+        if (variant) {
+          finalPrice = variant.price;
+          finalWeight = variant.weight;
+        }
+      }
+      return {
+        product: item.product._id,
+        variant: item.variant || null,
+        name: item.product.name,
+        weight: finalWeight,
+        image: item.product.image,
+        price: finalPrice,
+        quantity: item.quantity
+      };
+    });
 
     // 4️⃣ CALCULATE PRICES (BACKEND - SECURE! Uses DB-configured GST)
     // Fetch live settings — admin can change GST rate without any code deploy
@@ -127,10 +191,16 @@ router.post('/', auth.optional, async (req, res) => {
     const FREE_SHIPPING_THRESHOLD = settings.freeShippingThreshold;   // e.g. 500
     const SHIPPING_CHARGE = settings.shippingCharge;                  // e.g. 50
 
-    const itemsPrice = orderItems.reduce(
+    let itemsPrice = orderItems.reduce(
       (total, item) => total + item.price * item.quantity,
       0
     );
+
+    // Apply B2B Discount directly to itemsPrice before coupons and shipping
+    if (req.user && req.user.role === 'b2b_customer' && req.user.b2bDiscountPercentage > 0) {
+      const b2bDiscount = (itemsPrice * req.user.b2bDiscountPercentage) / 100;
+      itemsPrice -= b2bDiscount;
+    }
 
     let discount = 0;
     let appliedCoupon = null;
@@ -191,6 +261,40 @@ router.post('/', auth.optional, async (req, res) => {
     const shippingPrice = (itemsPrice - discount) > FREE_SHIPPING_THRESHOLD ? 0 : SHIPPING_CHARGE;
     const totalPrice = itemsPrice - discount + shippingPrice;
 
+    let finalTotalPrice = totalPrice;
+    let walletUsed = 0;
+    
+    // Evaluate wallet if requested
+    if (req.body.useWallet && req.user) {
+      const user = await User.findById(req.user._id);
+      if (user && user.walletBalance > 0) {
+        walletUsed = Math.min(finalTotalPrice, user.walletBalance);
+        finalTotalPrice -= walletUsed;
+      }
+    }
+    
+    // Evaluate Gift Card if requested
+    let appliedGiftCard = null;
+    let giftCardUsedAmount = 0;
+    if (req.body.giftCardCode && finalTotalPrice > 0) {
+      const giftCard = await GiftCard.findOne({ code: req.body.giftCardCode.toUpperCase() });
+      if (!giftCard) return res.status(404).json({ message: 'Invalid gift card code' });
+      if (!giftCard.isActive) return res.status(400).json({ message: 'This gift card is inactive' });
+      if (new Date(giftCard.validUntil) < new Date()) return res.status(400).json({ message: 'This gift card has expired' });
+      if (giftCard.balance <= 0) return res.status(400).json({ message: 'This gift card has no remaining balance' });
+
+      giftCardUsedAmount = Math.min(finalTotalPrice, giftCard.balance);
+      finalTotalPrice -= giftCardUsedAmount;
+      appliedGiftCard = {
+        code: giftCard.code,
+        amountUsed: giftCardUsedAmount
+      };
+    }
+
+    if (finalTotalPrice === 0 && (walletUsed > 0 || giftCardUsedAmount > 0)) {
+      paymentMethod = 'Wallet'; // Fully paid by wallet or gift card (no Razorpay needed)
+    }
+
 
     const mongoose = require('mongoose');
     const session = await mongoose.startSession();
@@ -224,9 +328,11 @@ router.post('/', auth.optional, async (req, res) => {
       itemsPrice,
       taxPrice,
       shippingPrice,
-      totalPrice,
+      totalPrice, // original total
+      walletUsed, // amount deducted from wallet
       discount,
       coupon: appliedCoupon,
+      giftCard: appliedGiftCard,
       gstRate: gstRatePct,
       isPaid: false,
       paymentStatus: 'PENDING',
@@ -242,26 +348,73 @@ router.post('/', auth.optional, async (req, res) => {
       // 6️⃣ CREATE ORDER
       order = new Order(orderData);
       await order.save({ session });
+      
+      // Handle Wallet Deduction
+      if (walletUsed > 0 && req.user) {
+        const userForWallet = await User.findById(req.user._id).session(session);
+        if (userForWallet.walletBalance < walletUsed) {
+          throw new Error('Insufficient wallet balance.');
+        }
+        userForWallet.walletBalance -= walletUsed;
+        await userForWallet.save({ session });
+        
+        const WalletTransaction = require('../models/WalletTransaction');
+        await WalletTransaction.create([{
+          user: req.user._id,
+          type: 'DEBIT',
+          amount: walletUsed,
+          balanceAfter: userForWallet.walletBalance,
+          description: `Used for order ${order.orderIdString || order._id}`,
+          relatedOrder: order._id,
+          transactionType: 'PURCHASE'
+        }], { session });
+      }
+
+      // Handle Gift Card Deduction
+      if (giftCardUsedAmount > 0 && appliedGiftCard) {
+        const giftCardRecord = await GiftCard.findOne({ code: appliedGiftCard.code }).session(session);
+        if (!giftCardRecord || giftCardRecord.balance < giftCardUsedAmount) {
+          throw new Error('Gift card balance insufficient during transaction.');
+        }
+        giftCardRecord.balance -= giftCardUsedAmount;
+        await giftCardRecord.save({ session });
+      }
 
       // 7️⃣ REDUCE STOCK (ATOMIC)
       for (const item of cartItems) {
         if (!item.product) continue; // Skip items where product was deleted
+        
+        let updateQuery = {};
+        let updateOp = {};
+        
+        if (item.variant) {
+           updateQuery = { _id: item.product._id, "variants._id": item.variant, "variants.stock": { $gte: item.quantity } };
+           updateOp = { $inc: { "variants.$.stock": -item.quantity } };
+        } else {
+           updateQuery = { _id: item.product._id, stock: { $gte: item.quantity } };
+           updateOp = { $inc: { stock: -item.quantity } };
+        }
+        
         const updated = await Product.findOneAndUpdate(
-          { _id: item.product._id, stock: { $gte: item.quantity } },
-          { $inc: { stock: -item.quantity } },
+          updateQuery,
+          updateOp,
           { new: true, session }
         );
+        
         if (!updated) {
           throw new Error(`Insufficient stock for ${item.product.name}.`);
         }
       }
 
-      // 8️⃣ FOR COD - CONFIRM IMMEDIATELY
-      if (paymentMethod === 'COD') {
-        order.paymentStatus = 'COD_CONFIRMED';
+      // 8️⃣ FOR COD OR WALLET - CONFIRM IMMEDIATELY
+      if (paymentMethod === 'COD' || paymentMethod === 'Wallet') {
+        order.paymentStatus = paymentMethod === 'Wallet' ? 'PAID' : 'COD_CONFIRMED';
+        order.isPaid = paymentMethod === 'Wallet';
+        if (paymentMethod === 'Wallet') order.paidAt = new Date();
+        
         order.statusHistory.push({
-          status: 'COD_CONFIRMED',
-          note: 'Order confirmed (Cash on Delivery)',
+          status: order.paymentStatus,
+          note: `Order confirmed (${paymentMethod === 'Wallet' ? 'Paid via Wallet' : 'Cash on Delivery'})`,
           updatedBy: req.user ? req.user._id : null,
           updatedAt: new Date()
         });
@@ -405,10 +558,24 @@ router.post('/price-preview', auth.optional, async (req, res) => {
     const gstRatePct = settings.gstEnabled ? settings.gstRate : 0;
     const gstMultiplier = gstRatePct / 100;
 
-    const itemsPrice = cartItems.reduce(
-      (total, item) => total + (item.product?.price || 0) * item.quantity,
+    let itemsPrice = cartItems.reduce(
+      (total, item) => {
+        let price = item.product?.price || 0;
+        if (item.variant && item.product?.variants) {
+          const variant = item.product.variants.id(item.variant);
+          if (variant) price = variant.price;
+        }
+        return total + price * item.quantity;
+      },
       0
     );
+    
+    // Apply B2B Discount directly to itemsPrice before shipping
+    if (req.user && req.user.role === 'b2b_customer' && req.user.b2bDiscountPercentage > 0) {
+      const b2bDiscount = (itemsPrice * req.user.b2bDiscountPercentage) / 100;
+      itemsPrice -= b2bDiscount;
+    }
+
     // Tax is inclusive
     const taxPrice      = itemsPrice - (itemsPrice / (1 + gstMultiplier));
     const shippingPrice = itemsPrice > settings.freeShippingThreshold ? 0 : settings.shippingCharge;
@@ -506,7 +673,7 @@ router.post('/verify-coupon', auth.optional, async (req, res) => {
         const products = await Product.find({ _id: { $in: productIds } });
         cartItems = guestCartItems.map(item => {
           const dbProduct = products.find(p => p._id.toString() === (item.product._id || item.product).toString());
-          return { product: dbProduct, quantity: item.quantity };
+          return { product: dbProduct, variant: item.variant || null, quantity: item.quantity };
         });
       }
     }
@@ -516,7 +683,14 @@ router.post('/verify-coupon', auth.optional, async (req, res) => {
     }
 
     const itemsPrice = cartItems.reduce(
-      (total, item) => total + (item.product?.price || 0) * item.quantity,
+      (total, item) => {
+        let price = item.product?.price || 0;
+        if (item.variant && item.product?.variants) {
+          const variant = item.product.variants.id(item.variant);
+          if (variant) price = variant.price;
+        }
+        return total + price * item.quantity;
+      },
       0
     );
 

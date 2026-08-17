@@ -6,6 +6,10 @@ const cartItemSchema = new mongoose.Schema({
     ref: 'Product',
     required: true
   },
+  variant: {
+    type: mongoose.Schema.Types.ObjectId, // ID of the variant from the Product.variants array
+    default: null
+  },
   quantity: {
     type: Number,
     required: true,
@@ -21,7 +25,11 @@ const cartSchema = new mongoose.Schema({
     required: true,
     unique: true
   },
-  items: [cartItemSchema]
+  items: [cartItemSchema],
+  reminderSentAt: {
+    type: Date,
+    default: null
+  }
 }, {
   timestamps: true
 });
