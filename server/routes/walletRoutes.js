@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { protect } = require('../middleware/authMiddleware');
+const auth = require('../middleware/auth');
 const User = require('../models/User');
 const WalletTransaction = require('../models/WalletTransaction');
 const Razorpay = require('razorpay');
@@ -15,7 +15,7 @@ const razorpay = new Razorpay({
 // @route   GET /api/wallet
 // @desc    Get wallet balance, reward points, and transaction history
 // @access  Private
-router.get('/', protect, async (req, res) => {
+router.get('/', auth, async (req, res) => {
   try {
     const user = await User.findById(req.user._id).select('walletBalance rewardPoints');
     const transactions = await WalletTransaction.find({ user: req.user._id })
@@ -36,7 +36,7 @@ router.get('/', protect, async (req, res) => {
 // @route   POST /api/wallet/topup
 // @desc    Create Razorpay order to top up wallet
 // @access  Private
-router.post('/topup', protect, async (req, res) => {
+router.post('/topup', auth, async (req, res) => {
   try {
     const { amount } = req.body;
     if (!amount || amount <= 0) {
@@ -60,7 +60,7 @@ router.post('/topup', protect, async (req, res) => {
 // @route   POST /api/wallet/topup/verify
 // @desc    Verify Razorpay topup and add to wallet
 // @access  Private
-router.post('/topup/verify', protect, async (req, res) => {
+router.post('/topup/verify', auth, async (req, res) => {
   try {
     const { razorpay_order_id, razorpay_payment_id, razorpay_signature, amount } = req.body;
 
@@ -97,7 +97,7 @@ router.post('/topup/verify', protect, async (req, res) => {
 // @route   POST /api/wallet/rewards/convert
 // @desc    Convert reward points to wallet balance
 // @access  Private
-router.post('/rewards/convert', protect, async (req, res) => {
+router.post('/rewards/convert', auth, async (req, res) => {
   try {
     const { points } = req.body;
     if (!points || points <= 0) {

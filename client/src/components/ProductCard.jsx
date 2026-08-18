@@ -46,10 +46,19 @@ const ProductCard = ({ product, categories = [], rank }) => {
   }
 
   const handleQuickAdd = async (e) => {
-    e.preventDefault(); e.stopPropagation()
+    e.preventDefault(); e.stopPropagation() // prevent navigating to product detail
     if (!inStock || isComingSoon) return
     setAddingToCart(true)
-    const success = await addItem(product, 1)
+    
+    let qtyToAdd = 1;
+    if (user?.role === 'b2b_customer') {
+      qtyToAdd = product.b2bMinQty > 0 ? product.b2bMinQty : 1;
+      if (product.variants && product.variants.length > 0) {
+         if (product.variants[0].b2bMinQty > 0) qtyToAdd = product.variants[0].b2bMinQty;
+      }
+    }
+    
+    const success = await addItem(product, qtyToAdd)
     if (success) {
       toast.success('Added to cart!')
     }

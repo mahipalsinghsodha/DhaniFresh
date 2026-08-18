@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const Blog = require('../models/Blog');
 const auth = require('../middleware/auth');
-const admin = require('../middleware/admin');
+
 
 // Public route to get all blogs (active only)
 router.get('/', async (req, res) => {
@@ -15,7 +15,7 @@ router.get('/', async (req, res) => {
 });
 
 // Admin route to get all blogs (including inactive)
-router.get('/admin', auth, admin, async (req, res) => {
+router.get('/admin', auth, auth.admin, async (req, res) => {
   try {
     const blogs = await Blog.find({}).sort({ createdAt: -1 });
     res.json(blogs);
@@ -36,7 +36,7 @@ router.get('/:slug', async (req, res) => {
 });
 
 // Admin route to create a blog
-router.post('/', auth, admin, async (req, res) => {
+router.post('/', auth, auth.admin, async (req, res) => {
   try {
     const { title, slug, content, images, author, isActive, tags } = req.body;
     
@@ -62,7 +62,7 @@ router.post('/', auth, admin, async (req, res) => {
 });
 
 // Admin route to update a blog
-router.put('/:id', auth, admin, async (req, res) => {
+router.put('/:id', auth, auth.admin, async (req, res) => {
   try {
     const { title, slug, content, images, author, isActive, tags } = req.body;
     
@@ -90,7 +90,7 @@ router.put('/:id', auth, admin, async (req, res) => {
 });
 
 // Admin route to delete a blog
-router.delete('/:id', auth, admin, async (req, res) => {
+router.delete('/:id', auth, auth.admin, async (req, res) => {
   try {
     const blog = await Blog.findById(req.params.id);
     if (!blog) return res.status(404).json({ message: 'Blog not found' });

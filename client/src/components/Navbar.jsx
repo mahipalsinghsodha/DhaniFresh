@@ -189,6 +189,7 @@ const Navbar = () => {
                 {[
                   { to: '/products', label: t('navbar.shop', 'Products') },
                   { to: '/about', label: t('navbar.about', 'About Us') },
+                  { to: '/blogs', label: t('navbar.blogs', 'Blogs') },
                   ...(user ? [{ to: '/support', label: t('navbar.help', 'Help') }] : []),
                   { to: '/contact', label: t('navbar.contact', 'Contact') },
                 ].map(({ to, label }) => (
@@ -215,6 +216,7 @@ const Navbar = () => {
                   ...(hasPermission('orders') ? [{ to: '/admin/ordersAdmin', label: t('navbar.ordersAdmin', 'Orders') }] : []),
                   ...(hasPermission('users') ? [{ to: '/admin/users', label: t('navbar.users', 'Users') }] : []),
                   ...(user?.role === 'superadmin' ? [{ to: '/admin/newsletters', label: t('navbar.newsletters', 'Newsletters') }] : []),
+                  { to: '/admin/blogs', label: t('navbar.manageBlogs', 'Blogs') },
                   { to: '/admin/analytics', label: t('navbar.analytics', 'Analytics') },
                 ].map(({ to, label }) => (
                   <Link key={to} to={to} className={navLinkCls(to)}>
@@ -598,6 +600,7 @@ const Navbar = () => {
                       { to: '/', label: t('navbar.home', 'Home') },
                       { to: '/products', label: t('navbar.shop', 'Products') },
                       { to: '/about', label: t('navbar.about', 'About Us') },
+                      { to: '/blogs', label: t('navbar.blogs', 'Blogs') },
                       ...(user ? [{ to: '/support', label: t('navbar.help', 'Help') }] : []),
                       { to: '/contact', label: t('navbar.contact', 'Contact') },
                     ].map(({ to, label }, i) => (
@@ -639,6 +642,7 @@ const Navbar = () => {
                     <Link to="/admin/reviews" className={mobileLinkCls('/admin/reviews')}>{t('navbar.reviews', 'Reviews')}</Link>
                     <Link to="/admin/orders" className={mobileLinkCls('/admin/orders')}>{t('navbar.ordersAdmin', 'Orders')}</Link>
                     <Link to="/admin/users" className={mobileLinkCls('/admin/users')}>{t('navbar.users', 'Users')}</Link>
+                    <Link to="/admin/blogs" className={mobileLinkCls('/admin/blogs')}>{t('navbar.manageBlogs', 'Blogs')}</Link>
                     <Link to="/admin/analytics" className={mobileLinkCls('/admin/analytics')}>{t('navbar.analytics', 'Analytics')}</Link>
                   </>
                 )}

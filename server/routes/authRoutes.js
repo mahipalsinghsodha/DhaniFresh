@@ -105,55 +105,16 @@ router.post('/register', authLimiter, dbCheck, [
 
     const user = new User({ name, email, password, referralCode: newReferralCode });
     
-    // Handle Referral Bonus
+    // Handle Referral Code (Link to referrer, no instant bonus)
     let referrer = null;
     if (referralCode) {
       referrer = await User.findOne({ referralCode: referralCode.toUpperCase() });
       if (referrer) {
         user.referredBy = referrer._id;
-        user.walletBalance += 50; // New user bonus
-        referrer.walletBalance += 50; // Referrer bonus
       }
     }
 
     await user.save();
-
-    if (referrer) {
-      await referrer.save();
-      const WalletTransaction = require('../models/WalletTransaction');
-      
-      // Transaction for new user
-      await WalletTransaction.create({
-        user: user._id,
-        type: 'CREDIT',
-        amount: 50,
-        balanceAfter: user.walletBalance,
-        description: 'Sign up referral bonus',
-        transactionType: 'REWARD_CONVERSION' // Re-using enum or TOPUP
-      });
-
-      // Transaction for referrer
-      await WalletTransaction.create({
-        user: referrer._id,
-        type: 'CREDIT',
-        amount: 50,
-        balanceAfter: referrer.walletBalance,
-        description: 'Referral bonus for inviting a friend',
-        transactionType: 'REWARD_CONVERSION'
-      });
-      
-      try {
-        const Notification = require('../models/Notification');
-        const notif = new Notification({
-          user: referrer._id,
-          type: 'REWARD_EARNED',
-          title: 'Referral Bonus!',
-          message: `You earned ₹50 for referring ${user.name}.`,
-          link: '/profile'
-        });
-        await notif.save();
-      } catch (err) {}
-    }
 
     // Welcome email (non-fatal)
     sendWelcomeEmail({ to: user.email, userName: user.name }).catch(err => {
@@ -260,6 +221,17 @@ router.post('/login', authLimiter, dbCheck, [
         location
       });
     } catch (err) { console.error('Error logging login activity:', err); }
+
+    // Ensure user has a referral code (for older accounts)
+    if (!user.referralCode) {
+      const crypto = require('crypto');
+      let newReferralCode = crypto.randomBytes(3).toString('hex').toUpperCase();
+      while (await User.findOne({ referralCode: newReferralCode })) {
+        newReferralCode = crypto.randomBytes(3).toString('hex').toUpperCase();
+      }
+      user.referralCode = newReferralCode;
+      await user.save({ validateBeforeSave: false });
+    }
 
     res.json({ token: accessToken, refreshToken, user: safeUser(user) });
   } catch (error) {
@@ -389,7 +361,45 @@ router.post('/logout-all', auth, async (req, res) => {
 /* ─────────────────────────────────────────────────────────────────────────── */
 /*  GET CURRENT USER                                                           */
 /* ─────────────────────────────────────────────────────────────────────────── */
-router.get('/me', auth, (req, res) => res.json(safeUser(req.user)));
+router.get('/me', auth, async (req, res) => {
+  try {
+    let user = req.user;
+    if (!user.referralCode) {
+      const crypto = require('crypto');
+      let newReferralCode = crypto.randomBytes(3).toString('hex').toUpperCase();
+      while (await User.findOne({ referralCode: newReferralCode })) {
+        newReferralCode = crypto.randomBytes(3).toString('hex').toUpperCase();
+      }
+      user.referralCode = newReferralCode;
+      await user.save({ validateBeforeSave: false });
+    }
+    res.json(safeUser(user));
+  } catch (error) {
+    res.status(500).json({ message: 'Error fetching profile' });
+  }
+});
+
+/* ─────────────────────────────────────────────────────────────────────────── */
+/*  GET REFERRALS HISTORY                                                      */
+/* ─────────────────────────────────────────────────────────────────────────── */
+router.get('/referrals', auth, async (req, res) => {
+  try {
+    const referrals = await User.find({ referredBy: req.user._id })
+      .select('name createdAt referralRewardClaimed')
+      .sort({ createdAt: -1 });
+
+    const formattedReferrals = referrals.map(ref => ({
+      _id: ref._id,
+      name: ref.name,
+      joinedAt: ref.createdAt,
+      status: ref.referralRewardClaimed ? 'Completed' : 'Pending First Order'
+    }));
+
+    res.json(formattedReferrals);
+  } catch (error) {
+    res.status(500).json({ message: 'Failed to fetch referrals' });
+  }
+});
 
 /* ─────────────────────────────────────────────────────────────────────────── */
 /*  UPDATE PROFILE                                                             */

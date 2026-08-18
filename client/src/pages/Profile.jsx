@@ -59,6 +59,7 @@ const Profile = () => {
   const [subscriptions, setSubscriptions] = useState([])
   const [walletData, setWalletData] = useState({ walletBalance: 0, rewardPoints: 0, transactions: [] })
   const [walletLoading, setWalletLoading] = useState(false)
+  const [referrals, setReferrals] = useState([])
 
   useEffect(() => {
     if (user) {
@@ -66,8 +67,18 @@ const Profile = () => {
       setPhone(user.phone || '')
       fetchSubscriptions()
       fetchWallet()
+      fetchReferrals()
     }
   }, [user])
+
+  const fetchReferrals = async () => {
+    try {
+      const res = await api.get('/api/auth/referrals')
+      setReferrals(res.data || [])
+    } catch (err) {
+      console.error('Failed to fetch referrals', err)
+    }
+  }
 
   const fetchSubscriptions = async () => {
     try {
@@ -269,7 +280,7 @@ const Profile = () => {
                         <FiShare2 /> Refer & Earn ₹50!
                       </h3>
                       <p className="text-sm text-white/80">
-                        Share your unique code. When a friend signs up, you both get ₹50 in your wallet.
+                        Share your unique code. When a friend signs up and their first order is delivered, you both get ₹50 in your wallet.
                       </p>
                     </div>
                     <div className="shrink-0 flex items-center gap-2 bg-white/10 p-2 rounded-xl backdrop-blur-sm border border-white/20">
@@ -285,6 +296,38 @@ const Profile = () => {
                         <FiCopy size={18} />
                       </button>
                     </div>
+                  </div>
+                </div>
+              )}
+              
+              {/* My Referrals History */}
+              {referrals.length > 0 && (
+                <div className="mt-8 border border-brand-primary/10 rounded-2xl overflow-hidden">
+                  <div className="bg-gray-50 px-5 py-4 border-b border-brand-primary/10">
+                    <h3 className="text-sm font-bold text-brand-primary uppercase tracking-wider">My Referrals</h3>
+                  </div>
+                  <div className="divide-y divide-brand-primary/10">
+                    {referrals.map(ref => (
+                      <div key={ref._id} className="p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                        <div>
+                          <p className="font-bold text-brand-primary text-sm">{ref.name}</p>
+                          <p className="text-xs text-brand-text/60 font-medium mt-0.5">Joined: {new Date(ref.joinedAt).toLocaleDateString()}</p>
+                        </div>
+                        <div>
+                          {ref.status === 'Completed' ? (
+                            <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-green-50 text-green-700 text-xs font-bold border border-green-200">
+                              <span className="w-1.5 h-1.5 rounded-full bg-green-500"></span>
+                              Rewarded (+₹50)
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-yellow-50 text-yellow-700 text-xs font-bold border border-yellow-200">
+                              <span className="w-1.5 h-1.5 rounded-full bg-yellow-500 animate-pulse"></span>
+                              Pending First Order
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 </div>
               )}

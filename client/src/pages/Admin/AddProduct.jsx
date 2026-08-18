@@ -159,7 +159,7 @@ const AddProduct = () => {
   }
 
   const handleAddVariant = () => {
-    setFormData(prev => ({ ...prev, variants: [...(prev.variants || []), { weight: '500g', price: '', mrp: '', stock: '' }] }))
+    setFormData(prev => ({ ...prev, variants: [...(prev.variants || []), { weight: '500g', price: '', mrp: '', stock: '', b2bMinQty: 0, b2bSetQty: 0 }] }))
   }
 
   const handleVariantChange = (index, field, value) => {
@@ -192,7 +192,9 @@ const AddProduct = () => {
           ...v,
           price: Number(v.price),
           mrp: v.mrp ? Number(v.mrp) : undefined,
-          stock: Number(v.stock)
+          stock: Number(v.stock),
+          b2bMinQty: Number(v.b2bMinQty || 0),
+          b2bSetQty: Number(v.b2bSetQty || 0)
         })) || []
       }
       // Let the Axios interceptor attach the auth token automatically (no manual headers needed)
@@ -409,6 +411,18 @@ const AddProduct = () => {
                   style={inputStyle} onFocus={handleFocus} onBlur={handleBlur} />
               </Field>
 
+              {/* B2B Configuration */}
+              <Field label="B2B Min Qty" half hint="Minimum qty a B2B user must order.">
+                <input type="number" name="b2bMinQty" value={formData.b2bMinQty} onChange={handleChange}
+                  min="0" placeholder="0"
+                  style={inputStyle} onFocus={handleFocus} onBlur={handleBlur} />
+              </Field>
+              <Field label="B2B Set/Carton Qty" half hint="Quantity increment size (e.g., box of 20).">
+                <input type="number" name="b2bSetQty" value={formData.b2bSetQty} onChange={handleChange}
+                  min="0" placeholder="0"
+                  style={inputStyle} onFocus={handleFocus} onBlur={handleBlur} />
+              </Field>
+
               {/* Variants */}
               <div style={{ gridColumn: 'span 2' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
@@ -416,20 +430,26 @@ const AddProduct = () => {
                   <button type="button" onClick={handleAddVariant} className="btn btn-secondary" style={{ padding: '6px 12px', fontSize: 12 }}>+ Add Variant</button>
                 </div>
                 {formData.variants?.map((v, i) => (
-                  <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr auto', gap: 12, marginBottom: 12, alignItems: 'center', background: 'var(--bg-alt)', padding: 12, borderRadius: 8 }}>
+                  <div key={i} style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr 1fr 1fr 1fr 1fr auto', gap: 8, marginBottom: 12, alignItems: 'center', background: 'var(--bg-alt)', padding: 12, borderRadius: 8 }}>
                     <div>
-                      <select value={v.weight} onChange={e => handleVariantChange(i, 'weight', e.target.value)} style={{ ...inputStyle, padding: '8px', height: 'auto' }}>
+                      <select value={v.weight} onChange={e => handleVariantChange(i, 'weight', e.target.value)} style={{ ...inputStyle, padding: '8px', height: 'auto', fontSize: 13 }}>
                         {WEIGHT_OPTIONS.map(w => <option key={w} value={w}>{w}</option>)}
                       </select>
                     </div>
                     <div>
-                      <input type="number" placeholder="Price" value={v.price} onChange={e => handleVariantChange(i, 'price', e.target.value)} style={{ ...inputStyle, padding: '8px' }} />
+                      <input type="number" placeholder="Price" value={v.price} onChange={e => handleVariantChange(i, 'price', e.target.value)} style={{ ...inputStyle, padding: '8px', fontSize: 13 }} />
                     </div>
                     <div>
-                      <input type="number" placeholder="MRP" value={v.mrp} onChange={e => handleVariantChange(i, 'mrp', e.target.value)} style={{ ...inputStyle, padding: '8px' }} />
+                      <input type="number" placeholder="MRP" value={v.mrp} onChange={e => handleVariantChange(i, 'mrp', e.target.value)} style={{ ...inputStyle, padding: '8px', fontSize: 13 }} />
                     </div>
                     <div>
-                      <input type="number" placeholder="Stock" value={v.stock} onChange={e => handleVariantChange(i, 'stock', e.target.value)} style={{ ...inputStyle, padding: '8px' }} />
+                      <input type="number" placeholder="Stock" value={v.stock} onChange={e => handleVariantChange(i, 'stock', e.target.value)} style={{ ...inputStyle, padding: '8px', fontSize: 13 }} />
+                    </div>
+                    <div>
+                      <input type="number" placeholder="B2B Min" value={v.b2bMinQty} onChange={e => handleVariantChange(i, 'b2bMinQty', e.target.value)} style={{ ...inputStyle, padding: '8px', fontSize: 13 }} />
+                    </div>
+                    <div>
+                      <input type="number" placeholder="B2B Set" value={v.b2bSetQty} onChange={e => handleVariantChange(i, 'b2bSetQty', e.target.value)} style={{ ...inputStyle, padding: '8px', fontSize: 13 }} />
                     </div>
                     <button type="button" onClick={() => handleRemoveVariant(i)} style={{ color: 'var(--danger)', background: 'transparent', border: 'none', cursor: 'pointer', padding: 8 }}>X</button>
                   </div>

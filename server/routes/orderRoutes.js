@@ -12,6 +12,7 @@ const geoip = require('geoip-lite');
 const auth = require('../middleware/auth');
 const { logAction } = require('../utils/logger');
 const { sendShippingUpdateEmail } = require('../services/emailService');
+const User = require('../models/User');
 const { invalidateAnalytics } = require('../utils/cache');
 const Notification = require('../models/Notification');
 const { getIO } = require('../socket');
@@ -22,17 +23,64 @@ async function pushStatusAndNotify(order, status, note, updatedBy, notificationD
   if (status === 'DELIVERED' && order.user && !order.rewardPointsAwarded) {
     try {
       const User = require('../models/User');
+      const WalletTransaction = require('../models/WalletTransaction');
       const user = await User.findById(order.user._id || order.user);
+      
       if (user) {
         // e.g. 1 point for every 10 Rs spent
         const points = Math.floor(order.totalPrice / 10);
         user.rewardPoints += points;
+        
+        // ── Referral Reward Logic ──
+        if (user.referredBy && !user.referralRewardClaimed) {
+          const referrer = await User.findById(user.referredBy);
+          if (referrer) {
+            user.walletBalance += 50;
+            referrer.walletBalance += 50;
+            user.referralRewardClaimed = true;
+            
+            await referrer.save();
+
+            // Transaction for new user (referee)
+            await WalletTransaction.create({
+              user: user._id,
+              type: 'CREDIT',
+              amount: 50,
+              balanceAfter: user.walletBalance,
+              description: 'Referral bonus (first order delivered)',
+              transactionType: 'REWARD_CONVERSION'
+            });
+
+            // Transaction for referrer
+            await WalletTransaction.create({
+              user: referrer._id,
+              type: 'CREDIT',
+              amount: 50,
+              balanceAfter: referrer.walletBalance,
+              description: `Referral bonus for inviting ${user.name} (first order delivered)`,
+              transactionType: 'REWARD_CONVERSION'
+            });
+
+            // Notification for referrer
+            try {
+              const notif = new Notification({
+                user: referrer._id,
+                type: 'SYSTEM', // REWARD_EARNED was not in enum
+                title: 'Referral Bonus!',
+                message: `You earned ₹50 for referring ${user.name}!`,
+                link: '/profile'
+              });
+              await notif.save();
+            } catch (err) { console.error('Referral notif err:', err); }
+          }
+        }
+        
         await user.save();
         order.rewardPointsAwarded = true;
         
         const notif = new Notification({
           user: user._id,
-          type: 'REWARD_EARNED',
+          type: 'SYSTEM', // REWARD_EARNED is not in enum, using SYSTEM
           title: 'Reward Points Earned!',
           message: `You earned ${points} reward points for your recent order.`,
           link: '/profile'

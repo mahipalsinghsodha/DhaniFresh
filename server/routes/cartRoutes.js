@@ -46,10 +46,15 @@ router.post('/items', auth, async (req, res) => {
     }
 
     let targetStock = product.stock;
+    let b2bMinQty = product.b2bMinQty || 0;
+    let b2bSetQty = product.b2bSetQty || 0;
+    
     if (variantId) {
       const variant = product.variants.id(variantId);
       if (!variant) return res.status(404).json({ message: 'Variant not found' });
       targetStock = variant.stock;
+      if (variant.b2bMinQty > 0) b2bMinQty = variant.b2bMinQty;
+      if (variant.b2bSetQty > 0) b2bSetQty = variant.b2bSetQty;
     }
 
     // Block adding out-of-stock products
@@ -69,17 +74,34 @@ router.post('/items', auth, async (req, res) => {
     );
 
     const requestedQty = quantity || 1;
-    // Cap = min(targetStock, MAX_QTY_PER_ITEM)
-    const maxAllowed = Math.min(targetStock, MAX_QTY_PER_ITEM);
+    const isB2B = req.user.role === 'b2b_customer';
+    
+    // Cap = targetStock for B2B, otherwise min(targetStock, MAX_QTY_PER_ITEM)
+    const maxAllowed = isB2B ? targetStock : Math.min(targetStock, MAX_QTY_PER_ITEM);
+
+    let newQty = requestedQty;
+    if (itemIndex > -1) {
+      newQty = cart.items[itemIndex].quantity + requestedQty;
+    }
+    newQty = Math.min(newQty, maxAllowed);
+    
+    // B2B Constraints check
+    if (isB2B && b2bMinQty > 0) {
+       if (newQty < b2bMinQty) {
+          return res.status(400).json({ message: `Minimum B2B order quantity is ${b2bMinQty}` });
+       }
+       if (b2bSetQty > 0 && (newQty - b2bMinQty) % b2bSetQty !== 0) {
+          return res.status(400).json({ message: `B2B orders must be in increments of ${b2bSetQty} after the minimum of ${b2bMinQty}` });
+       }
+    }
 
     if (itemIndex > -1) {
-      const newQty = cart.items[itemIndex].quantity + requestedQty;
-      cart.items[itemIndex].quantity = Math.min(newQty, maxAllowed);
+      cart.items[itemIndex].quantity = newQty;
     } else {
       cart.items.push({ 
         product: productId, 
         variant: variantId || null,
-        quantity: Math.min(requestedQty, maxAllowed)
+        quantity: newQty
       });
     }
 
@@ -115,13 +137,20 @@ router.put('/items/:itemId', auth, async (req, res) => {
     }
     
     let targetStock = product.stock;
+    let b2bMinQty = product.b2bMinQty || 0;
+    let b2bSetQty = product.b2bSetQty || 0;
     if (item.variant) {
       const variant = product.variants.id(item.variant);
-      if (variant) targetStock = variant.stock;
+      if (variant) {
+        targetStock = variant.stock;
+        if (variant.b2bMinQty > 0) b2bMinQty = variant.b2bMinQty;
+        if (variant.b2bSetQty > 0) b2bSetQty = variant.b2bSetQty;
+      }
     }
 
-    // Dynamic cap: min(targetStock, MAX_QTY_PER_ITEM)
-    const maxAllowed = Math.min(targetStock, MAX_QTY_PER_ITEM);
+    const isB2B = req.user.role === 'b2b_customer';
+    // Dynamic cap: targetStock for B2B, otherwise min(targetStock, MAX_QTY_PER_ITEM)
+    const maxAllowed = isB2B ? targetStock : Math.min(targetStock, MAX_QTY_PER_ITEM);
 
     if (quantity < 1) {
       return res.status(400).json({ message: 'Quantity must be at least 1' });
@@ -130,6 +159,16 @@ router.put('/items/:itemId', auth, async (req, res) => {
       return res.status(400).json({ 
         message: `Max ${maxAllowed} of this item allowed (stock: ${targetStock})` 
       });
+    }
+    
+    // B2B Constraints check
+    if (isB2B && b2bMinQty > 0) {
+       if (quantity < b2bMinQty) {
+          return res.status(400).json({ message: `Minimum B2B order quantity is ${b2bMinQty}` });
+       }
+       if (b2bSetQty > 0 && (quantity - b2bMinQty) % b2bSetQty !== 0) {
+          return res.status(400).json({ message: `B2B orders must be in increments of ${b2bSetQty} after the minimum of ${b2bMinQty}` });
+       }
     }
 
     item.quantity = quantity;

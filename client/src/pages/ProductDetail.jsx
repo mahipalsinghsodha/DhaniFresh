@@ -82,7 +82,6 @@ const ProductDetail = () => {
   useEffect(() => {
   const controller = new AbortController();
   window.scrollTo(0, 0);
-  setQuantity(1);
   setActiveTab('description');
   fetchAll(controller);
   return () => controller.abort();
@@ -95,11 +94,21 @@ const ProductDetail = () => {
         api.get(`/api/products/${id}`, { signal: controller.signal }),
       ])
       const prod = prodRes.data
-      setProduct(prod)
       if (prod.variants && prod.variants.length > 0) {
         setSelectedVariant(prod.variants[0]._id)
       }
       setSelectedImage(prod.image)
+      
+      const isB2B = user?.role === 'b2b_customer';
+      let initMinQty = 1;
+      if (isB2B) {
+        initMinQty = prod.b2bMinQty > 0 ? prod.b2bMinQty : 1;
+        if (prod.variants && prod.variants.length > 0) {
+           const v = prod.variants[0];
+           if (v.b2bMinQty > 0) initMinQty = v.b2bMinQty;
+        }
+      }
+      setQuantity(initMinQty);
 
       // Check if current user already reviewed
       if (user && prod.reviews?.length) {
@@ -506,7 +515,15 @@ const ProductDetail = () => {
                   {product.variants.map((v) => (
                     <button
                       key={v._id}
-                      onClick={() => { setSelectedVariant(v._id); setQuantity(1); }}
+                      onClick={() => { 
+                        setSelectedVariant(v._id); 
+                        const isB2B = user?.role === 'b2b_customer';
+                        let minQ = 1;
+                        if (isB2B) {
+                          minQ = v.b2bMinQty > 0 ? v.b2bMinQty : (product.b2bMinQty > 0 ? product.b2bMinQty : 1);
+                        }
+                        setQuantity(minQ); 
+                      }}
                       className={`relative px-4 py-2 border-2 rounded-xl text-sm font-bold transition-all ${
                         selectedVariant === v._id
                           ? 'border-brand-secondary bg-brand-secondary/5 text-brand-primary'
@@ -601,8 +618,22 @@ const ProductDetail = () => {
 
             {/* Purchase controls — only for logged-in regular customers */}
             {displayStock > 0 && isCustomer && (() => {
-              // Dynamic max: capped at 10, but never exceeds actual stock
-              const maxQty = Math.min(displayStock, 10)
+              const isB2B = user?.role === 'b2b_customer';
+              let b2bMinQty = product.b2bMinQty || 0;
+              let b2bSetQty = product.b2bSetQty || 0;
+              
+              if (selectedVariant) {
+                const variantObj = product.variants?.find(v => v._id === selectedVariant);
+                if (variantObj) {
+                  if (variantObj.b2bMinQty > 0) b2bMinQty = variantObj.b2bMinQty;
+                  if (variantObj.b2bSetQty > 0) b2bSetQty = variantObj.b2bSetQty;
+                }
+              }
+            
+              const minAllowed = (isB2B && b2bMinQty > 0) ? b2bMinQty : 1;
+              const qtyStep = (isB2B && b2bSetQty > 0) ? b2bSetQty : 1;
+              const maxQty = isB2B ? displayStock : Math.min(displayStock, 10);
+              
               return (
               <div className="bg-white border border-brand-primary/10 rounded-[2rem] p-4 sm:p-6 space-y-5 shadow-sm">
 
@@ -610,18 +641,20 @@ const ProductDetail = () => {
                   <div className="flex flex-col xs:flex-row items-start xs:items-center justify-between gap-3 xs:gap-0">
                     <div>
                       <p className="text-sm font-semibold text-gray-900">Quantity</p>
-                      <p className="text-xs text-gray-400">Max {maxQty} per order</p>
+                      <p className="text-xs text-gray-400">
+                        {isB2B && b2bMinQty > 0 ? `Min ${b2bMinQty} (Sets of ${qtyStep})` : `Max ${maxQty} per order`}
+                      </p>
                     </div>
                     <div className="flex items-center gap-1 border border-brand-primary/10 rounded-full p-1 bg-white">
                       <button
-                        onClick={() => setQuantity(q => Math.max(1, q - 1))}
+                        onClick={() => setQuantity(q => Math.max(minAllowed, q - qtyStep))}
                         className="w-8 h-8 sm:w-10 sm:h-10 flex items-center justify-center rounded-full bg-brand-primary/5 hover:bg-brand-primary hover:text-white transition-colors text-brand-primary"
                       >
                         <Minus size={14} className="sm:w-[15px] sm:h-[15px]" />
                       </button>
                       <span className="w-8 sm:w-12 text-center text-base sm:text-lg font-bold text-brand-primary font-display">{quantity}</span>
                       <button
-                        onClick={() => setQuantity(q => Math.min(maxQty, q + 1))}
+                        onClick={() => setQuantity(q => Math.min(maxQty, q + qtyStep))}
                         className="w-8 h-8 sm:w-10 sm:h-10 flex items-center justify-center rounded-full bg-brand-primary/5 hover:bg-brand-primary hover:text-white transition-colors text-brand-primary"
                       >
                         <Plus size={14} className="sm:w-[15px] sm:h-[15px]" />

@@ -76,9 +76,13 @@ const Cart = () => {
     finally { setPreviewLoading(false) }
   }
 
-  const updateQty = async (itemId, newQty, stock) => {
-    if (newQty < 1) return
-    const maxAllowed = Math.min(stock || 0, MAX_CART_QTY)
+  const updateQty = async (itemId, newQty, stock, isB2BUser, b2bMinQty, b2bSetQty) => {
+    if (isB2BUser && b2bMinQty > 0) {
+      if (newQty < b2bMinQty) return;
+    } else {
+      if (newQty < 1) return;
+    }
+    const maxAllowed = isB2BUser ? (stock || 0) : Math.min(stock || 0, MAX_CART_QTY)
     if (newQty > maxAllowed) { toast.error(`Max ${maxAllowed} of this item allowed`); return }
     setUpdatingId(itemId)
     try {
@@ -171,7 +175,18 @@ const Cart = () => {
                   const stock       = variant ? variant.stock : (item.product?.stock ?? 0)
                   const displayPrice = variant ? variant.price : (item.product?.price ?? 0)
                   const displayWeight = variant ? variant.weight : item.product?.weight
-                  const maxQty      = Math.min(stock, MAX_CART_QTY)
+                  
+                  const isB2BUser = user?.role === 'b2b_customer';
+                  let b2bMinQty = item.product?.b2bMinQty || 0;
+                  let b2bSetQty = item.product?.b2bSetQty || 0;
+                  if (variant) {
+                    if (variant.b2bMinQty > 0) b2bMinQty = variant.b2bMinQty;
+                    if (variant.b2bSetQty > 0) b2bSetQty = variant.b2bSetQty;
+                  }
+                  const minAllowed = (isB2BUser && b2bMinQty > 0) ? b2bMinQty : 1;
+                  const qtyStep = (isB2BUser && b2bSetQty > 0) ? b2bSetQty : 1;
+                  const maxQty      = isB2BUser ? stock : Math.min(stock, MAX_CART_QTY)
+                  
                   const isOut       = stock === 0
                   const atMax       = item.quantity >= maxQty
 
@@ -205,6 +220,7 @@ const Cart = () => {
                             </p>
                             {isOut && <p className="text-xs font-bold mt-2 uppercase tracking-wide text-red-500">Currently Unavailable</p>}
                             {!isOut && atMax && <p className="text-xs font-bold mt-2 uppercase tracking-wide text-amber-500">Max {maxQty} per order</p>}
+                            {!isOut && isB2BUser && b2bMinQty > 0 && <p className="text-xs font-bold mt-2 text-brand-secondary">B2B Min Qty: {b2bMinQty} (Sets of {qtyStep})</p>}
                           </div>
 
                           <button
@@ -220,8 +236,8 @@ const Cart = () => {
                           {/* Qty Controls */}
                           <div className={`flex items-center p-0.5 sm:p-1 rounded-full border ${isOut ? 'border-red-500/30 bg-red-50' : 'border-brand-primary/10 bg-white'}`}>
                             <button
-                              disabled={updatingId === item._id || item.quantity <= 1}
-                              onClick={() => updateQty(item._id, item.quantity - 1, stock)}
+                              disabled={updatingId === item._id || item.quantity <= minAllowed}
+                              onClick={() => updateQty(item._id, item.quantity - qtyStep, stock, isB2BUser, b2bMinQty, b2bSetQty)}
                               className="w-8 h-8 flex items-center justify-center transition-colors disabled:opacity-40 rounded-full text-brand-primary hover:bg-brand-primary/5"
                             >
                               <FiMinus size={14} />
@@ -231,7 +247,7 @@ const Cart = () => {
                             </span>
                             <button
                               disabled={updatingId === item._id || atMax || isOut}
-                              onClick={() => updateQty(item._id, item.quantity + 1, stock)}
+                              onClick={() => updateQty(item._id, item.quantity + qtyStep, stock, isB2BUser, b2bMinQty, b2bSetQty)}
                               className="w-7 h-7 sm:w-8 sm:h-8 flex items-center justify-center transition-colors disabled:opacity-40 rounded-full text-brand-primary hover:bg-brand-primary/5"
                             >
                               <FiPlus size={13} className="sm:w-3.5 sm:h-3.5" />

@@ -48,11 +48,15 @@ const productSchema = new mongoose.Schema({
     min: 0,
     default: 0
   },
+  b2bMinQty: { type: Number, default: 0 },
+  b2bSetQty: { type: Number, default: 0 },
   variants: [{
     weight: { type: String, required: true },
     price: { type: Number, required: true, min: 0 },
     mrp: { type: Number, min: 0, default: null },
-    stock: { type: Number, required: true, min: 0, default: 0 }
+    stock: { type: Number, required: true, min: 0, default: 0 },
+    b2bMinQty: { type: Number, default: 0 },
+    b2bSetQty: { type: Number, default: 0 }
   }],
   seller: {
     type: mongoose.Schema.Types.ObjectId,
