@@ -503,13 +503,16 @@ router.post('/', auth.optional, async (req, res) => {
     await order.populate('user', 'name email');
     await order.populate('orderItems.product');
 
-    // ── 8.5 Send Email (COD only) ─────────────────────────────────────────
+    // ── 8.5 Send Email & WhatsApp (COD only) ──────────────────────────────
     if (paymentMethod === 'COD') {
       try {
         const { sendOrderSuccessEmail } = require('../services/emailService');
+        const { sendOrderSuccessWhatsApp } = require('../services/whatsappService');
+        
         await sendOrderSuccessEmail(order, req.user ? order.user.email : guestEmail);
-      } catch (emailErr) {
-        console.error('COD SUCCESS EMAIL ERROR:', emailErr);
+        await sendOrderSuccessWhatsApp(order, req.user ? order.user.email : guestEmail);
+      } catch (err) {
+        console.error('COD SUCCESS NOTIFICATION ERROR:', err);
       }
     }
 
@@ -1263,7 +1266,7 @@ router.put('/:id/ship', auth, auth.admin, auth.hasPermission('orders'), async (r
 
     await logAction(req, 'SHIP_ORDER', 'ORDER', order._id, { trackingNumber, shippingProvider });
 
-    // Send shipping update email in background
+    // Send shipping update email & WhatsApp in background
     sendShippingUpdateEmail({
       to: order.user.email,
       userName: order.user.name,
@@ -1273,6 +1276,13 @@ router.put('/:id/ship', auth, auth.admin, auth.hasPermission('orders'), async (r
     }).catch(err => {
       console.error('Shipping update email error (non-fatal):', err.message);
     });
+
+    try {
+      const { sendShippingUpdateWhatsApp } = require('../services/whatsappService');
+      sendShippingUpdateWhatsApp(order);
+    } catch (err) {
+      console.error('Shipping update WhatsApp error:', err.message);
+    }
 
     res.json({
       message: 'Order shipped successfully and tracking info updated',

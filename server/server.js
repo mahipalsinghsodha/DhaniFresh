@@ -154,6 +154,7 @@ app.use('/api', dbCheck); // DB check for all API routes
 app.use("/api/products", require("./routes/productRoutes"));
 app.use("/api/auth", require("./routes/authRoutes"));
 app.use("/api/auth", require("./routes/oauth"));
+app.use("/api/otp", require("./routes/otpRoutes"));
 app.use("/api/cart", require("./routes/cartRoutes"));
 app.use("/api/orders", require("./routes/orderRoutes"));
 app.use("/api/invoices", require("./routes/invoiceRoutes"));
@@ -177,6 +178,7 @@ app.use('/api/activity', require('./routes/activityRoutes'));
 app.use('/api/courier', require('./routes/courierRoutes'));
 app.use('/api/blogs', require('./routes/blogRoutes'));
 app.use('/api/giftcards', require('./routes/giftCardRoutes'));
+app.use('/api/shiprocket', require('./routes/shiprocketRoutes'));
 
 // Dynamic sitemap — accessible at GET /sitemap.xml (no /api prefix, for search engines)
 app.use('/sitemap.xml', require('./routes/sitemapRoute'));

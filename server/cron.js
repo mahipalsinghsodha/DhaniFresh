@@ -74,6 +74,13 @@ const initCronJobs = () => {
             userName: cart.user.name,
             cartItems
           });
+
+          try {
+            const { sendAbandonedCartWhatsApp } = require('./services/whatsappService');
+            await sendAbandonedCartWhatsApp(cart.user, cartItems);
+          } catch (err) {
+            console.error('Abandoned Cart WhatsApp Error:', err);
+          }
           
           cart.reminderSentAt = new Date();
           await cart.save();

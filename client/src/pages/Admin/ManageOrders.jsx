@@ -244,6 +244,28 @@ const ManageOrders = () => {
     finally { setSyncing(false) }
   }
 
+  const handlePushToShiprocket = async (id) => {
+    if (!(await confirm('Push this order to Shiprocket?'))) return
+    setSyncing(true)
+    try {
+      await api.post(`/api/shiprocket/push/${id}`)
+      toast.success('Pushed to Shiprocket successfully')
+      fetchOrders(false, page)
+    } catch (err) { toast.error(err.response?.data?.message || 'Failed to push to Shiprocket') }
+    finally { setSyncing(false) }
+  }
+
+  const handleGenerateAWB = async (id) => {
+    if (!(await confirm('Generate AWB for this shipment?'))) return
+    setSyncing(true)
+    try {
+      await api.post(`/api/shiprocket/awb/${id}`)
+      toast.success('AWB generated successfully')
+      fetchOrders(false, page)
+    } catch (err) { toast.error(err.response?.data?.message || 'Failed to generate AWB') }
+    finally { setSyncing(false) }
+  }
+
   const handleBulkAction = async (action) => {
     if (selectedOrders.size === 0) return
     if (action === 'print') {
@@ -564,15 +586,25 @@ const ManageOrders = () => {
                                     <FiCheckCircle size={13} /> Mark Paid
                                   </button>
                                 )}
-                                {o.isPaid && !o.isDelivered && !isVoid(o) && (
+                                {(o.isPaid || o.paymentStatus === 'COD_CONFIRMED') && !o.isDelivered && !isVoid(o) && (
                                   <>
-                                    {!o.trackingNumber && (
+                                    {!o.shiprocketOrderId && (
+                                      <button onClick={() => handlePushToShiprocket(o._id)} style={{ padding: '8px 14px', background: '#f5a623', color: '#fff', border: 'none', borderRadius: 10, fontSize: 12, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
+                                        <FiTruck size={13} /> Push to Shiprocket
+                                      </button>
+                                    )}
+                                    {o.shiprocketOrderId && !o.awbCode && (
+                                      <button onClick={() => handleGenerateAWB(o._id)} style={{ padding: '8px 14px', background: '#4a90e2', color: '#fff', border: 'none', borderRadius: 10, fontSize: 12, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
+                                        <FiTag size={13} /> Generate AWB
+                                      </button>
+                                    )}
+                                    {!o.trackingNumber && !o.awbCode && (
                                       <button onClick={() => setTrackingModal(o)} style={{ padding: '8px 14px', background: 'var(--brand-primary)', color: '#fff', border: 'none', borderRadius: 10, fontSize: 12, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
-                                        <FiBox size={13} /> Add Tracking
+                                        <FiBox size={13} /> Manual Tracking
                                       </button>
                                     )}
                                     <button onClick={() => markDelivered(o._id)} style={{ padding: '8px 14px', background: 'var(--info)', color: '#fff', border: 'none', borderRadius: 10, fontSize: 12, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
-                                      <FiTruck size={13} /> Mark Delivered
+                                      <FiCheckCircle size={13} /> Mark Delivered
                                     </button>
                                   </>
                                 )}

@@ -10,6 +10,7 @@ import {
   FiArrowRight, FiHome, FiBriefcase,
   FiCheck, FiAlertCircle, FiEdit2, FiLock, FiBox
 } from 'react-icons/fi'
+import CheckoutOTPModal from '../components/CheckoutOTPModal'
 
 const STATES = [
   'Andaman and Nicobar Islands','Andhra Pradesh','Arunachal Pradesh','Assam','Bihar',
@@ -51,6 +52,7 @@ const Checkout = () => {
   const [showNewForm, setShowNew]     = useState(false)
   const [newAddr, setNewAddr]         = useState(emptyNew)
   const [saveNewAddr, setSaveNew]     = useState(true)
+  const [showOtp, setShowOtp] = useState(false)
   const [couponCode, setCoupon]       = useState('')
   const [appliedCoupon, setApplied]   = useState(null)
   const [couponLoading, setCouponL]   = useState(false)
@@ -201,6 +203,18 @@ const Checkout = () => {
       toast.error('Please fill in all required delivery details (including email for guests)')
       setLoading(false); return
     }
+
+    // Calculate final total to see if COD is really required (not fully paid by wallet)
+    let finalTotal = preview?.totalPrice || 0
+    if (useWallet && walletBalance > 0) finalTotal = Math.max(0, finalTotal - walletBalance)
+    if (appliedGiftCard) finalTotal = Math.max(0, finalTotal - appliedGiftCard.balance)
+
+    if (paymentMethod === 'COD' && finalTotal > 0) {
+      setLoading(false)
+      setShowOtp(true)
+      return
+    }
+
     try { await placeOrder() } catch (err) {
       if (err.response?.status === 409 && err.response?.data?.allItems) {
         setStockModal(err.response.data.allItems)
@@ -556,6 +570,24 @@ const Checkout = () => {
           </div>
         </form>
       </div>
+
+      <CheckoutOTPModal
+        isOpen={showOtp}
+        onClose={() => setShowOtp(false)}
+        targetPhone={getAddr().phone}
+        onSuccess={() => {
+          setShowOtp(false);
+          setLoading(true);
+          placeOrder().catch(err => {
+            setLoading(false);
+            if (err.response?.status === 409 && err.response?.data?.allItems) {
+              setStockModal(err.response.data.allItems)
+            } else {
+              toast.error(err.response?.data?.message || 'Failed to place order')
+            }
+          });
+        }}
+      />
 
       {/* Stock Modal */}
       <AnimatePresence>

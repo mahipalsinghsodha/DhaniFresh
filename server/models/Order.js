@@ -175,6 +175,11 @@ refundInfo: {
   invoiceNumber: { type: String, unique: true, sparse: true },
   trackingNumber: String,
   shippingProvider: String,
+  
+  // ✅ NEW: Shiprocket Integration Fields
+  shiprocketOrderId: String,
+  shiprocketShipmentId: String,
+  awbCode: String,
   returnRequest: {
     reason: String,
     requestedAt: Date,
