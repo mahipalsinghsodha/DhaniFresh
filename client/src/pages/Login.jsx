@@ -1,30 +1,33 @@
-// pages/Login.jsx — Premium Immersive Design
+// pages/Login.jsx — Myntra-style Unified Login Flow
 import { useState, useEffect } from 'react'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
-import { motion } from 'framer-motion'
-import { Eye, EyeOff, Mail, Lock, ArrowRight, Sparkles } from 'lucide-react'
-import { FiShield, FiTruck, FiAward } from 'react-icons/fi'
-import { FaUser } from 'react-icons/fa'
+import { motion, AnimatePresence } from 'framer-motion'
+import { Eye, EyeOff, Lock, ArrowLeft } from 'lucide-react'
 import { toast } from 'react-toastify'
 import { Helmet } from 'react-helmet-async'
 import { useTranslation } from 'react-i18next'
+import api from '../api/axios'
 
-const FloatingInput = ({ id, label, type = 'text', value, onChange, icon: Icon, rightElement, autoComplete, required }) => {
+// ── Shared UI Components ──
+const FloatingInput = ({ id, label, type = 'text', value, onChange, icon: Icon, rightElement, autoComplete, required, autoFocus, maxLength }) => {
   const [focused, setFocused] = useState(false)
-
   return (
-    <div className="relative w-full">
-      <label htmlFor={id} className="block text-sm font-semibold mb-2" style={{ color: 'var(--text-secondary)' }}>
-        {label}
-      </label>
-      <div className="relative">
+    <div className="relative w-full mb-5">
+      <div className={`relative border rounded-lg transition-colors duration-200 ${focused ? 'border-brand-primary' : 'border-gray-300'} bg-white`}>
+        {/* Label that shrinks and floats */}
+        <label htmlFor={id} className={`absolute left-3 transition-all duration-200 pointer-events-none ${
+          focused || value ? 'top-1 text-[10px] font-bold text-gray-500' : 'top-3.5 text-sm font-medium text-gray-500'
+        }`}>
+          {label}
+        </label>
+        
         {Icon && (
-          <div className="absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none transition-all duration-200"
-            style={{ color: focused ? 'var(--gold)' : 'var(--text-muted)' }}>
+          <div className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none">
             <Icon size={16} />
           </div>
         )}
+        
         <input
           id={id}
           type={type}
@@ -32,57 +35,65 @@ const FloatingInput = ({ id, label, type = 'text', value, onChange, icon: Icon, 
           onChange={onChange}
           autoComplete={autoComplete}
           required={required}
-          placeholder={`Enter ${label.toLowerCase()}`}
+          autoFocus={autoFocus}
+          maxLength={maxLength}
           onFocus={() => setFocused(true)}
           onBlur={() => setFocused(false)}
-          className="w-full rounded-[1rem] text-sm font-medium outline-none transition-all placeholder:text-brand-text/30"
+          className={`w-full bg-transparent outline-none text-sm font-medium text-gray-800 ${
+            focused || value ? 'pt-5 pb-1' : 'py-3.5'
+          }`}
           style={{
-            height: '52px',
-            paddingLeft: Icon ? '42px' : '14px',
-            paddingRight: rightElement ? '44px' : '14px',
-            background: focused ? '#FFFFFF' : 'var(--ivory)',
-            border: `1px solid ${focused ? 'var(--brand-secondary)' : 'rgba(27, 47, 110, 0.2)'}`,
-            color: 'var(--brand-primary)',
-            boxShadow: focused ? '0 0 0 1px var(--brand-secondary)' : 'none',
+            paddingLeft: Icon ? '36px' : '12px',
+            paddingRight: rightElement ? '40px' : '12px',
           }}
         />
         {rightElement && (
-          <div className="absolute right-3.5 top-1/2 -translate-y-1/2">{rightElement}</div>
+          <div className="absolute right-2 top-1/2 -translate-y-1/2">{rightElement}</div>
         )}
       </div>
     </div>
   )
 }
 
-const TRUST_BADGES = [
-  { emoji: '🔬', label: 'FSSAI Certified', icon: <FiAward size={16} /> },
-  { emoji: '🧪', label: 'Lab Tested',      icon: <FiShield size={16} /> },
-  { emoji: '🚚', label: 'Pan India',        icon: <FiTruck size={16} /> },
-]
 
+// ── Main Component ──
 const Login = () => {
   const { t } = useTranslation()
-  const { login, googleLogin, user } = useAuth()
+  const { login, loginOtp, googleLogin, user } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
   const from = location.state?.from || '/'
 
-  const [email,    setEmail]    = useState('')
-  const [password, setPassword] = useState('')
-  const [showPass, setShowPass] = useState(false)
-  const [loading,  setLoading]  = useState(false)
+  // Flow State
+  // IDENTIFIER -> OTP (if mobile) -> PASSWORD (fallback or email)
+  const [step, setStep] = useState('IDENTIFIER') 
+  
+  // Form State
+  const [identifier, setIdentifier] = useState('') // Mobile or Email
+  const [otp, setOtp]               = useState(['', '', '', '', '', '']) // 6 digits to match backend
+  const [password, setPassword]     = useState('')
+  const [showPass, setShowPass]     = useState(false)
+  const [loading, setLoading]       = useState(false)
 
+  // Timer State for OTP
+  const [timeLeft, setTimeLeft] = useState(30)
+  
   useEffect(() => { 
     if (user) {
-      if (user.role === 'courier') {
-        navigate('/courier/scan', { replace: true })
-      } else {
-        navigate(from, { replace: true })
-      }
+      if (user.role === 'courier') navigate('/courier/scan', { replace: true })
+      else navigate(from, { replace: true })
     }
   }, [user, navigate, from])
 
-  // Handle token from URL if redirected (fallback from popup)
+  // Countdown timer for OTP
+  useEffect(() => {
+    if (step === 'OTP' && timeLeft > 0) {
+      const timerId = setTimeout(() => setTimeLeft(timeLeft - 1), 1000)
+      return () => clearTimeout(timerId)
+    }
+  }, [step, timeLeft])
+
+  // Handle Google Popup Token fallback
   useEffect(() => {
     const params = new URLSearchParams(location.search)
     const token = params.get('token')
@@ -91,233 +102,308 @@ const Login = () => {
       googleLogin(token).then(() => {
         toast.success(t('auth.loginDesc', 'Welcome back! 👋').replace(' Please enter your details.', ''))
         navigate(from, { replace: true })
-      }).catch((err) => {
+      }).catch(() => {
         toast.error('Google login failed')
         setLoading(false)
       })
     }
   }, [location.search, googleLogin, navigate, from, t])
 
-  const handleSubmit = async (e) => {
+  // ── Step Handlers ──
+
+  const handleIdentifierSubmit = async (e) => {
     e.preventDefault()
-    if (!email.trim() || !password) { toast.error('Please fill all fields'); return }
+    if (!identifier.trim()) {
+      toast.error('Please enter Mobile Number or Email')
+      return
+    }
+
+    const isEmail = identifier.includes('@')
+    const isMobile = /^\d{10}$/.test(identifier)
+
+    if (isEmail) {
+      // Direct to password for email
+      setStep('PASSWORD')
+    } else if (isMobile) {
+      // Send OTP for mobile
+      setLoading(true)
+      try {
+        await api.post('/api/otp/send', { phone: identifier })
+        toast.success(`OTP sent to ${identifier}`)
+        setStep('OTP')
+        setTimeLeft(30)
+      } catch (err) {
+        toast.error(err.response?.data?.message || 'Failed to send OTP')
+      } finally {
+        setLoading(false)
+      }
+    } else {
+      toast.error('Please enter a valid 10-digit mobile number or email address')
+    }
+  }
+
+  const handleOtpComplete = async (fullOtp) => {
+    if (fullOtp.length !== 6) return
     setLoading(true)
     try {
-      const res = await login(email.trim(), password)
-      toast.success(t('auth.loginDesc', 'Welcome back! 👋').replace(' Please enter your details.', ''))
-      
-      if (res?.user?.role === 'courier') {
-        navigate('/courier/scan', { replace: true })
-      } else {
-        navigate(from, { replace: true })
-      }
+      await loginOtp(identifier, fullOtp)
+      toast.success('Successfully logged in!')
+      navigate(from, { replace: true })
     } catch (err) {
-      toast.error(err?.response?.data?.message || 'Invalid email or password')
-    } finally { setLoading(false) }
+      toast.error(err.response?.data?.message || 'Invalid OTP')
+      setOtp(['', '', '', '', '', '']) // reset all 6 fields
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handlePasswordSubmit = async (e) => {
+    e.preventDefault()
+    if (!password) { toast.error('Please enter your password'); return }
+    setLoading(true)
+    try {
+      await login(identifier, password)
+      toast.success('Welcome back!')
+      navigate(from, { replace: true })
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Invalid credentials')
+    } finally {
+      setLoading(false)
+    }
   }
 
   const handleGoogleLogin = () => {
-    const width = 500
-    const height = 600
+    const width = 500, height = 600
     const left = window.screenX + (window.outerWidth - width) / 2
     const top = window.screenY + (window.outerHeight - height) / 2
     
     const messageListener = async (event) => {
-      // Allow message if it contains the expected token structure
       if (event.data && event.data.token) {
-        window.removeEventListener('message', messageListener);
+        window.removeEventListener('message', messageListener)
         setLoading(true)
         try {
           await googleLogin(event.data.token)
-        } catch (err) {
+        } catch {
           toast.error('Google login failed')
         } finally {
           setLoading(false)
         }
       }
-    };
-    window.addEventListener('message', messageListener);
-
-    window.open(
-      `${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/auth/google`,
-      'Google Login',
-      `width=${width},height=${height},left=${left},top=${top}`
-    )
+    }
+    window.addEventListener('message', messageListener)
+    window.open(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/auth/google`, 'Google Login', `width=${width},height=${height},left=${left},top=${top}`)
   }
+
+  const resendOtp = async () => {
+    if (timeLeft > 0) return
+    setLoading(true)
+    try {
+      await api.post('/api/otp/send', { phone: identifier })
+      toast.success('OTP resent successfully')
+      setTimeLeft(30)
+      setOtp(['', '', '', '', '', '']) // reset 6 slots
+    } catch (err) {
+      toast.error('Failed to resend OTP')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // ── Render Views ──
 
   return (
     <div className="min-h-screen flex bg-[var(--ivory)] font-sans">
       <Helmet>
-        <title>Login — Daatasa</title>
-        <meta name="description" content="Log in to your Daatasa account to shop pure Bilona ghee." />
+        <title>Login or Signup — Daatasa</title>
       </Helmet>
 
-      {/* ── Left Panel (Brand Background) ── */}
-      <div className="hidden lg:flex flex-col justify-between w-[45%] xl:w-[48%] p-10 xl:p-14 relative overflow-hidden bg-gradient-to-br from-[#1B2F6E] via-[#111e47] to-[#050a17]">
+      {/* Hero Banner (Myntra style top banner on mobile, side on desktop) */}
+      <div className="hidden lg:flex flex-col w-[50%] bg-gradient-to-br from-[#1B2F6E] via-[#111e47] to-[#050a17] items-center justify-center p-12 relative overflow-hidden">
         <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-brand-secondary/20 rounded-full blur-[80px] -translate-y-1/2 translate-x-1/3 pointer-events-none" />
-        <div className="absolute inset-0 opacity-[0.03] bg-[url('https://www.transparenttextures.com/patterns/stardust.png')] pointer-events-none" />
-
-        <div className="relative z-10 flex items-center gap-2">
-          <Link to="/" className="inline-block bg-[#fffdf8] rounded-[12px] px-3 py-1.5 shadow-sm">
-            <img src="/logo_rectangle.png" alt="Daatasa Logo" className="h-10 w-auto" />
-          </Link>
-        </div>
-
-        <div className="relative z-10 flex-1 flex flex-col justify-center pb-[38vh] pr-8">
-          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}>
-            <div className="flex justify-center w-full mb-8">
-              <div className="flex items-center justify-center w-14 h-14 rounded-xl bg-transparent border border-brand-secondary/50 text-brand-secondary">
-                <FaUser size={24} />
-              </div>
-            </div>
-
-            <span className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest text-brand-secondary border border-brand-secondary/40 mb-5 shadow-sm">
-              <Sparkles size={12} className="text-brand-secondary" />
-              {t('home.heroBadgeNew', 'Heritage of Rajasthan')}
-            </span>
-            <h1 className="text-3xl xl:text-4xl font-display font-bold leading-[1.3] mb-5 text-white">
-              {t('home.heroTitleNew', 'Pure Vedic Bilona')} <br />
-              <span className="text-brand-secondary italic font-serif tracking-wide">{t('home.heroSubNew', 'Desi Cow Ghee')}</span>
-            </h1>
-
-            <div className="flex items-center gap-4 mb-5 w-48">
-              <div className="flex-1 h-px bg-brand-secondary/40" />
-              <div className="text-brand-secondary text-lg font-serif">✻</div>
-              <div className="flex-1 h-px bg-brand-secondary/40" />
-            </div>
-
-            <p className="text-white/80 text-xs md:text-sm leading-relaxed max-w-sm font-medium z-10 relative">
-              {t('home.heroDescNew', 'Experience the pinnacle of purity with our traditionally hand-churned liquid gold. Crafted slowly in earthen pots to preserve authentic aroma, texture, and unmatched nutritional benefits.')}
-            </p>
-          </motion.div>
-        </div>
-
-        {/* Decorative Ghee Image at Bottom */}
-        <div className="absolute bottom-0 left-0 w-full h-[35vh] min-h-[250px] max-h-[380px] pointer-events-none z-0">
-          <img src="/matka.png" alt="Daatasa Ghee" className="w-full h-full object-fill object-bottom" />
+        <img src="/logo_rectangle.png" alt="Daatasa" className="h-14 w-auto mb-8 bg-white px-4 py-2 rounded-xl z-10" />
+        <h1 className="text-4xl font-display font-bold text-white text-center leading-tight mb-4 z-10">
+          Experience the Purity of <br/> <span className="text-brand-secondary">Vedic Bilona Ghee</span>
+        </h1>
+        <p className="text-white/80 text-center max-w-md z-10">Join thousands of happy families experiencing the health benefits of our traditionally churned ghee.</p>
+        <div className="mt-12 w-full max-w-lg z-10">
+          <img src="/matka.png" alt="Ghee Matka" className="w-full h-auto drop-shadow-2xl" />
         </div>
       </div>
 
-      {/* ── Right Panel (Form) ── */}
-      <div className="flex-1 flex items-center justify-center p-6 sm:p-10 lg:p-16">
-        <motion.div
-          initial={{ opacity: 0, y: 24 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.55, ease: [0.22, 1, 0.36, 1] }}
-          className="w-full max-w-[440px]"
-        >
-          {/* Mobile logo */}
-          <Link to="/" className="flex lg:hidden items-center justify-center mb-8">
-            <img src="/logo_rectangle.png" alt="Daatasa Logo" className="h-14 w-auto" />
-          </Link>
+      {/* Form Container */}
+      <div className="flex-1 flex flex-col items-center justify-center p-0 sm:p-6 w-full relative">
+        <div className="w-full h-48 sm:hidden bg-gradient-to-br from-[#1B2F6E] via-[#111e47] to-[#050a17] absolute top-0 left-0">
+          {/* Mobile top banner image could go here */}
+        </div>
 
-          {/* Card */}
-          <div className="rounded-[1.5rem] sm:rounded-[1.75rem] p-6 xs:p-8 sm:p-12 bg-white border border-brand-primary/10 shadow-[0_24px_80px_rgba(27,47,110,0.08)]">
-            <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="mb-6 sm:mb-8">
-              <h2 className="text-2xl sm:text-[34px] font-display font-bold text-brand-primary mb-2 tracking-tight leading-tight">
-                {t('auth.welcomeBackTitle', 'Welcome Back!')}
-              </h2>
-              <p className="text-brand-text/60 font-medium text-[15px]">
-                {t('auth.loginDesc', 'Sign in to continue to Daatasa')}
-              </p>
-            </motion.div>
-
-            <motion.form
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.2 }}
-              onSubmit={handleSubmit}
-              className="space-y-5"
-            >
-              <FloatingInput
-                id="email"
-                label={t('auth.emailLabel', 'Email Address')}
-                type="email"
-                icon={Mail}
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                autoComplete="email"
-                required
-              />
-
-              <FloatingInput
-                id="password"
-                label={t('auth.passLabel', 'Password')}
-                type={showPass ? 'text' : 'password'}
-                icon={Lock}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                autoComplete="current-password"
-                required
-                rightElement={
-                  <button type="button" onClick={() => setShowPass(!showPass)}
-                    className="text-brand-text/40 hover:text-brand-primary transition-colors focus:outline-none p-1">
-                    {showPass ? <EyeOff size={18} /> : <Eye size={18} />}
-                  </button>
-                }
-              />
-
-              <div className="flex justify-end">
-                <Link to="/forgot-password" className="text-sm font-bold text-brand-secondary hover:text-brand-primary transition-colors">
-                  {t('auth.forgotPassword', 'Forgot password?')}
-                </Link>
-              </div>
-
-              <button type="submit" disabled={loading}
-                className="w-full btn h-12 rounded-lg flex items-center justify-center gap-2 mt-4 text-sm font-bold shadow-md hover:shadow-lg transition-all"
-                style={{ background: 'linear-gradient(135deg, #d4af37 0%, #aa8c2c 100%)', color: 'white' }}>
-                {loading
-                  ? <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                  : <>{t('auth.signInBtn', 'Sign In')} <ArrowRight size={16} /></>
-                }
-              </button>
-            </motion.form>
-
-            {/* Divider */}
-            <div className="flex items-center gap-4 my-8">
-              <div className="flex-1 h-px bg-brand-primary/10" />
-              <span className="text-[10px] font-bold uppercase tracking-widest text-brand-text/40">{t('auth.orSignInWith', 'Or continue with')}</span>
-              <div className="flex-1 h-px bg-brand-primary/10" />
-            </div>
-
-            {/* Google Login Button */}
-            <button
-              type="button"
-              onClick={handleGoogleLogin}
-              disabled={loading}
-              className="w-full h-12 rounded-lg flex items-center justify-center gap-3 transition-colors mb-8 bg-white border border-brand-primary/20 text-brand-primary font-bold text-sm hover:bg-brand-primary/5 shadow-sm hover:shadow-md"
-            >
-              <img src="https://www.svgrepo.com/show/475656/google-color.svg" alt="Google" className="w-5 h-5" />
-              {t('auth.googleBtn', 'Continue with Google')}
-            </button>
-
-            {/* Social proof */}
-            <div className="flex items-center justify-center gap-3 text-[13px] font-medium text-brand-text/60">
-              <div className="flex -space-x-2">
-                {[
-                  'https://randomuser.me/api/portraits/men/32.jpg',
-                  'https://randomuser.me/api/portraits/women/44.jpg',
-                  'https://randomuser.me/api/portraits/men/46.jpg'
-                ].map((url, i) => (
-                  <img key={i} src={url} alt="Customer" className="w-8 h-8 rounded-full border-[3px] border-white object-cover shadow-sm" />
-                ))}
-              </div>
-              <span>{t('auth.socialProof', 'Join 5,000+ happy customers').split('5,000+').map((part, i, arr) => (
-                <span key={i}>
-                  {part}
-                  {i < arr.length - 1 && <strong className="text-brand-primary font-bold font-display">5,000+</strong>}
-                </span>
-              ))}</span>
-            </div>
-
-            <div className="mt-8 pt-6 text-center border-t border-brand-primary/10">
-              <p className="text-xs font-medium text-brand-text/60">
-                {t('auth.dontHaveAccount', "Don't have an account?")}{' '}
-                <Link to="/register" className="text-brand-secondary font-bold hover:text-brand-primary transition-colors">{t('auth.signUpFree', 'Sign up free')}</Link>
-              </p>
-            </div>
+        <div className="w-full max-w-[420px] bg-white sm:rounded-xl shadow-none sm:shadow-[0_8px_30px_rgb(0,0,0,0.08)] z-10 min-h-screen sm:min-h-0 flex flex-col pt-12 sm:pt-0 overflow-hidden relative">
+          
+          {/* Top Banner inside card (mobile) */}
+          <div className="bg-[#1B2F6E]/10 h-32 flex items-center justify-center relative sm:hidden rounded-b-3xl mb-8 -mt-12">
+            <img src="/logo_rectangle.png" alt="Daatasa" className="h-10" />
           </div>
-        </motion.div>
+
+          <div className="p-8 flex-1">
+            <AnimatePresence mode="wait">
+              
+              {/* STEP 1: IDENTIFIER */}
+              {step === 'IDENTIFIER' && (
+                <motion.div key="step1" initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }}>
+                  <h2 className="text-2xl font-bold text-gray-800 mb-2">Login <span className="text-gray-400 font-normal">or</span> Signup</h2>
+                  <p className="text-sm text-gray-500 mb-8">Enter your mobile number or email to proceed</p>
+                  
+                  <form onSubmit={handleIdentifierSubmit}>
+                    <FloatingInput
+                      id="identifier"
+                      label="+91 | Mobile Number or Email*"
+                      value={identifier}
+                      onChange={(e) => setIdentifier(e.target.value)}
+                      autoFocus
+                      required
+                    />
+                    
+                    <p className="text-[11px] text-gray-500 mb-6 mt-2 leading-relaxed">
+                      By continuing, I agree to the <Link to="/terms" className="text-brand-secondary font-bold">Terms of Use</Link> & <Link to="/privacy" className="text-brand-secondary font-bold">Privacy Policy</Link>
+                    </p>
+
+                    <button type="submit" disabled={loading} className="w-full bg-brand-primary text-white font-bold py-3.5 rounded-sm hover:bg-brand-primary/90 transition-colors shadow-sm">
+                      {loading ? 'PLEASE WAIT...' : 'CONTINUE'}
+                    </button>
+                  </form>
+
+                  {/* Divider */}
+                  <div className="flex items-center gap-3 my-6">
+                    <div className="flex-1 h-px bg-gray-200" />
+                    <span className="text-xs text-gray-400 font-medium">OR</span>
+                    <div className="flex-1 h-px bg-gray-200" />
+                  </div>
+
+                  {/* Google Sign-In */}
+                  <button
+                    type="button"
+                    onClick={handleGoogleLogin}
+                    disabled={loading}
+                    className="w-full flex items-center justify-center gap-3 border border-gray-300 rounded-sm py-3 text-sm font-semibold text-gray-700 hover:bg-gray-50 transition-colors shadow-sm"
+                  >
+                    <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google" className="w-5 h-5" />
+                    Continue with Google
+                  </button>
+
+                  <div className="mt-6 flex items-center justify-start gap-2 text-sm">
+                    <span className="text-gray-500">Have trouble logging in?</span>
+                    <a href="mailto:support@daatasa.com" className="text-brand-secondary font-bold">Get help</a>
+                  </div>
+                </motion.div>
+              )}
+
+              {/* STEP 2: OTP VERIFICATION */}
+              {step === 'OTP' && (
+                <motion.div key="step2" initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }}>
+                  <button onClick={() => setStep('IDENTIFIER')} className="flex items-center text-sm text-gray-500 mb-6 hover:text-gray-800">
+                    <ArrowLeft size={16} className="mr-1"/> Back
+                  </button>
+                  <h2 className="text-2xl font-bold text-gray-800 mb-2">Verify with OTP</h2>
+                  <p className="text-sm text-gray-500 mb-8">Sent to {identifier}</p>
+                  
+                  <div className="flex gap-2 justify-center mb-6">
+                    {[0,1,2,3,4,5].map((_, index) => (
+                      <input
+                        key={index}
+                        id={`otp-${index}`}
+                        type="text"
+                        inputMode="numeric"
+                        maxLength={1}
+                        value={otp[index] || ''}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          if (isNaN(val)) return;
+                          let newOtp = [...otp];
+                          newOtp[index] = val;
+                          setOtp(newOtp);
+                          if (val && index < 5) document.getElementById(`otp-${index+1}`).focus();
+                          if (newOtp.slice(0,6).every(v => v !== '') && index === 5) handleOtpComplete(newOtp.slice(0,6).join(''));
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Backspace' && !otp[index] && index > 0) document.getElementById(`otp-${index-1}`).focus();
+                        }}
+                        className="w-10 h-10 text-center text-xl font-bold border border-gray-300 rounded focus:border-brand-secondary outline-none bg-transparent transition-colors text-gray-800"
+                      />
+                    ))}
+                  </div>
+
+                  <div className="flex items-center text-sm mt-4 text-gray-500">
+                    Resend OTP in: <span className="font-bold text-gray-800 ml-1">00:{timeLeft.toString().padStart(2, '0')}</span>
+                    {timeLeft === 0 && (
+                      <button onClick={resendOtp} disabled={loading} className="text-brand-secondary font-bold ml-2">RESEND</button>
+                    )}
+                  </div>
+
+                  <div className="mt-8 pt-6">
+                    <button onClick={() => setStep('PASSWORD')} className="text-sm font-medium text-gray-600 hover:text-brand-secondary">
+                      Log in using <span className="text-brand-secondary font-bold">Password</span>
+                    </button>
+                  </div>
+                  
+                  <div className="mt-8 pt-6 text-sm text-gray-500">
+                    Having trouble logging in? <a href="#" className="text-brand-secondary font-bold">Get help</a>
+                  </div>
+                </motion.div>
+              )}
+
+              {/* STEP 3: PASSWORD LOGIN */}
+              {step === 'PASSWORD' && (
+                <motion.div key="step3" initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }}>
+                  <button onClick={() => setStep('IDENTIFIER')} className="flex items-center text-sm text-gray-500 mb-6 hover:text-gray-800">
+                    <ArrowLeft size={16} className="mr-1"/> Back
+                  </button>
+                  <h2 className="text-2xl font-bold text-gray-800 mb-6">Login to your account</h2>
+                  
+                  <form onSubmit={handlePasswordSubmit}>
+                    <FloatingInput
+                      id="pass-identifier"
+                      label="Email or Mobile Number*"
+                      value={identifier}
+                      onChange={(e) => setIdentifier(e.target.value)}
+                      required
+                    />
+
+                    <FloatingInput
+                      id="password"
+                      label="Password*"
+                      type={showPass ? 'text' : 'password'}
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      required
+                      autoFocus
+                      rightElement={
+                        <button type="button" onClick={() => setShowPass(!showPass)} className="text-gray-400 p-1">
+                          {showPass ? <EyeOff size={18} /> : <Eye size={18} />}
+                        </button>
+                      }
+                    />
+
+                    <button type="submit" disabled={loading} className="w-full bg-brand-primary text-white font-bold py-3.5 rounded-sm hover:bg-brand-primary/90 transition-colors shadow-sm mt-2 mb-6">
+                      {loading ? 'PLEASE WAIT...' : 'LOGIN'}
+                    </button>
+                  </form>
+
+                  <div className="flex flex-col gap-4 text-sm">
+                    <div>
+                      <span className="text-gray-500">Forgot your password?</span>{' '}
+                      <Link to="/forgot-password" className="text-brand-secondary font-bold">Reset here</Link>
+                    </div>
+                    <div>
+                      <span className="text-gray-500">Have trouble logging in?</span>{' '}
+                      <a href="#" className="text-brand-secondary font-bold">Get Help</a>
+                    </div>
+                  </div>
+                </motion.div>
+              )}
+
+            </AnimatePresence>
+            
+          </div>
+        </div>
       </div>
     </div>
   )

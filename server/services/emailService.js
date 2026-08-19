@@ -590,6 +590,31 @@ const sendAdminOtpEmail = async ({ to, adminName, otp }) => {
   });
 };
 
+// ── 15. EMAIL VERIFICATION OTP ──────────────────────────────────────────
+const sendEmailVerificationOtp = async ({ to, userName, otp }) => {
+  const body = `
+    <h2 style="${h2Style}">Verify your Email Address</h2>
+    <p style="${pStyle}">Hi ${userName || 'User'},</p>
+    <p style="${pStyle}">You have requested to link or update your email address. Please use the following One-Time Password (OTP) to verify your request:</p>
+    
+    <div style="text-align:center;margin:32px 0;">
+      <span style="display:inline-block;padding:16px 36px;background:#F8FAFC;color:${brandPrimary};font-size:32px;font-weight:900;letter-spacing:6px;border:2px dashed ${brandGold};border-radius:12px;">${otp}</span>
+    </div>
+    
+    <p style="${pStyle}">This OTP is valid for <strong>10 minutes</strong>. If you did not request this change, please ignore this email.</p>
+  `;
+
+  // Hero image: Security/Keys aesthetic
+  const heroImg = 'https://images.unsplash.com/photo-1555949963-ff9fe0c870eb?ixlib=rb-4.0.3&auto=format&fit=crop&w=1200&q=80';
+
+  await sendWithRetry({
+    from: FROM(),
+    to,
+    subject: `Your Email Verification Code: ${otp}`,
+    html: wrap(body, heroImg),
+  });
+};
+
 module.exports = {
   sendCancelEmail,
   sendBlockEmail,
@@ -606,4 +631,5 @@ module.exports = {
   sendSupportReplyEmail,
   sendAdminOtpEmail,
   sendInvoiceEmail,
+  sendEmailVerificationOtp,
 };

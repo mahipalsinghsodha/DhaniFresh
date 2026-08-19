@@ -31,7 +31,7 @@ const validateProduct = [
 // Whitelist of fields that clients may set on a product
 const ALLOWED_PRODUCT_FIELDS = [
   'name', 'description', 'price', 'mrp', 'image', 'imageLeft', 'imageRight', 'imageTop', 'imagePackage', 'images', 'category',
-  'stock', 'weight', 'featured', 'isActive', 'tags', 'launchDate'
+  'stock', 'weight', 'featured', 'isActive', 'tags', 'launchDate', 'variants', 'b2bMinQty', 'b2bSetQty'
 ];
 
 const pickAllowed = (body) => {
@@ -77,10 +77,14 @@ router.get('/', dbCheck, async (req, res) => {
       }
     }
 
-    // ── Search: prefer $text index (fast), fall back to $regex only if needed
+    //  Search: use $regex for partial substring matching
     if (search && search.trim()) {
-      // $text uses the defined text index on name + description
-      query.$text = { $search: search.trim() };
+      const regex = new RegExp(search.trim(), 'i');
+      query.$or = [
+        { name: regex },
+        { description: regex },
+        { tags: regex }
+      ];
     }
 
     // ── Sort ──────────────────────────────────────────────────────────────
@@ -197,6 +201,9 @@ router.post('/import/csv', auth, auth.admin, auth.hasPermission('products'), upl
               imageTop: row.imageTop?.trim() || '',
               imagePackage: row.imagePackage?.trim() || '',
               launchDate: row.launchDate ? new Date(row.launchDate) : undefined,
+              variants: row.variants ? JSON.parse(row.variants) : [],
+              b2bMinQty: row.b2bMinQty ? parseInt(row.b2bMinQty, 10) : 1,
+              b2bSetQty: row.b2bSetQty ? parseInt(row.b2bSetQty, 10) : 1,
             };
 
             // Check if product exists (by name)

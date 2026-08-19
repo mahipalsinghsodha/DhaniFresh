@@ -11,7 +11,7 @@ const express     = require('express');
 const router      = express.Router();
 const jwt         = require('jsonwebtoken');
 const crypto      = require('crypto');
-const { sendPasswordResetEmail, sendWelcomeEmail } = require('../services/emailService');
+const { sendPasswordResetEmail, sendWelcomeEmail, sendEmailVerificationOtp } = require('../services/emailService');
 const User        = require('../models/User');
 const auth        = require('../middleware/auth');
 const dbCheck     = require('../middleware/dbCheck');
@@ -160,7 +160,7 @@ router.post('/register', authLimiter, dbCheck, [
 /*  LOGIN                                                                      */
 /* ─────────────────────────────────────────────────────────────────────────── */
 router.post('/login', authLimiter, dbCheck, [
-  body('email').isEmail().normalizeEmail({ gmail_remove_dots: false }).withMessage('Invalid email'),
+  body('emailOrPhone').notEmpty().withMessage('Email or Mobile Number is required'),
   body('password').notEmpty().withMessage('Password is required'),
 ], async (req, res) => {
   try {
@@ -169,18 +169,23 @@ router.post('/login', authLimiter, dbCheck, [
       return res.status(400).json({ message: errors.array()[0].msg });
     }
 
-    const { email, password } = req.body;
-    const user = await User.findOne({ email }).select('+password +refreshTokens');
+    const { emailOrPhone, password } = req.body;
+    
+    // Check if input is email or phone
+    const isEmail = emailOrPhone.includes('@');
+    const query = isEmail ? { email: emailOrPhone } : { phone: emailOrPhone };
+
+    const user = await User.findOne(query).select('+password +refreshTokens');
     if (!user) {
       // Generic message prevents user enumeration
-      return res.status(401).json({ message: 'Invalid email or password' });
+      return res.status(401).json({ message: 'Invalid email/mobile or password' });
     }
     if (!user.password) {
       return res.status(400).json({ message: 'This account uses Google Sign-In. Please login with Google.' });
     }
     const isMatch = await user.comparePassword(password);
     if (!isMatch) {
-      return res.status(401).json({ message: 'Invalid email or password' });
+      return res.status(401).json({ message: 'Invalid email/mobile or password' });
     }
     if (user.isBlocked) {
       return res.status(403).json({ message: 'Your account has been suspended. Please contact support.' });
@@ -236,6 +241,97 @@ router.post('/login', authLimiter, dbCheck, [
     res.json({ token: accessToken, refreshToken, user: safeUser(user) });
   } catch (error) {
     res.status(500).json({ message: error.message || 'Login failed' });
+  }
+});
+
+/* ─────────────────────────────────────────────────────────────────────────── */
+/*  LOGIN WITH OTP                                                             */
+/* ─────────────────────────────────────────────────────────────────────────── */
+router.post('/login-otp', authLimiter, dbCheck, [
+  body('phone').notEmpty().withMessage('Mobile Number is required'),
+  body('otpCode').notEmpty().withMessage('OTP Code is required'),
+], async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ message: errors.array()[0].msg });
+    }
+
+    let { phone, otpCode } = req.body;
+    if (!phone.startsWith('+')) {
+      phone = '+91' + phone;
+    }
+
+    const OTP = require('../models/OTP');
+    const otpRecord = await OTP.findOne({ phone });
+    
+    if (!otpRecord) return res.status(400).json({ message: 'OTP expired or not found' });
+    if (otpRecord.otpCode !== otpCode) return res.status(400).json({ message: 'Invalid OTP' });
+    if (new Date() > otpRecord.expiresAt) {
+      await OTP.deleteOne({ phone });
+      return res.status(400).json({ message: 'OTP has expired' });
+    }
+    
+    // Valid OTP - clean it up
+    await OTP.deleteOne({ phone });
+
+    // Check if user exists by phone
+    let user = await User.findOne({ phone }).select('+refreshTokens');
+    
+    if (!user) {
+      // Create new user (Myntra style auto-registration)
+      const placeholderEmail = `${phone.replace('+', '')}@daatasa-guest.com`;
+      const crypto = require('crypto');
+      let newReferralCode = crypto.randomBytes(3).toString('hex').toUpperCase();
+      
+      user = new User({
+        name: 'Guest User',
+        email: placeholderEmail,
+        phone,
+        referralCode: newReferralCode,
+        password: crypto.randomBytes(8).toString('hex') // random unused password
+      });
+      await user.save();
+    }
+    
+    if (user.isBlocked) {
+      return res.status(403).json({ message: 'Your account has been suspended.' });
+    }
+
+    const accessToken  = makeAccessToken(user);
+    const refreshToken = makeRefreshToken(user);
+
+    // Store hashed refresh token in DB
+    const crypto = require('crypto');
+    const tokenHash = crypto.createHash('sha256').update(refreshToken).digest('hex');
+    let activeTokens = (user.refreshTokens || []).filter(t => t.expiresAt > Date.now());
+    if (activeTokens.length >= 5) activeTokens.shift();
+    activeTokens.push({
+      tokenHash,
+      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+      deviceInfo: (req.headers['user-agent'] || '').substring(0, 100),
+    });
+    user.refreshTokens = activeTokens;
+    await user.save({ validateBeforeSave: false });
+
+    // Log LOGIN activity
+    try {
+      const geoip = require('geoip-lite');
+      const UserActivity = require('../models/UserActivity');
+      let ipAddress = req.headers['x-forwarded-for'] || req.socket.remoteAddress || req.ip;
+      if (ipAddress) ipAddress = ipAddress.split(',')[0].trim();
+      if (ipAddress === '::1' || ipAddress === '::ffff:127.0.0.1' || !ipAddress) ipAddress = '127.0.0.1';
+      let location = 'Local/Unknown';
+      if (ipAddress !== '127.0.0.1') {
+        const geo = geoip.lookup(ipAddress);
+        if (geo) location = `${geo.city || 'Unknown City'}, ${geo.country || 'Unknown Country'}`;
+      }
+      await UserActivity.create({ user: user._id, action: 'LOGIN_OTP', ipAddress, location });
+    } catch (err) {}
+
+    res.json({ token: accessToken, refreshToken, user: safeUser(user) });
+  } catch (error) {
+    res.status(500).json({ message: error.message || 'OTP Login failed' });
   }
 });
 
@@ -424,6 +520,70 @@ router.put('/profile', auth, async (req, res) => {
 });
 
 /* ─────────────────────────────────────────────────────────────────────────── */
+/*  SEND EMAIL VERIFICATION OTP                                                */
+/* ─────────────────────────────────────────────────────────────────────────── */
+router.post('/profile/send-email-otp', auth, async (req, res) => {
+  try {
+    const { newEmail } = req.body;
+    if (!newEmail || !newEmail.includes('@')) {
+      return res.status(400).json({ message: 'Valid email is required' });
+    }
+
+    const existing = await User.findOne({ email: newEmail });
+    if (existing) {
+      return res.status(400).json({ message: 'Email is already registered to another account' });
+    }
+
+    const user = await User.findById(req.user._id);
+    
+    // Generate 6-digit OTP
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    
+    user.pendingEmail = newEmail;
+    user.emailUpdateOTP = otp;
+    user.emailUpdateOTPExpire = Date.now() + 10 * 60 * 1000; // 10 mins
+    await user.save();
+
+    await sendEmailVerificationOtp({ to: newEmail, userName: user.name, otp });
+
+    res.json({ message: 'OTP sent to new email' });
+  } catch (error) {
+    res.status(500).json({ message: error.message || 'Failed to send OTP' });
+  }
+});
+
+/* ─────────────────────────────────────────────────────────────────────────── */
+/*  VERIFY EMAIL VERIFICATION OTP                                              */
+/* ─────────────────────────────────────────────────────────────────────────── */
+router.post('/profile/verify-email-otp', auth, async (req, res) => {
+  try {
+    const { otpCode } = req.body;
+    if (!otpCode) return res.status(400).json({ message: 'OTP is required' });
+
+    const user = await User.findById(req.user._id);
+
+    if (!user.emailUpdateOTP || user.emailUpdateOTP !== otpCode) {
+      return res.status(400).json({ message: 'Invalid OTP' });
+    }
+
+    if (Date.now() > user.emailUpdateOTPExpire) {
+      return res.status(400).json({ message: 'OTP has expired' });
+    }
+
+    // Verify successful
+    user.email = user.pendingEmail;
+    user.pendingEmail = undefined;
+    user.emailUpdateOTP = undefined;
+    user.emailUpdateOTPExpire = undefined;
+    await user.save();
+
+    res.json(safeUser(user));
+  } catch (error) {
+    res.status(500).json({ message: error.message || 'Failed to verify OTP' });
+  }
+});
+
+/* ─────────────────────────────────────────────────────────────────────────── */
 /*  CHANGE PASSWORD                                                            */
 /* ─────────────────────────────────────────────────────────────────────────── */
 router.post('/change-password', auth, async (req, res) => {
@@ -460,45 +620,57 @@ router.post('/change-password', auth, async (req, res) => {
 /* ─────────────────────────────────────────────────────────────────────────── */
 router.post('/forgot-password', authLimiter, dbCheck, async (req, res) => {
   try {
-    const { email } = req.body;
-    if (!email)
-      return res.status(400).json({ message: 'Please provide your email address' });
+    const { emailOrPhone } = req.body;
+    if (!emailOrPhone)
+      return res.status(400).json({ message: 'Please provide your email or mobile number' });
 
-    const user = await User.findOne({ email }).select('+resetPasswordToken +resetPasswordExpire +resetPasswordFingerprint');
+    const isEmail = emailOrPhone.includes('@');
+    let query = isEmail ? { email: emailOrPhone } : { phone: emailOrPhone };
+    if (!isEmail && !emailOrPhone.startsWith('+')) {
+      query = { phone: '+91' + emailOrPhone };
+    }
+
+    const user = await User.findOne(query).select('+resetPasswordToken +resetPasswordExpire +resetPasswordFingerprint');
 
     if (!user)
-      return res.status(404).json({ message: 'No account found with that email address.' });
+      return res.status(404).json({ message: 'No account found with that email/mobile.' });
 
     if (user.resetPasswordToken && user.resetPasswordExpire && user.resetPasswordExpire > Date.now()) {
       const remainingMs      = user.resetPasswordExpire - Date.now();
       const remainingSeconds = Math.ceil(remainingMs / 1000);
       return res.status(409).json({
-        message: 'A reset link was already sent and is still active. Please check your inbox.',
+        message: 'A reset request was already sent and is still active.',
         remainingSeconds,
       });
     }
 
-    const resetToken        = crypto.randomBytes(32).toString('hex');
+    // For email, use a long secure hex token. For SMS, use a 6-digit OTP.
+    const resetToken        = isEmail ? crypto.randomBytes(32).toString('hex') : Math.floor(100000 + Math.random() * 900000).toString();
     const tokenHashed       = crypto.createHash('sha256').update(resetToken).digest('hex');
     const deviceFingerprint = makeFingerprint(req);
 
     user.resetPasswordToken       = tokenHashed;
-    user.resetPasswordExpire      = Date.now() + 2 * 60 * 1000; // 2 minutes
+    user.resetPasswordExpire      = Date.now() + 5 * 60 * 1000; // 5 minutes for OTPs
     user.resetPasswordFingerprint = deviceFingerprint;
     await user.save({ validateBeforeSave: false });
 
-    const resetUrl = `${CLIENT_URL}/reset-password/${resetToken}`;
-
-    await sendPasswordResetEmail({
-      to: user.email,
-      userName: user.name,
-      resetUrl,
-    });
-
-    res.json({ message: 'Reset link sent successfully.' });
+    if (isEmail) {
+      const resetUrl = `${CLIENT_URL}/reset-password/${resetToken}`;
+      await sendPasswordResetEmail({
+        to: user.email,
+        userName: user.name,
+        resetUrl,
+      });
+      res.json({ message: 'Reset link sent to your email.' });
+    } else {
+      const { sendSMS } = require('../services/smsService');
+      const msg = `Your Daatasa password reset code is: ${resetToken}. It is valid for 5 minutes.`;
+      await sendSMS(user.phone, msg);
+      res.json({ message: 'Reset code sent to your mobile via SMS.', isOtp: true });
+    }
   } catch (error) {
     console.error('Forgot password error:', error);
-    res.status(500).json({ message: 'Failed to send reset email. Please try again.' });
+    res.status(500).json({ message: 'Failed to process request. Please try again.' });
   }
 });
 

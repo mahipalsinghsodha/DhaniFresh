@@ -12,6 +12,20 @@ import {
   CheckCircle, AlertCircle, Tag, User, Send, BadgeCheck, Heart
 } from 'lucide-react'
 
+// ── Helper: parse weights like "250g", "1kg", "2kg" to grams for sorting ────────
+const parseWeightToGrams = (w) => {
+  if (!w) return 0;
+  const str = String(w).toLowerCase().trim();
+  const match = str.match(/^([\d.]+)\s*([a-z]+)?$/);
+  if (!match) return 0;
+  const num = parseFloat(match[1]) || 0;
+  const unit = match[2] || 'g';
+  if (unit.startsWith('k') || unit.startsWith('l')) {
+    return num * 1000;
+  }
+  return num;
+};
+
 // ── Cloudinary URL transform: serve optimized images ──────────────────────────
 const cloudinaryTransform = (url, { width = 800, quality = 'auto', format = 'auto' } = {}) => {
   if (!url || !url.includes('cloudinary.com')) return url
@@ -78,6 +92,7 @@ const ProductDetail = () => {
   const [estLoading, setEstLoading] = useState(false)
   const [estState, setEstState] = useState(null)
   const [estError, setEstError] = useState('')
+  const [freeShippingThreshold, setFreeShippingThreshold] = useState(500)
 
   useEffect(() => {
   const controller = new AbortController();
@@ -94,20 +109,14 @@ const ProductDetail = () => {
         api.get(`/api/products/${id}`, { signal: controller.signal }),
       ])
       const prod = prodRes.data
+      setProduct(prod)
       if (prod.variants && prod.variants.length > 0) {
-        setSelectedVariant(prod.variants[0]._id)
+        setSelectedVariant('base')
       }
       setSelectedImage(prod.image)
       
       const isB2B = user?.role === 'b2b_customer';
-      let initMinQty = 1;
-      if (isB2B) {
-        initMinQty = prod.b2bMinQty > 0 ? prod.b2bMinQty : 1;
-        if (prod.variants && prod.variants.length > 0) {
-           const v = prod.variants[0];
-           if (v.b2bMinQty > 0) initMinQty = v.b2bMinQty;
-        }
-      }
+      let initMinQty = (isB2B && prod.b2bMinQty > 0) ? prod.b2bMinQty : 1;
       setQuantity(initMinQty);
 
       // Check if current user already reviewed
@@ -120,14 +129,19 @@ const ProductDetail = () => {
 
       // Fetch related products, plans and reviews
       try {
-        const [relRes, plansRes, revsRes] = await Promise.all([
+        const [relRes, plansRes, revsRes, settingsRes] = await Promise.all([
           api.get(`/api/products?category=${prod.category}`, { signal: controller.signal }),
           api.get('/api/subscriptions/plans', { signal: controller.signal }),
-          api.get(`/api/reviews/product/${prod._id}`, { signal: controller.signal })
+          api.get(`/api/reviews/product/${prod._id}`, { signal: controller.signal }),
+          api.get('/api/settings', { signal: controller.signal }).catch(() => null)
         ])
         setRelated((relRes.data?.products || relRes.data || []).filter(p => p._id !== prod._id).slice(0, 4))
         setReviews(revsRes.data?.reviews || [])
         
+        if (settingsRes?.data?.freeShippingThreshold !== undefined) {
+          setFreeShippingThreshold(settingsRes.data.freeShippingThreshold)
+        }
+
         // Filter plans for this product
         if (plansRes.data?.data) {
           const productPlans = plansRes.data.data.filter(plan => 
@@ -212,7 +226,8 @@ const ProductDetail = () => {
   const handleAddToCart = async ({ redirectTo } = {}) => {
     setAdding(true)
     try {
-      const success = await addItem(product, quantity, selectedVariant)
+      const variantId = (selectedVariant && selectedVariant !== 'base') ? selectedVariant : null;
+      const success = await addItem(product, quantity, variantId)
       if (success) {
         if (redirectTo) {
           navigate(redirectTo)
@@ -294,7 +309,9 @@ const ProductDetail = () => {
   const avgRating   = product.rating || 0
   const numReviews  = product.numReviews || 0
 
-  const currentVariant = product.variants?.find(v => v._id === selectedVariant)
+  const currentVariant = (selectedVariant && selectedVariant !== 'base')
+    ? product.variants?.find(v => v._id === selectedVariant)
+    : null;
   let displayPrice = currentVariant ? currentVariant.price : product.price
   
   if (user && user.role === 'b2b_customer' && user.b2bDiscountPercentage > 0) {
@@ -304,6 +321,19 @@ const ProductDetail = () => {
   const displayMrp = currentVariant ? currentVariant.mrp : product.mrp
   const displayWeight = currentVariant ? currentVariant.weight : product.weight
   const displayStock = currentVariant ? currentVariant.stock : product.stock
+
+  const allOptions = (product.variants && product.variants.length > 0) ? [
+    {
+      _id: 'base',
+      weight: product.weight || 'Standard',
+      price: product.price,
+      mrp: product.mrp,
+      stock: product.stock,
+      b2bMinQty: product.b2bMinQty,
+      b2bSetQty: product.b2bSetQty,
+    },
+    ...product.variants
+  ].sort((a, b) => parseWeightToGrams(a.weight) - parseWeightToGrams(b.weight)) : [];
 
   // Rating distribution
   const dist = [5,4,3,2,1].map(n => ({
@@ -382,17 +412,22 @@ const ProductDetail = () => {
 
             {/* Thumbnail Gallery */}
             {(() => {
+              const seen = new Set()
               const gallery = [
-                { url: product.image, label: 'Main' },
-                { url: product.imageLeft, label: 'Left' },
-                { url: product.imageRight, label: 'Right' },
-                { url: product.imageTop, label: 'Top' },
+                { url: product.image,        label: 'Main' },
+                { url: product.imageLeft,    label: 'Left' },
+                { url: product.imageRight,   label: 'Right' },
+                { url: product.imageTop,     label: 'Top' },
                 { url: product.imagePackage, label: 'Package' }
-              ].filter(img => img.url);
+              ].filter(img => {
+                if (!img.url || seen.has(img.url)) return false
+                seen.add(img.url)
+                return true
+              })
 
               if (gallery.length > 1) {
                 return (
-                  <div className="flex items-center gap-3 overflow-x-auto pb-2 scrollbar-hide">
+                  <div className="flex flex-wrap items-center gap-3 pb-2">
                     {gallery.map((img, i) => (
                       <button
                         key={i}
@@ -405,7 +440,7 @@ const ProductDetail = () => {
                         <img
                           src={cloudinaryTransform(img.url, { width: 150, quality: 'auto', format: 'auto' })}
                           alt={`${product.name} - ${img.label}`}
-                          className="w-full h-full object-cover"
+                          className="w-full h-full object-contain p-1"
                         />
                       </button>
                     ))}
@@ -506,15 +541,15 @@ const ProductDetail = () => {
             </div>
 
             {/* ── Variant Selector ── */}
-            {product.variants && product.variants.length > 0 && (
+            {allOptions && allOptions.length > 0 && (
               <div className="pt-2">
                 <p className="text-sm font-semibold text-gray-900 mb-2 flex items-center gap-2">
                   Select Size
                 </p>
                 <div className="flex flex-wrap gap-2">
-                  {product.variants.map((v) => (
+                  {allOptions.map((v) => (
                     <button
-                      key={v._id}
+                      key={v._id || 'base'}
                       onClick={() => { 
                         setSelectedVariant(v._id); 
                         const isB2B = user?.role === 'b2b_customer';
@@ -608,7 +643,7 @@ const ProductDetail = () => {
                   <p className="text-sm font-bold text-brand-primary">
                     Est. Delivery: {getDeliveryEstimateText(estState)}
                   </p>
-                  <p className="text-xs text-emerald-600/70 mt-1 font-medium">Free shipping on orders above ₹500</p>
+                  <p className="text-xs text-emerald-600/70 mt-1 font-medium">Free shipping on orders above ₹{freeShippingThreshold}</p>
                 </div>
               )}
               {!estPin && (
@@ -622,7 +657,7 @@ const ProductDetail = () => {
               let b2bMinQty = product.b2bMinQty || 0;
               let b2bSetQty = product.b2bSetQty || 0;
               
-              if (selectedVariant) {
+              if (selectedVariant && selectedVariant !== 'base') {
                 const variantObj = product.variants?.find(v => v._id === selectedVariant);
                 if (variantObj) {
                   if (variantObj.b2bMinQty > 0) b2bMinQty = variantObj.b2bMinQty;
@@ -739,7 +774,7 @@ const ProductDetail = () => {
 
                   <p className="text-center text-xs text-gray-400 pt-1">
                     <CheckCircle size={11} className="inline mr-1 text-green-500" />
-                    Secure checkout · Free shipping above ₹500 · 100% pure ghee
+                    Secure checkout · Free shipping above ₹{freeShippingThreshold} · 100% pure ghee
                   </p>
                 </div>
               )
@@ -802,9 +837,9 @@ const ProductDetail = () => {
                 <div className="bg-white rounded-[2rem] border border-brand-primary/5 shadow-sm p-8 space-y-4">
                   <h3 className="font-bold font-display text-brand-primary text-xl mb-4">Product Details</h3>
                   {[
-                    { label: 'Weight / Size', value: product.weight },
+                    { label: 'Weight / Size', value: displayWeight },
                     { label: 'Category',      value: product.category },
-                    { label: 'Availability',  value: product.stock > 0 ? 'In Stock' : 'Out of Stock' },
+                    { label: 'Availability',  value: displayStock > 0 ? 'In Stock' : 'Out of Stock' },
                   ].map((d, i) => (
                     <div key={i} className="flex justify-between items-center py-3 border-b border-brand-primary/5 last:border-0">
                       <span className="text-sm text-brand-text/60">{d.label}</span>

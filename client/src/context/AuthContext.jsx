@@ -74,8 +74,17 @@ export const AuthProvider = ({ children }) => {
     finally { sessionStorage.removeItem('pendingCartItem') }
   }
 
-  const login = async (email, password) => {
-    const res = await api.post('/api/auth/login', { email, password })
+  const login = async (emailOrPhone, password) => {
+    const res = await api.post('/api/auth/login', { emailOrPhone, password })
+    setAccessToken(res.data.token)
+    if (res.data.refreshToken) setRefreshToken(res.data.refreshToken)
+    setUser(res.data.user)
+    await flushPendingCartItem()
+    return res.data
+  }
+
+  const loginOtp = async (phone, otpCode) => {
+    const res = await api.post('/api/auth/login-otp', { phone, otpCode })
     setAccessToken(res.data.token)
     if (res.data.refreshToken) setRefreshToken(res.data.refreshToken)
     setUser(res.data.user)
@@ -167,6 +176,7 @@ export const AuthProvider = ({ children }) => {
       user,
       loading,
       login,
+      loginOtp,
       register,
       googleLogin,
       logout,

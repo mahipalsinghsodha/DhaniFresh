@@ -60,7 +60,7 @@ const ImageUploadInput = ({ name, value, onChange, placeholder, style, onFocus, 
   )
 }
 
-const WEIGHT_OPTIONS = ['250g', '500g', '1kg', '3kg', '5kg', '10kg', '15kg']
+const WEIGHT_OPTIONS = ['100g', '200g', '250g', '500g', '1kg', '2kg', '3kg', '5kg', '10kg', '15kg']
 
 const AdminProducts = () => {
   const navigate = useNavigate()
@@ -155,7 +155,7 @@ const AdminProducts = () => {
   const handleVariantChange = (index, field, value) => {
     setForm(prev => {
       const newVariants = [...(prev.variants || [])]
-      newVariants[index][field] = value
+      newVariants[index] = { ...newVariants[index], [field]: value }
       return { ...prev, variants: newVariants }
     })
   }
@@ -269,8 +269,10 @@ const AdminProducts = () => {
           </div>
           <div style={{ display: 'flex', gap: 12 }}>
             <button onClick={() => {
-              const headers = ['name', 'description', 'price', 'mrp', 'category', 'stock', 'weight', 'isActive', 'featured', 'launchDate', 'image', 'imageLeft', 'imageRight', 'imageTop', 'imagePackage'];
-              const csvContent = "data:text/csv;charset=utf-8," + headers.join(",") + "\n" + ['Sample Ghee', 'Pure description', '500', '600', 'a2', '100', '500g', 'true', 'false', '2026-10-15T12:00', 'https://...', 'https://...', 'https://...', 'https://...', 'https://...'].join(",");
+              const headers = ['name', 'description', 'price', 'mrp', 'category', 'stock', 'weight', 'isActive', 'featured', 'launchDate', 'image', 'imageLeft', 'imageRight', 'imageTop', 'imagePackage', 'variants', 'b2bMinQty', 'b2bSetQty'];
+              const sampleVariantJSON = JSON.stringify([{ weight: '1kg', price: 1000, mrp: 1200, stock: 10 }]);
+              const escapedVariants = `"${sampleVariantJSON.replace(/"/g, '""')}"`;
+              const csvContent = "data:text/csv;charset=utf-8," + headers.join(",") + "\n" + ['Sample Ghee', 'Pure description', '500', '600', 'a2', '100', '500g', 'true', 'false', '2026-10-15T12:00', 'https://...', 'https://...', 'https://...', 'https://...', 'https://...', escapedVariants, '1', '1'].join(",");
               const encodedUri = encodeURI(csvContent);
               const link = document.createElement("a");
               link.setAttribute("href", encodedUri);

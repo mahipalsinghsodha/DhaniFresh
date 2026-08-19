@@ -61,6 +61,14 @@ const Profile = () => {
   const [walletLoading, setWalletLoading] = useState(false)
   const [referrals, setReferrals] = useState([])
 
+  // Email Update States
+  const isGuestEmail = user?.email?.endsWith('@daatasa-guest.com')
+  const [editEmailMode, setEditEmailMode] = useState(false)
+  const [newEmail, setNewEmail]           = useState('')
+  const [emailOtpMode, setEmailOtpMode]   = useState(false)
+  const [emailOtp, setEmailOtp]           = useState(['','','','','',''])
+  const [emailUpdateLoading, setEUL]      = useState(false)
+
   useEffect(() => {
     if (user) {
       setName(user.name || '')
@@ -137,6 +145,36 @@ const Profile = () => {
     } finally {
       setProfLoading(false)
     }
+  }
+
+  const handleSendEmailOtp = async () => {
+    if (!newEmail.includes('@')) { toast.error('Enter valid email'); return; }
+    setEUL(true);
+    try {
+      await api.post('/api/auth/profile/send-email-otp', { newEmail });
+      toast.success('OTP sent to ' + newEmail);
+      setEmailOtpMode(true);
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to send OTP');
+    } finally { setEUL(false); }
+  }
+
+  const handleVerifyEmailOtp = async () => {
+    const code = emailOtp.join('');
+    if (code.length !== 6) { toast.error('Enter 6 digit OTP'); return; }
+    setEUL(true);
+    try {
+      const res = await api.post('/api/auth/profile/verify-email-otp', { otpCode: code });
+      toast.success('Email updated successfully!');
+      // Update global user
+      updateUser({ email: res.data.email });
+      setEditEmailMode(false);
+      setEmailOtpMode(false);
+      setNewEmail('');
+      setEmailOtp(['','','','','','']);
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Invalid OTP');
+    } finally { setEUL(false); }
   }
 
   if (!user) return null
@@ -228,7 +266,69 @@ const Profile = () => {
                   </div>
                 </div>
                 <div>
-                  <FloatingInput id="email" label="Email Address (cannot be changed)" icon={FiMail} type="email" disabled value={user.email} />
+                  {!isGuestEmail ? (
+                    <FloatingInput id="email" label="Email Address (cannot be changed)" icon={FiMail} type="email" disabled value={user.email} />
+                  ) : (
+                    !editEmailMode ? (
+                      <div className="flex items-center gap-4">
+                        <div className="flex-1">
+                          <FloatingInput id="email" label="Email Address (Placeholder)" icon={FiMail} type="email" disabled value={user.email} />
+                        </div>
+                        <button type="button" onClick={() => setEditEmailMode(true)} className="px-6 h-[52px] rounded-xl font-bold text-sm bg-brand-secondary text-brand-primary transition-all hover:bg-brand-secondary/90 shadow-sm border border-brand-secondary/50">
+                          Link Real Email
+                        </button>
+                      </div>
+                    ) : (
+                      !emailOtpMode ? (
+                        <div className="flex items-center gap-4">
+                          <div className="flex-1">
+                            <FloatingInput id="newEmail" label="New Email Address" icon={FiMail} type="email" value={newEmail} onChange={e => setNewEmail(e.target.value)} />
+                          </div>
+                          <button type="button" onClick={handleSendEmailOtp} disabled={emailUpdateLoading} className="px-6 h-[52px] rounded-xl font-bold text-sm bg-brand-primary text-white transition-all hover:bg-brand-primary/90 disabled:opacity-50 flex items-center gap-2 shadow-md">
+                            {emailUpdateLoading && <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />}
+                            Send OTP
+                          </button>
+                          <button type="button" onClick={() => setEditEmailMode(false)} className="px-4 h-[52px] rounded-xl font-bold text-sm text-brand-text/50 hover:bg-brand-primary/5">
+                            Cancel
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="bg-brand-primary/5 rounded-2xl p-6 border border-brand-primary/10">
+                          <p className="text-sm font-bold text-brand-primary mb-4 flex items-center gap-2"><FiMail /> Enter OTP sent to {newEmail}</p>
+                          <div className="flex items-center gap-2 mb-6">
+                            {[0,1,2,3,4,5].map((_, index) => (
+                              <input
+                                key={index} id={`eotp-${index}`} type="text" maxLength={1} inputMode="numeric"
+                                value={emailOtp[index]}
+                                onChange={e => {
+                                  const val = e.target.value.replace(/\D/g, '');
+                                  const newOtp = [...emailOtp];
+                                  newOtp[index] = val;
+                                  setEmailOtp(newOtp);
+                                  if (val && index < 5) document.getElementById(`eotp-${index + 1}`).focus();
+                                }}
+                                onKeyDown={e => {
+                                  if (e.key === 'Backspace' && !emailOtp[index] && index > 0) {
+                                    document.getElementById(`eotp-${index - 1}`).focus();
+                                  }
+                                }}
+                                className="w-12 h-12 text-center rounded-xl border border-brand-primary/20 text-brand-primary font-bold outline-none focus:border-brand-secondary focus:ring-1 focus:ring-brand-secondary bg-white text-lg shadow-sm"
+                              />
+                            ))}
+                          </div>
+                          <div className="flex items-center gap-3">
+                            <button type="button" onClick={handleVerifyEmailOtp} disabled={emailUpdateLoading || emailOtp.join('').length !== 6} className="px-6 h-12 rounded-xl font-bold text-sm bg-brand-primary text-white disabled:opacity-50 shadow-md flex items-center gap-2">
+                              {emailUpdateLoading && <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />}
+                              Verify & Update
+                            </button>
+                            <button type="button" onClick={() => setEmailOtpMode(false)} className="px-4 h-12 rounded-xl font-bold text-sm text-brand-text/50 hover:bg-brand-primary/5">
+                              Change Email
+                            </button>
+                          </div>
+                        </div>
+                      )
+                    )
+                  )}
                 </div>
                 <div className="flex justify-end pt-5">
                   <motion.button 

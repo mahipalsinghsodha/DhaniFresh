@@ -596,7 +596,7 @@ router.post('/price-preview', auth.optional, async (req, res) => {
         const products = await Product.find({ _id: { $in: productIds } });
         cartItems = guestCartItems.map(item => {
           const dbProduct = products.find(p => p._id.toString() === (item.product._id || item.product).toString());
-          return { product: dbProduct, quantity: item.quantity };
+          return { product: dbProduct, variant: item.variant || null, quantity: item.quantity };
         });
       }
     }

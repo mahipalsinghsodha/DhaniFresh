@@ -21,7 +21,7 @@ const userSchema = new mongoose.Schema({
   password: { type: String, minlength: 6, select: false },
   role:     { type: String, enum: ['user', 'admin', 'superadmin', 'support', 'courier', 'b2b_customer'], default: 'user' },
   permissions: [{ type: String }], // e.g., ['products', 'orders', 'users']
-  phone:    String,
+  phone: { type: String, unique: true, sparse: true, trim: true },
   
   // B2B Details
   companyName: String,
@@ -50,6 +50,11 @@ const userSchema = new mongoose.Schema({
   resetPasswordToken:       { type: String, select: false }, // SHA-256 hash of raw token
   resetPasswordExpire:      { type: Date,   select: false }, // 2-minute window
   resetPasswordFingerprint: { type: String, select: false }, // SHA-256 hash of IP + User-Agent
+
+  // Pending email updates
+  pendingEmail: { type: String, trim: true, lowercase: true },
+  emailUpdateOTP: String,
+  emailUpdateOTPExpire: Date,
 
   tokenVersion: { type: Number, default: 0 },
 

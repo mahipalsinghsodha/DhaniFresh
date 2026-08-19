@@ -123,7 +123,7 @@ const AddProduct = () => {
     variants: []
   })
 
-  const WEIGHT_OPTIONS = ['250g', '500g', '1kg', '3kg', '5kg', '10kg', '15kg']
+  const WEIGHT_OPTIONS = ['100g', '200g', '250g', '500g', '1kg', '2kg', '3kg', '5kg', '10kg', '15kg']
 
   useEffect(() => {
     if (authLoading) {

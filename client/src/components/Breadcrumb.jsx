@@ -1,3 +1,4 @@
+import React, { useState, useEffect } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { ChevronRight, ArrowLeft, Home } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
@@ -82,9 +83,21 @@ export default function Breadcrumb() {
   const { user } = useAuth()
   const pathname = location.pathname
 
+  const [titleToken, setTitleToken] = React.useState(0);
+  
+  React.useEffect(() => {
+    const observer = new MutationObserver(() => setTitleToken(t => t + 1));
+    const titleNode = document.querySelector('title');
+    if (titleNode) {
+      observer.observe(titleNode, { childList: true, characterData: true, subtree: true });
+    }
+    return () => observer.disconnect();
+  }, []);
+
   if (HIDDEN_ON.includes(pathname)) return null
   if (pathname.startsWith('/reset-password')) return null
 
+  // buildCrumbs reads document.title internally, the titleToken ensures re-evaluation when title changes
   const crumbs = buildCrumbs(pathname)
   if (crumbs.length < 2) return null
 

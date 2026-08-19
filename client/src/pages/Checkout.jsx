@@ -10,7 +10,6 @@ import {
   FiArrowRight, FiHome, FiBriefcase,
   FiCheck, FiAlertCircle, FiEdit2, FiLock, FiBox
 } from 'react-icons/fi'
-import CheckoutOTPModal from '../components/CheckoutOTPModal'
 
 const STATES = [
   'Andaman and Nicobar Islands','Andhra Pradesh','Arunachal Pradesh','Assam','Bihar',
@@ -38,7 +37,7 @@ const StepHeader = ({ num, title, sub, active }) => (
 )
 
 const Checkout = () => {
-  const { user } = useAuth()
+  const { user, loading: authLoading } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
   const { fetchCartCount, clearCart } = useCart()
@@ -52,7 +51,6 @@ const Checkout = () => {
   const [showNewForm, setShowNew]     = useState(false)
   const [newAddr, setNewAddr]         = useState(emptyNew)
   const [saveNewAddr, setSaveNew]     = useState(true)
-  const [showOtp, setShowOtp] = useState(false)
   const [couponCode, setCoupon]       = useState('')
   const [appliedCoupon, setApplied]   = useState(null)
   const [couponLoading, setCouponL]   = useState(false)
@@ -73,13 +71,24 @@ const Checkout = () => {
   const guestCartStr = !user ? JSON.stringify(cartItems) : '[]';
 
   useEffect(() => {
-    fetchCart(); 
-    if (user) {
-      fetchAddresses()
-      api.get('/api/wallet').then(res => setWalletBalance(res.data.walletBalance)).catch(console.error)
-    } else {
-      setShowNew(true)
+    if (authLoading) return;
+    
+    if (!user) {
+      toast.info('Please log in to complete your checkout', { toastId: 'login_redirect' });
+      navigate('/login', { state: { from: '/checkout' }, replace: true });
+      return;
     }
+
+    fetchCart(); 
+    fetchAddresses();
+    api.get('/api/wallet').then(res => setWalletBalance(res.data.walletBalance)).catch(console.error)
+
+    setNewAddr(prev => ({
+      ...prev,
+      name: user.name || prev.name,
+      phone: user.phone || prev.phone,
+      email: user.email && !user.email.endsWith('@daatasa-guest.com') ? user.email : prev.email
+    }));
 
     if (location.state?.couponCode) {
       const code = location.state.couponCode
@@ -208,12 +217,6 @@ const Checkout = () => {
     let finalTotal = preview?.totalPrice || 0
     if (useWallet && walletBalance > 0) finalTotal = Math.max(0, finalTotal - walletBalance)
     if (appliedGiftCard) finalTotal = Math.max(0, finalTotal - appliedGiftCard.balance)
-
-    if (paymentMethod === 'COD' && finalTotal > 0) {
-      setLoading(false)
-      setShowOtp(true)
-      return
-    }
 
     try { await placeOrder() } catch (err) {
       if (err.response?.status === 409 && err.response?.data?.allItems) {
@@ -361,7 +364,7 @@ const Checkout = () => {
                     <motion.div key="new" initial={{ opacity:0, y:8 }} animate={{ opacity:1, y:0 }} exit={{ opacity:0 }} className="space-y-4">
                       <div className="grid sm:grid-cols-2 gap-4">
                         <div><label className={labelCls}>Full Name *</label><input required value={newAddr.name} onChange={e => setNewAddr(p=>({...p,name:e.target.value}))} className={inputCls} placeholder="Recipient name"/></div>
-                        <div><label className={labelCls}>Email {user ? '' : '*'}</label><input required={!user} type="email" value={newAddr.email} onChange={e => setNewAddr(p=>({...p,email:e.target.value}))} className={inputCls} placeholder="For order updates"/></div>
+                        <div><label className={labelCls}>Email</label><input type="email" value={newAddr.email} onChange={e => setNewAddr(p=>({...p,email:e.target.value}))} className={inputCls} placeholder="For order updates (optional)"/></div>
                         <div><label className={labelCls}>Phone *</label>
                           <input required type="tel" inputMode="numeric" maxLength={10} value={newAddr.phone}
                             onChange={e => setNewAddr(p=>({...p,phone:e.target.value.replace(/\D/g,'').slice(0,10)}))}
@@ -571,23 +574,7 @@ const Checkout = () => {
         </form>
       </div>
 
-      <CheckoutOTPModal
-        isOpen={showOtp}
-        onClose={() => setShowOtp(false)}
-        targetPhone={getAddr().phone}
-        onSuccess={() => {
-          setShowOtp(false);
-          setLoading(true);
-          placeOrder().catch(err => {
-            setLoading(false);
-            if (err.response?.status === 409 && err.response?.data?.allItems) {
-              setStockModal(err.response.data.allItems)
-            } else {
-              toast.error(err.response?.data?.message || 'Failed to place order')
-            }
-          });
-        }}
-      />
+
 
       {/* Stock Modal */}
       <AnimatePresence>
