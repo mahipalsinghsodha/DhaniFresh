@@ -20,9 +20,9 @@ const getStatus = (order) => {
   if (order.paymentStatus === 'CANCELLED') return { label: 'Cancelled', cls: 'badge-muted', icon: FiX }
   if (order.paymentStatus === 'FAILED') return { label: 'Failed', cls: 'badge-danger', icon: FiAlertCircle }
   if (order.paymentStatus === 'EXPIRED') return { label: 'Expired', cls: 'badge-muted', icon: FiClock }
-  if (order.isPaid) return { label: 'Processing', cls: 'badge-info', icon: FiTruck }
-  if (order.paymentStatus === 'COD_CONFIRMED') return { label: 'Confirmed', cls: 'badge-info', icon: FiClock }
-  return { label: 'Pending', cls: 'badge-warning', icon: FiClock }
+  if (['SHIPPED', 'ASSIGNED_TO_COURIER', 'OUT_FOR_DELIVERY'].includes(order.orderStatus)) return { label: 'Shipped', cls: 'badge-info', icon: FiTruck }
+  if (order.orderStatus === 'ACCEPTED' || order.acceptedAt) return { label: 'Confirmed', cls: 'badge-info', icon: FiCheck }
+  return { label: 'Pending Acceptance', cls: 'badge-warning', icon: FiClock }
 }
 
 const StatusBadge = ({ order }) => {

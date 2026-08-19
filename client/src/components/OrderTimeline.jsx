@@ -11,12 +11,14 @@ const OrderTimeline = ({ order }) => {
     return statusHistory?.find(h => statusArr.includes(h.status));
   };
 
+  const isConfirmed = order.orderStatus === 'ACCEPTED' || !!order.acceptedAt || ['ASSIGNED_TO_COURIER', 'PICKED_UP', 'OUT_FOR_DELIVERY', 'DELIVERED', 'SHIPPED'].includes(order.orderStatus) || paymentStatus === 'COD_CONFIRMED' || (paymentStatus === 'PAID' && order.orderStatus !== 'PENDING_ACCEPTANCE') || isDelivered;
+
   const steps = [
     {
       id: 'placed',
       title: 'Order Placed',
       icon: FiPackage,
-      history: getHistory(['PENDING']),
+      history: getHistory(['PENDING', 'PENDING_ACCEPTANCE']) || (order.createdAt ? { updatedAt: order.createdAt } : null),
       isActive: true, // Always placed if we have an order
       isCompleted: true
     },
@@ -24,9 +26,9 @@ const OrderTimeline = ({ order }) => {
       id: 'confirmed',
       title: 'Order Confirmed',
       icon: FiCheckCircle,
-      history: getHistory(['PAID', 'COD_CONFIRMED']),
-      isActive: ['PAID', 'COD_CONFIRMED', 'SHIPPED', 'DELIVERED'].includes(paymentStatus),
-      isCompleted: ['PAID', 'COD_CONFIRMED', 'SHIPPED', 'DELIVERED'].includes(paymentStatus)
+      history: getHistory(['ACCEPTED', 'COD_CONFIRMED', 'PAID']),
+      isActive: isConfirmed,
+      isCompleted: isConfirmed
     }
   ];
 

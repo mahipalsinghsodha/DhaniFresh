@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
 import api from '../api/axios'
 import { useAuth } from '../context/AuthContext'
-import { useCart } from '../context/CartContext'
+import { useCart, getCartItemDetails } from '../context/CartContext'
 import { toast } from 'react-toastify'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
@@ -83,11 +83,12 @@ const Checkout = () => {
     fetchAddresses();
     api.get('/api/wallet').then(res => setWalletBalance(res.data.walletBalance)).catch(console.error)
 
+    const cleanPhone = (user.phone || '').replace(/\D/g, '').slice(-10);
     setNewAddr(prev => ({
       ...prev,
       name: user.name || prev.name,
-      phone: user.phone || prev.phone,
-      email: user.email && !user.email.endsWith('@daatasa-guest.com') ? user.email : prev.email
+      phone: cleanPhone || prev.phone,
+      email: user.email ? user.email : prev.email
     }));
 
     if (location.state?.couponCode) {
@@ -210,6 +211,12 @@ const Checkout = () => {
     const addr = getAddr()
     if (!addr.name?.trim() || !addr.street?.trim() || !addr.city?.trim() || !addr.zipCode?.trim() || !addr.state?.trim() || (!user && !addr.email?.trim())) {
       toast.error('Please fill in all required delivery details (including email for guests)')
+      setLoading(false); return
+    }
+
+    const phoneDigits = String(addr.phone || '').replace(/\D/g, '').slice(-10)
+    if (!/^[6-9][0-9]{9}$/.test(phoneDigits)) {
+      toast.error('Please enter a valid 10-digit Indian mobile number')
       setLoading(false); return
     }
 
@@ -365,10 +372,23 @@ const Checkout = () => {
                       <div className="grid sm:grid-cols-2 gap-4">
                         <div><label className={labelCls}>Full Name *</label><input required value={newAddr.name} onChange={e => setNewAddr(p=>({...p,name:e.target.value}))} className={inputCls} placeholder="Recipient name"/></div>
                         <div><label className={labelCls}>Email</label><input type="email" value={newAddr.email} onChange={e => setNewAddr(p=>({...p,email:e.target.value}))} className={inputCls} placeholder="For order updates (optional)"/></div>
-                        <div><label className={labelCls}>Phone *</label>
-                          <input required type="tel" inputMode="numeric" maxLength={10} value={newAddr.phone}
-                            onChange={e => setNewAddr(p=>({...p,phone:e.target.value.replace(/\D/g,'').slice(0,10)}))}
-                            className={inputCls} placeholder="10-digit mobile" pattern="[6-9][0-9]{9}"/>
+                        <div>
+                          <label className={labelCls}>Phone *</label>
+                          <div className="relative flex items-center">
+                            <span className="absolute left-3.5 text-xs font-bold text-brand-text/50 select-none pointer-events-none">
+                              +91
+                            </span>
+                            <input
+                              required
+                              type="tel"
+                              inputMode="numeric"
+                              maxLength={10}
+                              value={newAddr.phone ? newAddr.phone.replace(/\D/g, '').slice(-10) : ''}
+                              onChange={e => setNewAddr(p => ({ ...p, phone: e.target.value.replace(/\D/g, '').slice(0, 10) }))}
+                              className={`${inputCls} pl-12`}
+                              placeholder="9876543210"
+                            />
+                          </div>
                         </div>
                       </div>
                       <div><label className={labelCls}>Street Address</label><input required value={newAddr.street} onChange={e => setNewAddr(p=>({...p,street:e.target.value}))} className={inputCls} placeholder="House no., Street, Area"/></div>
@@ -446,28 +466,31 @@ const Checkout = () => {
             {/* Step 3: Order Items */}
             <div className="rounded-[2rem] bg-white border border-brand-primary/10 shadow-sm overflow-hidden">
               <div className="px-8 py-6 border-b border-brand-primary/5">
-                <h3 className="text-lg font-bold font-display text-brand-primary">Order Items ({cart.items.length})</h3>
+                <h3 className="text-lg font-bold font-display text-brand-primary">Order Items ({cart?.items?.length || 0})</h3>
               </div>
               <div className="divide-y divide-brand-primary/5">
-                {cart.items.map(item => {
-                  const variant = item.variant && item.product?.variants ? item.product.variants.find(v => v._id === item.variant) : null
-                  const displayPrice = variant ? variant.price : item.product?.price
-                  const displayWeight = variant ? variant.weight : item.product?.weight
+                {cart?.items?.map((item, idx) => {
+                  const details = getCartItemDetails(item)
+                  const displayPrice = details.price
+                  const displayWeight = details.weight
+                  const displayImage = details.image
+                  const displayName = details.name
                   return (
-                  <div key={item._id} className="px-8 py-5 flex items-center gap-5">
-                    <div className="w-16 h-16 rounded-[1rem] overflow-hidden shrink-0 bg-[var(--ivory)] border border-brand-primary/5">
-                      <img src={item.product?.image} alt={item.product?.name} className="w-full h-full object-cover"/>
+                    <div key={item._id || idx} className="px-8 py-5 flex items-center gap-5">
+                      <div className="w-16 h-16 rounded-[1rem] overflow-hidden shrink-0 bg-[var(--ivory)] border border-brand-primary/5">
+                        <img src={displayImage} alt={displayName} className="w-full h-full object-cover"/>
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-base font-bold font-display text-brand-primary truncate">{displayName}</p>
+                        <p className="text-sm font-medium mt-1 text-brand-text/60 flex items-center">
+                          {displayWeight && <span className="mr-2 px-2 py-0.5 rounded text-[10px] bg-brand-primary/10 text-brand-primary">{displayWeight}</span>}
+                          Qty: {item.quantity} × ₹{displayPrice?.toLocaleString('en-IN')}
+                        </p>
+                      </div>
+                      <span className="text-base font-bold font-display text-brand-primary shrink-0">₹{(displayPrice * item.quantity).toLocaleString('en-IN')}</span>
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-base font-bold font-display text-brand-primary truncate">{item.product?.name}</p>
-                      <p className="text-sm font-medium mt-1 text-brand-text/60 flex items-center">
-                        {displayWeight && <span className="mr-2 px-2 py-0.5 rounded text-[10px] bg-brand-primary/10 text-brand-primary">{displayWeight}</span>}
-                        Qty: {item.quantity} × ₹{displayPrice?.toLocaleString('en-IN')}
-                      </p>
-                    </div>
-                    <span className="text-base font-bold font-display text-brand-primary shrink-0">₹{(displayPrice * item.quantity).toLocaleString('en-IN')}</span>
-                  </div>
-                )})}
+                  )
+                })}
               </div>
             </div>
           </div>
@@ -479,7 +502,12 @@ const Checkout = () => {
             <div className="rounded-[2rem] bg-white border border-brand-primary/10 shadow-sm p-8">
               <h2 className="text-xl font-bold font-display text-brand-primary mb-5 pb-4 border-b border-brand-primary/5">Price Breakdown</h2>
               <div className="space-y-4 mb-6 text-sm">
-                <div className="flex justify-between"><span className="font-medium text-brand-text/60">MRP (incl. of all taxes)</span><span className="font-bold text-brand-primary">₹{(preview?.itemsPrice ?? 0).toLocaleString('en-IN')}</span></div>
+                <div className="flex justify-between">
+                  <span className="font-medium text-brand-text/60">MRP (incl. of all taxes)</span>
+                  <span className="font-bold text-brand-primary">
+                    ₹{(preview?.itemsPrice && preview.itemsPrice > 0 ? preview.itemsPrice : (cart?.items?.reduce((acc, i) => acc + getCartItemDetails(i).price * (i.quantity || 1), 0) || 0)).toLocaleString('en-IN')}
+                  </span>
+                </div>
                 {(preview?.discount ?? 0) > 0 && (
                   <div className="flex justify-between">
                     <span className="font-bold text-green-600">Discount on MRP {appliedCoupon?.code ? `(${appliedCoupon.code})` : ''}</span>
@@ -488,8 +516,8 @@ const Checkout = () => {
                 )}
                 <div className="flex justify-between">
                   <span className="font-medium text-brand-text/60">Shipping</span>
-                  <span className={`font-bold ${(preview?.shippingPrice ?? 50) === 0 ? 'text-green-600' : 'text-brand-primary'}`}>
-                    {(preview?.shippingPrice ?? 50) === 0 ? '🚚 FREE' : `₹${preview?.shippingPrice ?? 50}`}
+                  <span className={`font-bold ${(preview?.shippingPrice ?? (preview?.itemsPrice > 500 ? 0 : 50)) === 0 ? 'text-green-600' : 'text-brand-primary'}`}>
+                    {(preview?.shippingPrice ?? (preview?.itemsPrice > 500 ? 0 : 50)) === 0 ? '🚚 FREE' : `₹${preview?.shippingPrice ?? (preview?.itemsPrice > 500 ? 0 : 50)}`}
                   </span>
                 </div>
               </div>
@@ -498,7 +526,9 @@ const Checkout = () => {
                 <span className="font-extrabold text-lg text-brand-primary">Total Amount</span>
                 {previewLoad
                   ? <span className="inline-block w-24 h-8 bg-brand-primary/5 rounded-full animate-pulse"/>
-                  : <span className="text-3xl font-extrabold font-display text-brand-primary">₹{Math.max(0, Math.round((preview?.totalPrice ?? 0) - (appliedGiftCard ? appliedGiftCard.balance : 0))).toLocaleString('en-IN')}</span>
+                  : <span className="text-3xl font-extrabold font-display text-brand-primary">
+                      ₹{Math.max(0, Math.round(((preview?.totalPrice && preview.totalPrice > 0 ? preview.totalPrice : ((cart?.items?.reduce((acc, i) => acc + getCartItemDetails(i).price * (i.quantity || 1), 0) || 0) + (cart?.items?.reduce((acc, i) => acc + getCartItemDetails(i).price * (i.quantity || 1), 0) > 500 ? 0 : 50))) - (appliedGiftCard ? appliedGiftCard.balance : 0)))).toLocaleString('en-IN')}
+                    </span>
                 }
               </div>
 

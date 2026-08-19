@@ -26,6 +26,30 @@ const saveGuestCart = (items) => {
   localStorage.setItem(GUEST_CART_KEY, JSON.stringify(items))
 }
 
+export const getCartItemDetails = (item) => {
+  if (!item) return { price: 0, weight: '', stock: 0, image: '/matka.png', name: '', category: '', variant: null }
+  
+  const product = item.product || {}
+  const variantId = item.variant?._id?.toString() || item.variant?.toString() || (typeof item.variant === 'string' ? item.variant : null)
+  
+  let variant = null
+  if (variantId && Array.isArray(product.variants)) {
+    variant = product.variants.find(v => (v._id?.toString() || v._id) === variantId)
+  }
+  if (!variant && Array.isArray(product.variants) && product.variants.length > 0 && (product.price === null || product.price === undefined || product.price === 0)) {
+    variant = product.variants[0]
+  }
+
+  const price = variant?.price ?? product.price ?? item.price ?? 0
+  const weight = variant?.weight || product.weight || ''
+  const stock = variant?.stock ?? product.stock ?? 0
+  const image = item.image || product.image || product.images?.[0] || '/matka.png'
+  const name = product.name || item.name || 'Pure Vedic Product'
+  const category = product.category || ''
+
+  return { price: Number(price) || 0, weight, stock, image, name, category, variant }
+}
+
 export const CartProvider = ({ children }) => {
   const { user } = useAuth()
 
@@ -36,11 +60,7 @@ export const CartProvider = ({ children }) => {
   // ── Derived values ──────────────────────────────────────────────────────────
   const cartCount = items.reduce((sum, item) => sum + (item.quantity || 0), 0)
   const cartTotal = items.reduce((sum, item) => {
-    let price = item.product?.price || item.price || 0
-    if (item.variant && item.product?.variants) {
-      const v = item.product.variants.find(v => v._id === item.variant)
-      if (v) price = v.price
-    }
+    const { price } = getCartItemDetails(item)
     return sum + price * (item.quantity || 0)
   }, 0)
 

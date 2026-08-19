@@ -17,6 +17,28 @@ const { invalidateAnalytics } = require('../utils/cache');
 const Notification = require('../models/Notification');
 const { getIO } = require('../socket');
 
+function getProductItemPriceAndStock(product, variantId) {
+  if (!product) return { price: 0, stock: 0, weight: '', image: '', variant: null };
+
+  let variant = null;
+  if (variantId && product.variants && product.variants.length > 0) {
+    const vIdStr = (variantId._id || variantId).toString();
+    variant = product.variants.find(v => v._id.toString() === vIdStr);
+  }
+
+  // If no variant matched or specified, but product has variants and no top-level price
+  if (!variant && product.variants && product.variants.length > 0 && (product.price === null || product.price === undefined || product.price === 0)) {
+    variant = product.variants[0];
+  }
+
+  const price = variant ? variant.price : (product.price ?? 0);
+  const stock = variant ? variant.stock : (product.stock ?? 0);
+  const weight = variant ? variant.weight : (product.weight || '');
+  const image = product.image || (product.images && product.images[0]) || '';
+
+  return { price: Number(price) || 0, stock: Number(stock) || 0, weight, image, variant };
+}
+
 async function pushStatusAndNotify(order, status, note, updatedBy, notificationData) {
   order.statusHistory.push({ status, note, updatedBy, updatedAt: new Date() });
   
@@ -133,12 +155,14 @@ router.post('/', auth.optional, async (req, res) => {
       if (!guestCartItems || guestCartItems.length === 0) {
         return res.status(400).json({ message: 'Cart is empty' });
       }
-      const productIds = guestCartItems.map(i => i.product._id || i.product);
+      const productIds = guestCartItems.map(i => i.product?._id || i.product || i.productId);
       const products = await Product.find({ _id: { $in: productIds } });
       cartItems = guestCartItems.map(item => {
-        const dbProduct = products.find(p => p._id.toString() === (item.product._id || item.product).toString());
+        const pId = (item.product?._id || item.product || item.productId || '').toString();
+        const dbProduct = products.find(p => p._id.toString() === pId);
         return {
           product: dbProduct,
+          variant: item.variant || null,
           quantity: item.quantity
         };
       });
@@ -150,16 +174,7 @@ router.post('/', auth.optional, async (req, res) => {
     for (const item of cartItems) {
       if (!item.product) continue;
       
-      let targetStock = item.product.stock;
-      let targetPrice = item.product.price;
-      
-      if (item.variant) {
-        const variant = item.product.variants.id(item.variant);
-        if (variant) {
-          targetStock = variant.stock;
-          targetPrice = variant.price;
-        }
-      }
+      const { price: targetPrice, stock: targetStock, image: targetImage } = getProductItemPriceAndStock(item.product, item.variant);
 
       if (targetStock < item.quantity) {
         stockIssues.push({
@@ -167,7 +182,7 @@ router.post('/', auth.optional, async (req, res) => {
           productId: item.product._id,
           variantId: item.variant,
           name: item.product.name,
-          image: item.product.image,
+          image: targetImage,
           price: targetPrice,
           requested: item.quantity,
           available: targetStock,
@@ -181,20 +196,12 @@ router.post('/', auth.optional, async (req, res) => {
       const allItems = cartItems
         .filter(i => i.product)
         .map(i => {
-          let vPrice = i.product.price;
-          let vStock = i.product.stock;
-          if (i.variant) {
-            const v = i.product.variants.id(i.variant);
-            if (v) {
-              vPrice = v.price;
-              vStock = v.stock;
-            }
-          }
+          const { price: vPrice, stock: vStock, image: vImage } = getProductItemPriceAndStock(i.product, i.variant);
           return {
             itemId: i._id,
             productId: i.product._id,
             name: i.product.name,
-            image: i.product.image,
+            image: vImage,
             price: vPrice,
             quantity: i.quantity,
             stock: vStock,
@@ -211,21 +218,13 @@ router.post('/', auth.optional, async (req, res) => {
 
     // 3️⃣ PREPARE ORDER ITEMS (all items passed stock check if we reach here)
     const orderItems = cartItems.filter(i => i.product).map(item => {
-      let finalPrice = item.product.price;
-      let finalWeight = item.product.weight;
-      if (item.variant) {
-        const variant = item.product.variants.id(item.variant);
-        if (variant) {
-          finalPrice = variant.price;
-          finalWeight = variant.weight;
-        }
-      }
+      const { price: finalPrice, weight: finalWeight, image: finalImage, variant } = getProductItemPriceAndStock(item.product, item.variant);
       return {
         product: item.product._id,
-        variant: item.variant || null,
+        variant: variant?._id || item.variant || null,
         name: item.product.name,
         weight: finalWeight,
-        image: item.product.image,
+        image: finalImage,
         price: finalPrice,
         quantity: item.quantity
       };
@@ -592,10 +591,11 @@ router.post('/price-preview', auth.optional, async (req, res) => {
     } else {
       const { guestCartItems } = req.body;
       if (guestCartItems && guestCartItems.length > 0) {
-        const productIds = guestCartItems.map(i => i.product._id || i.product);
+        const productIds = guestCartItems.map(i => i.product?._id || i.product || i.productId);
         const products = await Product.find({ _id: { $in: productIds } });
         cartItems = guestCartItems.map(item => {
-          const dbProduct = products.find(p => p._id.toString() === (item.product._id || item.product).toString());
+          const pId = (item.product?._id || item.product || item.productId || '').toString();
+          const dbProduct = products.find(p => p._id.toString() === pId);
           return { product: dbProduct, variant: item.variant || null, quantity: item.quantity };
         });
       }
@@ -611,12 +611,9 @@ router.post('/price-preview', auth.optional, async (req, res) => {
 
     let itemsPrice = cartItems.reduce(
       (total, item) => {
-        let price = item.product?.price || 0;
-        if (item.variant && item.product?.variants) {
-          const variant = item.product.variants.id(item.variant);
-          if (variant) price = variant.price;
-        }
-        return total + price * item.quantity;
+        if (!item.product) return total;
+        const { price } = getProductItemPriceAndStock(item.product, item.variant);
+        return total + price * (item.quantity || 1);
       },
       0
     );
@@ -733,14 +730,11 @@ router.post('/verify-coupon', auth.optional, async (req, res) => {
       return res.status(400).json({ message: 'Cart is empty' });
     }
 
-    const itemsPrice = cartItems.reduce(
+    let itemsPrice = cartItems.reduce(
       (total, item) => {
-        let price = item.product?.price || 0;
-        if (item.variant && item.product?.variants) {
-          const variant = item.product.variants.id(item.variant);
-          if (variant) price = variant.price;
-        }
-        return total + price * item.quantity;
+        if (!item.product) return total;
+        const { price } = getProductItemPriceAndStock(item.product, item.variant);
+        return total + price * (item.quantity || 1);
       },
       0
     );

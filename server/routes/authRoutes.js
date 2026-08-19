@@ -59,7 +59,7 @@ const makeRefreshToken = (user) => jwt.sign(
 const safeUser = (u) => ({
   id:          u._id,
   name:        u.name,
-  email:       u.email,
+  email:       u.email || null,
   role:        u.role,
   permissions: u.permissions || [],
   phone:       u.phone || '',
@@ -279,19 +279,21 @@ router.post('/login-otp', authLimiter, dbCheck, [
     let user = await User.findOne({ phone }).select('+refreshTokens');
     
     if (!user) {
-      // Create new user (Myntra style auto-registration)
-      const placeholderEmail = `${phone.replace('+', '')}@daatasa-guest.com`;
+      // Create new user (Clean registration with email: null)
       const crypto = require('crypto');
       let newReferralCode = crypto.randomBytes(3).toString('hex').toUpperCase();
       
       user = new User({
-        name: 'Guest User',
-        email: placeholderEmail,
+        name: 'Customer',
+        email: null,
         phone,
         referralCode: newReferralCode,
         password: crypto.randomBytes(8).toString('hex') // random unused password
       });
       await user.save();
+    } else if (user.email && user.email.endsWith('@daatasa-guest.com')) {
+      user.email = null;
+      await user.save({ validateBeforeSave: false });
     }
     
     if (user.isBlocked) {
@@ -460,6 +462,7 @@ router.post('/logout-all', auth, async (req, res) => {
 router.get('/me', auth, async (req, res) => {
   try {
     let user = req.user;
+    let changed = false;
     if (!user.referralCode) {
       const crypto = require('crypto');
       let newReferralCode = crypto.randomBytes(3).toString('hex').toUpperCase();
@@ -467,6 +470,13 @@ router.get('/me', auth, async (req, res) => {
         newReferralCode = crypto.randomBytes(3).toString('hex').toUpperCase();
       }
       user.referralCode = newReferralCode;
+      changed = true;
+    }
+    if (user.email && user.email.endsWith('@daatasa-guest.com')) {
+      user.email = null;
+      changed = true;
+    }
+    if (changed) {
       await user.save({ validateBeforeSave: false });
     }
     res.json(safeUser(user));
@@ -635,7 +645,8 @@ router.post('/forgot-password', authLimiter, dbCheck, async (req, res) => {
     if (!user)
       return res.status(404).json({ message: 'No account found with that email/mobile.' });
 
-    if (user.resetPasswordToken && user.resetPasswordExpire && user.resetPasswordExpire > Date.now()) {
+    const isResend = Boolean(req.body.isResend);
+    if (!isResend && user.resetPasswordToken && user.resetPasswordExpire && user.resetPasswordExpire > Date.now()) {
       const remainingMs      = user.resetPasswordExpire - Date.now();
       const remainingSeconds = Math.ceil(remainingMs / 1000);
       return res.status(409).json({
@@ -650,7 +661,7 @@ router.post('/forgot-password', authLimiter, dbCheck, async (req, res) => {
     const deviceFingerprint = makeFingerprint(req);
 
     user.resetPasswordToken       = tokenHashed;
-    user.resetPasswordExpire      = Date.now() + 5 * 60 * 1000; // 5 minutes for OTPs
+    user.resetPasswordExpire = Date.now() + 2 * 60 * 1000; // 2 minutes validity
     user.resetPasswordFingerprint = deviceFingerprint;
     await user.save({ validateBeforeSave: false });
 
@@ -664,7 +675,7 @@ router.post('/forgot-password', authLimiter, dbCheck, async (req, res) => {
       res.json({ message: 'Reset link sent to your email.' });
     } else {
       const { sendSMS } = require('../services/smsService');
-      const msg = `Your Daatasa password reset code is: ${resetToken}. It is valid for 5 minutes.`;
+      const msg = `Your Daatasa password reset code is: ${resetToken}. It is valid for 2 minutes.`;
       await sendSMS(user.phone, msg);
       res.json({ message: 'Reset code sent to your mobile via SMS.', isOtp: true });
     }
@@ -945,6 +956,20 @@ router.put('/users/:id/b2b', auth, auth.admin, auth.hasPermission('users'), asyn
 /* ─────────────────────────────────────────────────────────────────────────── */
 /*  WISHLIST                                                                   */
 /* ─────────────────────────────────────────────────────────────────────────── */
+router.get('/wishlist', auth, async (req, res) => {
+  try {
+    const user = await User.findById(req.user._id).populate({
+      path: 'wishlist',
+      select: 'name price mrp image images category stock weight rating numReviews variants isActive launchDate'
+    });
+    if (!user) return res.status(404).json({ message: 'User not found' });
+    const products = (user.wishlist || []).filter(p => p && p._id && p.isActive !== false);
+    res.json(products);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
 router.post('/wishlist', auth, async (req, res) => {
   try {
     const { productId } = req.body;

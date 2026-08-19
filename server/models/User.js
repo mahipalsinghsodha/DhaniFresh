@@ -17,7 +17,7 @@ const addressSchema = new mongoose.Schema({
 
 const userSchema = new mongoose.Schema({
   name:     { type: String, required: true, trim: true },
-  email:    { type: String, required: true, unique: true, lowercase: true, trim: true },
+  email:    { type: String, unique: true, sparse: true, lowercase: true, trim: true, default: null },
   password: { type: String, minlength: 6, select: false },
   role:     { type: String, enum: ['user', 'admin', 'superadmin', 'support', 'courier', 'b2b_customer'], default: 'user' },
   permissions: [{ type: String }], // e.g., ['products', 'orders', 'users']

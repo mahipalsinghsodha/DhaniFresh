@@ -7,7 +7,7 @@ import {
 } from 'react-icons/fi'
 import { toast } from 'react-toastify'
 import { motion, AnimatePresence } from 'framer-motion'
-import { useCart } from '../context/CartContext'
+import { useCart, getCartItemDetails } from '../context/CartContext'
 import { useTranslation } from 'react-i18next'
 import api from '../api/axios'
 
@@ -108,12 +108,8 @@ const Cart = () => {
 
   const hasItems = cartItems?.length > 0
   const subtotal = cartItems?.reduce((acc, item) => {
-    let price = item.product?.price || 0
-    if (item.variant && item.product?.variants) {
-      const v = item.product.variants.find(v => v._id === item.variant)
-      if (v) price = v.price
-    }
-    return acc + price * item.quantity
+    const { price } = getCartItemDetails(item)
+    return acc + price * (item.quantity || 1)
   }, 0) || 0
 
   return (
@@ -171,17 +167,20 @@ const Cart = () => {
             <div className="lg:col-span-2 space-y-4">
               <AnimatePresence>
                 {cartItems.map((item, idx) => {
-                  const variant = item.variant && item.product?.variants ? item.product.variants.find(v => v._id === item.variant) : null
-                  const stock       = variant ? variant.stock : (item.product?.stock ?? 0)
-                  const displayPrice = variant ? variant.price : (item.product?.price ?? 0)
-                  const displayWeight = variant ? variant.weight : item.product?.weight
+                  const details = getCartItemDetails(item)
+                  const stock = details.stock
+                  const displayPrice = details.price
+                  const displayWeight = details.weight
+                  const displayImage = details.image
+                  const displayName = details.name
+                  const displayCategory = details.category
                   
                   const isB2BUser = user?.role === 'b2b_customer';
                   let b2bMinQty = item.product?.b2bMinQty || 0;
                   let b2bSetQty = item.product?.b2bSetQty || 0;
-                  if (variant) {
-                    if (variant.b2bMinQty > 0) b2bMinQty = variant.b2bMinQty;
-                    if (variant.b2bSetQty > 0) b2bSetQty = variant.b2bSetQty;
+                  if (details.variant) {
+                    if (details.variant.b2bMinQty > 0) b2bMinQty = details.variant.b2bMinQty;
+                    if (details.variant.b2bSetQty > 0) b2bSetQty = details.variant.b2bSetQty;
                   }
                   const minAllowed = (isB2BUser && b2bMinQty > 0) ? b2bMinQty : 1;
                   const qtyStep = (isB2BUser && b2bSetQty > 0) ? b2bSetQty : 1;
@@ -192,7 +191,7 @@ const Cart = () => {
 
                   return (
                     <motion.div
-                      key={item._id}
+                      key={item._id || idx}
                       initial={{ opacity: 0, y: 12 }}
                       animate={{ opacity: 1, y: 0 }}
                       exit={{ opacity: 0, x: -20, scale: 0.96 }}
@@ -201,10 +200,10 @@ const Cart = () => {
                     >
                       {/* Image */}
                       <Link
-                        to={`/products/${item.product?._id}`}
+                        to={`/products/${item.product?._id || item.product}`}
                         className="w-20 h-20 sm:w-28 sm:h-28 shrink-0 rounded-2xl sm:rounded-[1.5rem] overflow-hidden hover:opacity-90 transition-opacity bg-[var(--ivory)] border border-brand-primary/5"
                       >
-                        <img src={item.product?.image} alt={item.product?.name} className="w-full h-full object-cover" loading="lazy" />
+                        <img src={displayImage} alt={displayName} className="w-full h-full object-cover" loading="lazy" />
                       </Link>
 
                       {/* Info */}
@@ -212,10 +211,10 @@ const Cart = () => {
                         <div className="flex items-start justify-between gap-2">
                           <div className="min-w-0">
                             <h3 className="text-base sm:text-lg font-bold font-display text-brand-primary truncate leading-tight">
-                              {item.product?.name}
+                              {displayName}
                             </h3>
                             <p className="text-sm mt-1 capitalize flex items-center gap-2 font-medium text-brand-text/60">
-                              <span className="px-2 py-0.5 rounded-md text-[10px] font-bold uppercase bg-brand-primary/5 text-brand-primary">{item.product?.category}</span>
+                              {displayCategory && <span className="px-2 py-0.5 rounded-md text-[10px] font-bold uppercase bg-brand-primary/5 text-brand-primary">{displayCategory}</span>}
                               {displayWeight && <span>{displayWeight}</span>}
                             </p>
                             {isOut && <p className="text-xs font-bold mt-2 uppercase tracking-wide text-red-500">Currently Unavailable</p>}
@@ -224,7 +223,7 @@ const Cart = () => {
                           </div>
 
                           <button
-                            onClick={() => removeItem(item._id)}
+                            onClick={() => removeItem(item._id || item.product?._id || item.product)}
                             className="w-8 h-8 sm:w-10 sm:h-10 flex items-center justify-center shrink-0 text-brand-text/30 hover:text-red-500 hover:bg-red-50 rounded-full transition-colors -mt-1 sm:mt-0"
                             title="Remove item"
                           >
@@ -237,7 +236,7 @@ const Cart = () => {
                           <div className={`flex items-center p-0.5 sm:p-1 rounded-full border ${isOut ? 'border-red-500/30 bg-red-50' : 'border-brand-primary/10 bg-white'}`}>
                             <button
                               disabled={updatingId === item._id || item.quantity <= minAllowed}
-                              onClick={() => updateQty(item._id, item.quantity - qtyStep, stock, isB2BUser, b2bMinQty, b2bSetQty)}
+                              onClick={() => updateQty(item._id || item.product?._id || item.product, item.quantity - qtyStep, stock, isB2BUser, b2bMinQty, b2bSetQty)}
                               className="w-8 h-8 flex items-center justify-center transition-colors disabled:opacity-40 rounded-full text-brand-primary hover:bg-brand-primary/5"
                             >
                               <FiMinus size={14} />
@@ -247,7 +246,7 @@ const Cart = () => {
                             </span>
                             <button
                               disabled={updatingId === item._id || atMax || isOut}
-                              onClick={() => updateQty(item._id, item.quantity + qtyStep, stock, isB2BUser, b2bMinQty, b2bSetQty)}
+                              onClick={() => updateQty(item._id || item.product?._id || item.product, item.quantity + qtyStep, stock, isB2BUser, b2bMinQty, b2bSetQty)}
                               className="w-7 h-7 sm:w-8 sm:h-8 flex items-center justify-center transition-colors disabled:opacity-40 rounded-full text-brand-primary hover:bg-brand-primary/5"
                             >
                               <FiPlus size={13} className="sm:w-3.5 sm:h-3.5" />
@@ -326,7 +325,7 @@ const Cart = () => {
                     <div className="space-y-4 mb-6">
                       <div className="flex justify-between text-sm">
                         <span className="font-medium text-brand-text/60">MRP (incl. of all taxes)</span>
-                        <span className="font-bold text-brand-primary">₹{(preview?.itemsPrice ?? subtotal).toLocaleString('en-IN')}</span>
+                        <span className="font-bold text-brand-primary">₹{(preview?.itemsPrice && preview.itemsPrice > 0 ? preview.itemsPrice : subtotal).toLocaleString('en-IN')}</span>
                       </div>
                       {preview?.discount > 0 && (
                         <div className="flex justify-between text-sm font-bold text-green-600">
@@ -336,10 +335,10 @@ const Cart = () => {
                       )}
                       <div className="flex justify-between text-sm">
                         <span className="font-medium text-brand-text/60">Shipping</span>
-                        <span className={`font-bold ${(preview?.shippingPrice ?? 50) === 0 ? 'text-green-600' : 'text-brand-primary'}`}>
-                          {(preview?.shippingPrice ?? 50) === 0
+                        <span className={`font-bold ${(preview?.shippingPrice ?? (subtotal > 500 ? 0 : 50)) === 0 ? 'text-green-600' : 'text-brand-primary'}`}>
+                          {(preview?.shippingPrice ?? (subtotal > 500 ? 0 : 50)) === 0
                             ? <span className="flex items-center gap-1 font-bold"><FiTruck size={14} /> FREE</span>
-                            : `₹${preview?.shippingPrice ?? 50}`
+                            : `₹${preview?.shippingPrice ?? (subtotal > 500 ? 0 : 50)}`
                           }
                         </span>
                       </div>
@@ -393,7 +392,7 @@ const Cart = () => {
                     <span className="text-3xl font-extrabold font-display text-brand-primary">
                       {previewLoading
                         ? <span className="inline-block w-24 h-8 bg-brand-primary/5 rounded-full animate-pulse" />
-                        : `₹${Math.round(Number(preview?.totalPrice ?? subtotal)).toLocaleString('en-IN')}`
+                        : `₹${Math.round(Number(preview?.totalPrice && preview.totalPrice > 50 ? preview.totalPrice : (subtotal + (subtotal > 500 ? 0 : 50)))).toLocaleString('en-IN')}`
                       }
                     </span>
                   </div>
