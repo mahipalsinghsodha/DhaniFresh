@@ -58,6 +58,7 @@ const makeRefreshToken = (user) => jwt.sign(
 /** Public user object — never expose password/reset tokens/refresh hashes */
 const safeUser = (u) => ({
   id:          u._id,
+  _id:         u._id,
   name:        u.name,
   email:       u.email || null,
   role:        u.role,

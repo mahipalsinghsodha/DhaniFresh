@@ -17,8 +17,7 @@ const Cart = () => {
   const { t } = useTranslation()
   const { user }           = useAuth()
   const navigate           = useNavigate()
-  const { items: cartItems, removeItem: removeContextItem, updateQty: updateContextQty } = useCart()
-  const [loading,        setLoading]        = useState(false)
+  const { items: cartItems, loading: cartLoading, removeItem: removeContextItem, updateQty: updateContextQty, clearCart: clearContextCart, fetchCart } = useCart()
   const [updatingId,     setUpdatingId]     = useState(null)
   const [preview,        setPreview]        = useState(null)
   const [previewLoading, setPreviewLoading] = useState(false)
@@ -26,13 +25,18 @@ const Cart = () => {
   const [appliedCoupon,  setAppliedCoupon]  = useState(null)
   const [couponLoading,  setCouponLoading]  = useState(false)
 
-  const guestCartStr = !user ? JSON.stringify(cartItems) : '[]'
+  // Fetch fresh cart from DB every time this page opens
+  useEffect(() => {
+    if (user) fetchCart()
+  }, [user?.id, user?._id, fetchCart])
 
   useEffect(() => {
-    if (cartItems.length > 0) {
+    if (cartItems && cartItems.length > 0) {
       fetchPreview()
+    } else {
+      setPreview(null)
     }
-  }, [user, guestCartStr])
+  }, [user, cartItems])
 
   const applyCoupon = async () => {
     if (!couponCode.trim()) return
@@ -64,13 +68,10 @@ const Cart = () => {
     toast.info('Coupon removed')
   }
 
-
-
   const fetchPreview = async () => {
     setPreviewLoading(true)
     try {
-      const guestCartItems = !user ? JSON.parse(guestCartStr) : undefined
-      const res = await api.post('/api/orders/price-preview', { guestCartItems })
+      const res = await api.post('/api/orders/price-preview')
       setPreview(res.data)
     } catch (e) { console.error('Price preview error:', e) }
     finally { setPreviewLoading(false) }
@@ -100,7 +101,17 @@ const Cart = () => {
     } catch { toast.error('Failed to remove item') }
   }
 
-  if (loading) return (
+  const handleClearCart = async () => {
+    if (!window.confirm('Remove all items from cart?')) return
+    try {
+      await clearContextCart()
+      toast.success('Cart cleared')
+      setPreview(null)
+    } catch { toast.error('Failed to clear cart') }
+  }
+
+  // Show spinner while CartContext is fetching from DB (on login / page reload)
+  if (cartLoading) return (
     <div className="min-h-[60vh] flex items-center justify-center bg-[var(--ivory)]">
       <div className="w-12 h-12 border-4 rounded-full animate-spin border-brand-secondary border-t-transparent" />
     </div>
@@ -128,9 +139,17 @@ const Cart = () => {
               <h1 className="text-3xl sm:text-4xl font-display font-bold text-brand-primary">{t('cart.heroTitle', 'Shopping Cart')}</h1>
             </div>
             {hasItems && (
-              <span className="text-sm font-bold px-4 py-2 rounded-full shadow-sm bg-brand-primary/5 text-brand-primary border border-brand-primary/10">
-                {cartItems.length} {cartItems.length > 1 ? t('cart.itemsCountPlural', 'items') : t('cart.itemsCount', 'item')}
-              </span>
+              <div className="flex items-center gap-2 flex-wrap justify-end">
+                <span className="text-sm font-bold px-4 py-2 rounded-full shadow-sm bg-brand-primary/5 text-brand-primary border border-brand-primary/10">
+                  {cartItems.length} {cartItems.length > 1 ? t('cart.itemsCountPlural', 'items') : t('cart.itemsCount', 'item')}
+                </span>
+                <button
+                  onClick={handleClearCart}
+                  className="flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-full text-red-500 border border-red-200 hover:bg-red-50 active:scale-95 transition-all"
+                >
+                  <FiTrash2 size={11} /> Clear All
+                </button>
+              </div>
             )}
           </div>
         </div>

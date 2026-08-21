@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Link } from 'react-router-dom'
 import { FiChevronLeft, FiChevronRight, FiArrowRight } from 'react-icons/fi'
@@ -7,7 +7,10 @@ import { useTranslation } from 'react-i18next'
 const HeroCarousel = () => {
   const { t } = useTranslation()
   const [currentSlide, setCurrentSlide] = useState(0)
-  
+  const [isPaused, setIsPaused] = useState(false)
+  const touchStartX = useRef(0)
+  const touchEndX = useRef(0)
+
   const slides = [
     {
       id: 1,
@@ -15,7 +18,7 @@ const HeroCarousel = () => {
       badge: t('hero.badge1', 'Heritage of Rajasthan'),
       title: t('hero.title1', 'Pure Vedic Bilona'),
       subtitle: t('hero.sub1', 'Desi Cow Ghee'),
-      description: t('hero.desc1', 'Experience the pinnacle of purity with our traditionally hand-churned liquid gold. Crafted slowly in earthen pots to preserve authentic aroma.'),
+      description: t('hero.desc1', 'Traditionally hand-churned liquid gold crafted slowly in earthen pots to preserve authentic aroma and nutrients.'),
       buttonText: t('hero.btn1', 'Shop Collection'),
       link: '/products'
     },
@@ -25,7 +28,7 @@ const HeroCarousel = () => {
       badge: t('hero.badge2', 'Farm to Family'),
       title: t('hero.title2', '100% Organic & Natural'),
       subtitle: t('hero.sub2', 'Directly from Farms'),
-      description: t('hero.desc2', 'Sourced from happy, free-grazing cows fed on natural organic grass. Unadulterated purity delivered straight to your doorstep.'),
+      description: t('hero.desc2', 'Sourced from happy, free-grazing cows fed on natural organic grass in Khuri, Jaisalmer.'),
       buttonText: t('hero.btn2', 'Discover More'),
       link: '/about'
     },
@@ -35,7 +38,7 @@ const HeroCarousel = () => {
       badge: t('hero.badge3', 'Authentic Process'),
       title: t('hero.title3', 'Traditional Bilona'),
       subtitle: t('hero.sub3', 'Hand-Churned Perfection'),
-      description: t('hero.desc3', 'We follow the rigorous 4-step Vedic process. Every drop is crafted with patience, tradition, and devotion to bring you unparalleled health benefits.'),
+      description: t('hero.desc3', 'Rigorous 4-step Vedic process with patience and tradition for unparalleled health benefits.'),
       buttonText: t('hero.btn3', 'Shop Now'),
       link: '/products'
     }
@@ -45,27 +48,58 @@ const HeroCarousel = () => {
     setCurrentSlide((prev) => (prev === slides.length - 1 ? 0 : prev + 1))
   }, [slides.length])
 
-  const prevSlide = () => {
+  const prevSlide = useCallback(() => {
     setCurrentSlide((prev) => (prev === 0 ? slides.length - 1 : prev - 1))
+  }, [slides.length])
+
+  // Touch Swipe Handlers for mobile
+  const handleTouchStart = (e) => {
+    touchStartX.current = e.touches[0].clientX
+  }
+
+  const handleTouchMove = (e) => {
+    touchEndX.current = e.touches[0].clientX
+  }
+
+  const handleTouchEnd = () => {
+    const diff = touchStartX.current - touchEndX.current
+    const threshold = 40
+    if (Math.abs(diff) > threshold) {
+      if (diff > 0) nextSlide()
+      else prevSlide()
+    }
+    touchStartX.current = 0
+    touchEndX.current = 0
   }
 
   // Auto-play
   useEffect(() => {
+    if (isPaused) return
     const timer = setInterval(() => {
       nextSlide()
-    }, 6000)
+    }, 5500)
     return () => clearInterval(timer)
-  }, [nextSlide])
+  }, [nextSlide, isPaused])
 
   return (
-    <div className="relative w-full h-[60vh] sm:h-[70vh] lg:h-[85vh] overflow-hidden bg-brand-bg group">
+    <div 
+      className="relative w-full h-[48vh] xs:h-[52vh] sm:h-[60vh] lg:h-[72vh] overflow-hidden bg-brand-bg group select-none"
+      role="region"
+      aria-roledescription="carousel"
+      aria-label="Hero Carousel"
+      onMouseEnter={() => setIsPaused(true)}
+      onMouseLeave={() => setIsPaused(false)}
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={handleTouchEnd}
+    >
       <AnimatePresence initial={false} mode="wait">
         <motion.div
           key={currentSlide}
-          initial={{ opacity: 0, scale: 1.05 }}
+          initial={{ opacity: 0, scale: 1.03 }}
           animate={{ opacity: 1, scale: 1 }}
           exit={{ opacity: 0 }}
-          transition={{ duration: 1, ease: [0.22, 1, 0.36, 1] }}
+          transition={{ duration: 0.7, ease: [0.22, 1, 0.36, 1] }}
           className="absolute inset-0"
         >
           {/* Background Image */}
@@ -73,52 +107,56 @@ const HeroCarousel = () => {
             <img 
               src={slides[currentSlide].image} 
               alt={slides[currentSlide].title}
-              className="w-full h-full object-cover"
+              className="w-full h-full object-cover object-center"
+              loading="eager"
             />
-            {/* Gradient Overlay for Text Readability */}
-            <div className="absolute inset-0 bg-gradient-to-r from-black/80 via-black/50 to-transparent"></div>
+            <div className="absolute inset-0 bg-gradient-to-r from-black/85 via-black/55 to-black/25 sm:to-transparent" />
+            <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-black/20" />
           </div>
 
           {/* Slide Content */}
-          <div className="relative z-10 h-full max-w-[1440px] mx-auto px-6 sm:px-12 flex flex-col justify-center">
-            <div className="max-w-xl">
+          <div className="relative z-10 h-full max-w-[1280px] mx-auto px-4 sm:px-8 lg:px-12 flex flex-col justify-center">
+            <div className="max-w-md sm:max-w-lg lg:max-w-xl">
               <motion.div
-                initial={{ opacity: 0, y: 20 }}
+                initial={{ opacity: 0, y: 12 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.3, duration: 0.8 }}
-                className="mb-4"
+                transition={{ delay: 0.15, duration: 0.5 }}
+                className="mb-1.5 sm:mb-2.5"
               >
-                <span className="inline-block px-4 py-1.5 rounded-full text-xs font-bold uppercase tracking-[0.15em] text-white bg-brand-secondary/80 backdrop-blur-md border border-white/20">
+                <span className="inline-block px-2.5 sm:px-3.5 py-0.5 sm:py-1 rounded-full text-[9px] sm:text-[11px] font-bold uppercase tracking-[0.15em] text-white bg-brand-secondary/90 backdrop-blur-md border border-white/20 shadow-sm">
                   {slides[currentSlide].badge}
                 </span>
               </motion.div>
               
               <motion.h1
-                initial={{ opacity: 0, y: 20 }}
+                initial={{ opacity: 0, y: 15 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.5, duration: 0.8 }}
-                className="text-4xl sm:text-5xl lg:text-7xl font-display font-bold leading-[1.1] mb-4 text-white"
+                transition={{ delay: 0.25, duration: 0.6 }}
+                className="text-2xl xs:text-3xl sm:text-4xl lg:text-5xl xl:text-6xl font-display font-bold leading-[1.12] mb-1.5 sm:mb-2.5 text-white"
               >
                 {slides[currentSlide].title} <br />
                 <span className="text-brand-secondary italic">{slides[currentSlide].subtitle}</span>
               </motion.h1>
               
               <motion.p
-                initial={{ opacity: 0, y: 20 }}
+                initial={{ opacity: 0, y: 15 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.7, duration: 0.8 }}
-                className="text-base sm:text-lg text-white/80 mb-8 sm:mb-10 leading-relaxed font-light line-clamp-3 sm:line-clamp-none"
+                transition={{ delay: 0.35, duration: 0.6 }}
+                className="text-xs sm:text-sm lg:text-base text-white/90 mb-3.5 sm:mb-6 leading-relaxed font-light line-clamp-2 sm:line-clamp-3 max-w-md"
               >
                 {slides[currentSlide].description}
               </motion.p>
               
               <motion.div
-                initial={{ opacity: 0, y: 20 }}
+                initial={{ opacity: 0, y: 15 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.9, duration: 0.8 }}
+                transition={{ delay: 0.45, duration: 0.6 }}
               >
-                <Link to={slides[currentSlide].link} className="btn btn-primary h-12 sm:h-14 px-8 text-[14px] sm:text-[15px] rounded-full shadow-gold inline-flex items-center gap-2 group-hover:scale-105 transition-transform">
-                  {slides[currentSlide].buttonText} <FiArrowRight />
+                <Link 
+                  to={slides[currentSlide].link} 
+                  className="btn btn-primary h-9 xs:h-10 sm:h-12 px-4 xs:px-6 sm:px-7 text-xs sm:text-sm rounded-full shadow-gold inline-flex items-center gap-1.5 hover:scale-105 active:scale-95 transition-transform"
+                >
+                  <span>{slides[currentSlide].buttonText}</span> <FiArrowRight className="text-xs sm:text-sm" />
                 </Link>
               </motion.div>
             </div>
@@ -129,27 +167,29 @@ const HeroCarousel = () => {
       {/* Navigation Arrows */}
       <button 
         onClick={prevSlide} 
-        className="absolute left-4 top-1/2 -translate-y-1/2 w-12 h-12 rounded-full bg-white/10 hover:bg-white/30 backdrop-blur-md border border-white/20 flex items-center justify-center text-white transition-all opacity-0 group-hover:opacity-100 z-20"
+        aria-label="Previous Slide"
+        className="absolute left-2 xs:left-3 top-1/2 -translate-y-1/2 w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-black/25 sm:bg-white/10 hover:bg-white/30 backdrop-blur-md border border-white/20 flex items-center justify-center text-white transition-all opacity-80 sm:opacity-0 sm:group-hover:opacity-100 z-20 hover:scale-110 active:scale-90"
       >
-        <FiChevronLeft size={24} />
+        <FiChevronLeft size={18} />
       </button>
       <button 
         onClick={nextSlide} 
-        className="absolute right-4 top-1/2 -translate-y-1/2 w-12 h-12 rounded-full bg-white/10 hover:bg-white/30 backdrop-blur-md border border-white/20 flex items-center justify-center text-white transition-all opacity-0 group-hover:opacity-100 z-20"
+        aria-label="Next Slide"
+        className="absolute right-2 xs:right-3 top-1/2 -translate-y-1/2 w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-black/25 sm:bg-white/10 hover:bg-white/30 backdrop-blur-md border border-white/20 flex items-center justify-center text-white transition-all opacity-80 sm:opacity-0 sm:group-hover:opacity-100 z-20 hover:scale-110 active:scale-90"
       >
-        <FiChevronRight size={24} />
+        <FiChevronRight size={18} />
       </button>
 
       {/* Pagination Dots */}
-      <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex gap-3 z-20">
+      <div className="absolute bottom-2.5 xs:bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-1.5 xs:gap-2 z-20">
         {slides.map((_, idx) => (
           <button
             key={idx}
             onClick={() => setCurrentSlide(idx)}
-            className={`transition-all duration-300 rounded-full ${
+            className={`transition-all duration-300 rounded-full h-1.5 xs:h-2 ${
               currentSlide === idx 
-                ? 'w-8 h-2.5 bg-brand-secondary shadow-gold' 
-                : 'w-2.5 h-2.5 bg-white/50 hover:bg-white'
+                ? 'w-5 xs:w-7 bg-brand-secondary shadow-gold' 
+                : 'w-1.5 xs:w-2 bg-white/50 hover:bg-white'
             }`}
             aria-label={`Go to slide ${idx + 1}`}
           />

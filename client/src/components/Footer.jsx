@@ -39,58 +39,57 @@ export default function Footer() {
   const navCols = useMemo(() => getNavCols(t), [t])
 
   return (
-    <footer className="bg-brand-primary relative overflow-hidden text-white mt-12 sm:mt-24 border-t-4 border-brand-secondary" role="contentinfo">
+    <footer className="bg-brand-primary relative overflow-hidden text-white mt-8 sm:mt-14 border-t-2 sm:border-t-4 border-brand-secondary" role="contentinfo">
 
       {/* Premium Ambient Background */}
-      <div className="absolute top-0 right-0 w-[600px] h-[600px] bg-brand-secondary/10 rounded-full blur-[100px] -translate-y-1/2 translate-x-1/3 pointer-events-none" />
-      <div className="absolute inset-0 opacity-5 bg-[url('https://www.transparenttextures.com/patterns/stardust.png')] mix-blend-overlay pointer-events-none" />
+      <div className="absolute top-0 right-0 w-[400px] sm:w-[600px] h-[400px] sm:h-[600px] bg-brand-secondary/10 rounded-full blur-[90px] -translate-y-1/2 translate-x-1/3 pointer-events-none" />
 
-      <div className="relative z-10 max-w-[1280px] mx-auto px-4 sm:px-6 lg:px-8 pt-12 sm:pt-20 pb-8">
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 gap-10 sm:gap-12 lg:gap-8 mb-12 sm:mb-16">
+      <div className="relative z-10 max-w-[1280px] mx-auto px-4 sm:px-6 lg:px-8 pt-8 sm:pt-12 pb-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 gap-6 sm:gap-8 lg:gap-6 mb-8 sm:mb-10">
 
           {/* Brand Column */}
-          <div className="lg:col-span-5 pr-0 lg:pr-12">
-            <Link to="/" className="inline-block mb-6 bg-[#fffdf8] rounded-[12px] px-4 py-2">
+          <div className="lg:col-span-5 pr-0 lg:pr-8">
+            <Link to="/" className="inline-block mb-3 sm:mb-4 bg-[#fffdf8] rounded-xl px-3 py-1.5 shadow-xs">
               <img 
                 src="/logo_rectangle.png" 
                 alt="Daatasa"
-                className="h-16 w-auto" 
+                className="h-10 sm:h-12 w-auto" 
               />
             </Link>
-            <p className="text-white/70 leading-relaxed font-medium mb-8 text-sm sm:text-base">
-              {t('footer.tagline', 'Experience the pinnacle of purity with our traditionally hand-churned Vedic Bilona Ghee. Crafted slowly to preserve authentic aroma and unmatched nutritional benefits for your holistic well-being.')}
+            <p className="text-white/70 leading-relaxed font-normal mb-4 sm:mb-5 text-xs sm:text-sm max-w-sm">
+              {t('footer.tagline', 'Experience the pinnacle of purity with our traditionally hand-churned Vedic Bilona Ghee crafted in Khuri, Jaisalmer.')}
             </p>
 
             {/* Social Icons */}
-            <div className="flex gap-3">
+            <div className="flex gap-2.5">
               {SOCIALS.map(({ Icon, label, href }) => (
                 <a key={label} href={href} aria-label={label}
-                  className="w-11 h-11 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center text-brand-secondary hover:bg-brand-secondary hover:text-brand-primary transition-all duration-300 shadow-sm hover:shadow-gold"
+                  className="w-8 h-8 sm:w-9 sm:h-9 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center text-brand-secondary hover:bg-brand-secondary hover:text-brand-primary transition-all duration-300 shadow-2xs hover:shadow-gold"
                 >
-                  <Icon size={18} />
+                  <Icon size={15} />
                 </a>
               ))}
             </div>
           </div>
 
           {/* Navigation Columns */}
-          <div className="lg:col-span-4 grid grid-cols-2 sm:flex sm:flex-row flex-wrap gap-x-4 gap-y-10 sm:gap-16">
+          <div className="lg:col-span-4 grid grid-cols-2 sm:flex sm:flex-row flex-wrap gap-x-4 gap-y-6 sm:gap-10">
             {navCols.map(col => (
               <div key={col.title}>
-                <h4 className="font-display text-lg font-bold mb-6 text-white tracking-wide">
+                <h4 className="font-display text-sm sm:text-base font-bold mb-3 sm:mb-4 text-white tracking-wide">
                   {col.title}
                 </h4>
-                <ul className="space-y-4">
+                <ul className="space-y-2 sm:space-y-2.5">
                   {col.links.map(link => (
                     <li key={link.label}>
-                      <Link to={link.to} className={`hover:text-brand-secondary transition-colors duration-300 font-medium text-sm flex items-center group ${link.highlight ? 'text-brand-secondary' : 'text-white/60'}`}>
-                        <span className="w-0 overflow-hidden group-hover:w-3 transition-all duration-300 text-brand-secondary">
-                          <FiArrowRight size={12} />
+                      <Link to={link.to} className={`hover:text-brand-secondary transition-colors duration-300 font-medium text-xs sm:text-sm flex items-center group ${link.highlight ? 'text-brand-secondary' : 'text-white/65'}`}>
+                        <span className="w-0 overflow-hidden group-hover:w-2.5 transition-all duration-300 text-brand-secondary">
+                          <FiArrowRight size={10} />
                         </span>
-                        <span className={link.highlight ? 'animate-pulse flex items-center gap-2' : ''}>
+                        <span className={link.highlight ? 'animate-pulse flex items-center gap-1.5' : ''}>
                           {link.label}
                           {link.highlight && (
-                            <span className="bg-red-500/20 text-red-400 border border-red-500/30 text-[9px] font-bold px-1.5 py-0.5 rounded-full animate-pulse shadow-[0_0_10px_rgba(239,68,68,0.3)]">NEW</span>
+                            <span className="bg-red-500/20 text-red-400 border border-red-500/30 text-[8px] font-bold px-1 py-0.2 rounded-full animate-pulse shadow-2xs">NEW</span>
                           )}
                         </span>
                       </Link>
@@ -103,39 +102,39 @@ export default function Footer() {
 
           {/* Contact Column */}
           <div className="lg:col-span-3">
-            <h4 className="font-display text-lg font-bold mb-6 text-white tracking-wide">
+            <h4 className="font-display text-sm sm:text-base font-bold mb-3 sm:mb-4 text-white tracking-wide">
               {t('footer.contactHeading') || 'Contact Us'}
             </h4>
-            <ul className="space-y-5">
-              <li className="flex gap-4 items-start group">
-                <div className="mt-1 w-9 h-9 rounded-lg bg-white/5 flex items-center justify-center shrink-0 text-brand-secondary transition-colors group-hover:bg-brand-secondary/20">
-                  <FiMapPin size={16} />
+            <ul className="space-y-3">
+              <li className="flex gap-2.5 items-start group">
+                <div className="mt-0.5 w-7 h-7 rounded-md bg-white/5 flex items-center justify-center shrink-0 text-brand-secondary transition-colors group-hover:bg-brand-secondary/20">
+                  <FiMapPin size={13} />
                 </div>
                 <div>
-                  <h5 className="text-sm font-bold text-white mb-1">{t('footer.ourFarm', 'Our Farm')}</h5>
-                  <p className="text-white/60 font-medium text-xs leading-relaxed">
+                  <h5 className="text-xs font-bold text-white mb-0.5">{t('footer.ourFarm', 'Our Farm')}</h5>
+                  <p className="text-white/60 font-normal text-[11px] leading-relaxed">
                     {t('footer.contactAddress', 'Bakhtawar singh ki dhani, Khuri, Jaisalmer, Rajasthan')}
                   </p>
                 </div>
               </li>
-              <li className="flex gap-4 items-start group">
-                <div className="mt-1 w-9 h-9 rounded-lg bg-white/5 flex items-center justify-center shrink-0 text-brand-secondary transition-colors group-hover:bg-brand-secondary/20">
-                  <FiMail size={16} />
+              <li className="flex gap-2.5 items-start group">
+                <div className="mt-0.5 w-7 h-7 rounded-md bg-white/5 flex items-center justify-center shrink-0 text-brand-secondary transition-colors group-hover:bg-brand-secondary/20">
+                  <FiMail size={13} />
                 </div>
                 <div>
-                  <h5 className="text-sm font-bold text-white mb-1">{t('footer.emailUs', 'Email Us')}</h5>
-                  <a href="mailto:support@daatasa.com" className="text-white/60 hover:text-brand-secondary font-medium text-xs transition-colors">
+                  <h5 className="text-xs font-bold text-white mb-0.5">{t('footer.emailUs', 'Email Us')}</h5>
+                  <a href="mailto:support@daatasa.com" className="text-white/60 hover:text-brand-secondary font-normal text-[11px] transition-colors">
                     support@daatasa.com
                   </a>
                 </div>
               </li>
-              <li className="flex gap-4 items-start group">
-                <div className="mt-1 w-9 h-9 rounded-lg bg-white/5 flex items-center justify-center shrink-0 text-brand-secondary transition-colors group-hover:bg-brand-secondary/20">
-                  <FiPhone size={16} />
+              <li className="flex gap-2.5 items-start group">
+                <div className="mt-0.5 w-7 h-7 rounded-md bg-white/5 flex items-center justify-center shrink-0 text-brand-secondary transition-colors group-hover:bg-brand-secondary/20">
+                  <FiPhone size={13} />
                 </div>
                 <div>
-                  <h5 className="text-sm font-bold text-white mb-1">{t('footer.callUs', 'Call Us')}</h5>
-                  <a href="tel:+917665306403" className="text-white/60 hover:text-brand-secondary font-medium text-xs transition-colors">
+                  <h5 className="text-xs font-bold text-white mb-0.5">{t('footer.callUs', 'Call Us')}</h5>
+                  <a href="tel:+917665306403" className="text-white/60 hover:text-brand-secondary font-normal text-[11px] transition-colors">
                     +91 7665306403
                   </a>
                 </div>
@@ -145,16 +144,16 @@ export default function Footer() {
         </div>
 
         {/* Bottom Bar */}
-        <div className="pt-8 border-t border-white/10 flex flex-col md:flex-row items-center justify-between gap-4">
-          <p className="text-white/50 text-[11px] sm:text-xs font-medium text-center md:text-left leading-relaxed px-2 sm:px-0">
+        <div className="pt-4 border-t border-white/10 flex flex-col sm:flex-row items-center justify-between gap-3">
+          <p className="text-white/50 text-[10px] sm:text-xs font-normal text-center sm:text-left leading-relaxed">
             {t('footer.copyright', { year }, `Daatasa. Daatasa Ghee — © Copyright ${year} by Daatasa Pvt. Ltd. All rights reserved.`)}
           </p>
-          <div className="flex items-center gap-6">
-            <Link to="/privacy-policy" className="text-white/50 hover:text-brand-secondary text-xs font-medium transition-colors">
+          <div className="flex items-center gap-4">
+            <Link to="/privacy-policy" className="text-white/50 hover:text-brand-secondary text-[11px] font-normal transition-colors">
               Privacy
             </Link>
             <span className="w-1 h-1 rounded-full bg-white/20" />
-            <Link to="/terms" className="text-white/50 hover:text-brand-secondary text-xs font-medium transition-colors">
+            <Link to="/terms" className="text-white/50 hover:text-brand-secondary text-[11px] font-normal transition-colors">
               Terms
             </Link>
           </div>

@@ -622,7 +622,7 @@ const Navbar = () => {
                       <div className="pt-3 pb-1 px-4 mt-1 border-t border-white/10">
                         <p className="text-[10px] font-bold text-white/40 uppercase tracking-widest mb-3">{t('navbar.shopByCategory', 'Shop by Category')}</p>
                         <div className="flex flex-wrap gap-2">
-                          <Link to="/products" onClick={() => setMobileOpen(false)} className="px-3 py-1.5 rounded-lg bg-white/5 text-[12px] font-semibold text-brand-primary bg-brand-primary/10 hover:bg-brand-primary hover:text-white transition-all border border-brand-primary/20">
+                          <Link to="/products" onClick={() => setMobileOpen(false)} className="px-3 py-1.5 rounded-lg text-[12px] font-semibold text-brand-secondary bg-brand-secondary/15 hover:bg-brand-secondary hover:text-brand-primary transition-all border border-brand-secondary/30">
                             {t('navbar.allCategories', 'All Categories')}
                           </Link>
                           {categories.map(c => (

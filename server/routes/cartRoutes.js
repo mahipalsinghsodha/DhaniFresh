@@ -57,6 +57,11 @@ router.post('/items', auth, async (req, res) => {
       if (variant.b2bSetQty > 0) b2bSetQty = variant.b2bSetQty;
     }
 
+    // Block adding coming soon products
+    if (product.launchDate && new Date(product.launchDate) > new Date()) {
+      return res.status(400).json({ message: 'This product is coming soon and not yet available for order' });
+    }
+
     // Block adding out-of-stock products
     if (targetStock <= 0) {
       return res.status(400).json({ message: 'This item is currently not available' });

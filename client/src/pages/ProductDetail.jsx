@@ -224,6 +224,11 @@ const ProductDetail = () => {
   }
 
   const handleAddToCart = async ({ redirectTo } = {}) => {
+    const isComingSoon = Boolean(product?.launchDate && new Date(product.launchDate) > new Date())
+    if (isComingSoon) {
+      toast.info('This product is coming soon and not yet available for order')
+      return
+    }
     setAdding(true)
     try {
       const variantId = (selectedVariant && selectedVariant !== 'base') ? selectedVariant : null;
@@ -303,6 +308,8 @@ const ProductDetail = () => {
       </div>
     </div>
   )
+
+  const isComingSoon = Boolean(product?.launchDate && new Date(product.launchDate) > new Date())
 
   const defaultAddr = addresses.find(a => a.isDefault) || addresses[0]
   const isCustomer = !user || (user.role !== 'admin' && user.role !== 'superadmin')
@@ -392,12 +399,16 @@ const ProductDetail = () => {
             className="min-w-0"
           >
             <div className="relative bg-white rounded-[2rem] border border-brand-primary/10 shadow-sm overflow-hidden aspect-square flex items-center justify-center p-10 group mb-6">
-              {product.featured && (
+              {isComingSoon ? (
+                <span className="absolute top-5 left-5 px-4 py-1.5 text-white text-[10px] font-bold uppercase tracking-widest rounded-full bg-amber-500 shadow-sm">
+                  🚀 Coming Soon
+                </span>
+              ) : product.featured ? (
                 <span className="absolute top-5 left-5 px-4 py-1.5 text-white text-[10px] font-bold uppercase tracking-widest rounded-full bg-brand-primary shadow-sm">
                   ✦ Top Pick
                 </span>
-              )}
-              {product.stock === 0 && (
+              ) : null}
+              {!isComingSoon && product.stock === 0 && (
                 <span className="absolute top-4 right-4 px-3 py-1 bg-red-100 text-red-600 text-xs font-semibold rounded-full border border-red-200">
                   Out of Stock
                 </span>
@@ -511,10 +522,21 @@ const ProductDetail = () => {
               <span className="text-gray-200">|</span>
               {/* Show availability status — hide exact stock count from customers */}
               <div className="flex items-center gap-1.5">
-                <div className={`w-2 h-2 rounded-full ${displayStock > 0 ? 'bg-green-500 animate-pulse' : 'bg-red-400'}`} />
-                <span className={`text-sm font-medium ${displayStock > 0 ? 'text-green-600' : 'text-red-500'}`}>
-                  {displayStock > 0 ? 'In Stock' : 'Currently Not Available'}
-                </span>
+                {isComingSoon ? (
+                  <>
+                    <div className="w-2 h-2 rounded-full bg-amber-500" />
+                    <span className="text-sm font-bold text-amber-600">
+                      Coming Soon (Launching {new Date(product.launchDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })})
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <div className={`w-2 h-2 rounded-full ${displayStock > 0 ? 'bg-green-500 animate-pulse' : 'bg-red-400'}`} />
+                    <span className={`text-sm font-medium ${displayStock > 0 ? 'text-green-600' : 'text-red-500'}`}>
+                      {displayStock > 0 ? 'In Stock' : 'Currently Not Available'}
+                    </span>
+                  </>
+                )}
               </div>
             </div>
 
@@ -651,8 +673,28 @@ const ProductDetail = () => {
               )}
             </div>
 
-            {/* Purchase controls — only for logged-in regular customers */}
-            {displayStock > 0 && isCustomer && (() => {
+            {/* Coming Soon Announcement Block */}
+            {isComingSoon ? (
+              <div className="bg-amber-50/80 border border-amber-200/90 rounded-[2rem] p-6 text-center space-y-4 shadow-sm">
+                <div className="inline-flex items-center gap-2 px-3.5 py-1 bg-amber-100/90 text-amber-900 text-xs font-bold uppercase tracking-wider rounded-full border border-amber-300">
+                  🚀 Launching Soon
+                </div>
+                <div>
+                  <h3 className="text-xl font-bold font-display text-brand-primary">
+                    Available on {new Date(product.launchDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })}
+                  </h3>
+                  <p className="text-xs text-brand-text/70 mt-1 max-w-md mx-auto">
+                    This authentic Vedic product is currently being handcrafted. Ordering will open on the launch date.
+                  </p>
+                </div>
+                <button
+                  disabled
+                  className="w-full h-13 rounded-full bg-amber-200/80 text-amber-900 font-bold text-sm cursor-not-allowed border border-amber-300 flex items-center justify-center gap-2 opacity-90 shadow-2xs"
+                >
+                  Orders Open on {new Date(product.launchDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
+                </button>
+              </div>
+            ) : displayStock > 0 && isCustomer && (() => {
               const isB2B = user?.role === 'b2b_customer';
               let b2bMinQty = product.b2bMinQty || 0;
               let b2bSetQty = product.b2bSetQty || 0;

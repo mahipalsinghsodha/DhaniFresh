@@ -190,7 +190,34 @@
     "galleryFarm": "Farm",
     "galleryProducts": "Products",
     "galleryBilona": "Bilona",
-    "galleryLifestyle": "Lifestyle"
+    "galleryLifestyle": "Lifestyle",
+    "bestSellers": "Best Sellers",
+    "crowdFavorites": "Crowd Favorites",
+    "recommendedProducts": "Recommended For You",
+    "curated": "Curated Picks",
+    "comingSoon": "Coming Soon",
+    "sneakPeek": "Sneak Peek"
+  },
+  "hero": {
+    "badge1": "Heritage of Rajasthan",
+    "title1": "Pure Vedic Bilona",
+    "sub1": "Desi Cow Ghee",
+    "desc1": "Experience the pinnacle of purity with our traditionally hand-churned liquid gold. Crafted slowly in earthen pots to preserve authentic aroma.",
+    "btn1": "Shop Collection",
+    "badge2": "Farm to Family",
+    "title2": "100% Organic & Natural",
+    "sub2": "Directly from Farms",
+    "desc2": "Sourced from happy, free-grazing cows fed on natural organic grass. Unadulterated purity delivered straight to your doorstep.",
+    "btn2": "Discover More",
+    "badge3": "Authentic Process",
+    "title3": "Traditional Bilona",
+    "sub3": "Hand-Churned Perfection",
+    "desc3": "We follow the rigorous 4-step Vedic process. Every drop is crafted with patience, tradition, and devotion to bring you unparalleled health benefits.",
+    "btn3": "Shop Now"
+  },
+  "carousel": {
+    "viewAll": "View All",
+    "noProducts": "No products available at the moment."
   },
   "aboutUs": {
     "pageTitle": "About Us — Daatasa Pure Bilona Ghee",

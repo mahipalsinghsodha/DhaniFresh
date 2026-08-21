@@ -35,15 +35,18 @@ const Products = () => {
   const [loading,          setLoading]          = useState(true)
   const [error,            setError]            = useState(null)
   const [selectedCategory, setSelectedCategory] = useState(searchParams.get('category') || 'all')
+  const [sort,             setSort]             = useState(searchParams.get('sort') || 'default')
 
   useEffect(() => {
     setSelectedCategory(searchParams.get('category') || 'all')
+    if (searchParams.get('sort')) {
+      setSort(searchParams.get('sort'))
+    }
   }, [searchParams])
 
   const [searchTerm,       setSearchTerm]       = useState('')
   const [debouncedSearch,  setDebouncedSearch]  = useState('')
   const [categories,       setCategories]       = useState([])
-  const [sort,             setSort]             = useState('default')
   const [page,             setPage]             = useState(1)
   const [total,            setTotal]            = useState(0)
   const [totalPages,       setTotalPages]       = useState(0)
