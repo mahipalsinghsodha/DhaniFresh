@@ -4,11 +4,16 @@ import { FiShield, FiX, FiRefreshCw } from 'react-icons/fi';
 import api from '../api/axios';
 import { toast } from 'react-toastify';
 
-const OTPModal = ({ isOpen, onClose, onSuccess, targetEmail }) => {
+const OTPModal = ({ isOpen, onClose, onSuccess, targetEmail, requestBody }) => {
   const [otp, setOtp] = useState(['', '', '', '', '', '']);
   const [loading, setLoading] = useState(false);
   const [sending, setSending] = useState(false);
+  const [actualSentEmail, setActualSentEmail] = useState(targetEmail || '');
   const inputRefs = useRef([]);
+
+  useEffect(() => {
+    setActualSentEmail(targetEmail || '');
+  }, [targetEmail]);
 
   // Automatically request OTP when modal opens
   useEffect(() => {
@@ -24,10 +29,13 @@ const OTPModal = ({ isOpen, onClose, onSuccess, targetEmail }) => {
   const sendOtp = async (isInitial = false) => {
     try {
       if (!isInitial) setSending(true);
-      await api.post('/api/settings/send-otp');
-      if (!isInitial) toast.success('A new OTP has been sent to your email.');
+      const res = await api.post('/api/settings/send-otp', requestBody || {});
+      if (res.data?.sentTo) {
+        setActualSentEmail(res.data.sentTo);
+      }
+      if (!isInitial) toast.success(`A new OTP has been sent to ${res.data?.sentTo || 'your email'}.`);
     } catch (err) {
-      toast.error('Failed to send OTP. Please try again.');
+      toast.error(err.response?.data?.message || 'Failed to send OTP. Please try again.');
       if (isInitial) onClose(); // close if we can't even send it
     } finally {
       if (!isInitial) setSending(false);
@@ -109,7 +117,7 @@ const OTPModal = ({ isOpen, onClose, onSuccess, targetEmail }) => {
               Security Verification
             </h2>
             <p style={{ fontSize: 14, color: 'var(--text-muted)', lineHeight: 1.5, margin: 0 }}>
-              To apply these critical changes, please enter the 6-digit OTP sent to <strong style={{ color: 'var(--text-primary)' }}>{targetEmail || 'your email'}</strong>.
+              To apply these critical changes, please enter the 6-digit OTP sent to <strong style={{ color: 'var(--text-primary)' }}>{actualSentEmail || targetEmail || 'your email'}</strong>.
             </p>
           </div>
 

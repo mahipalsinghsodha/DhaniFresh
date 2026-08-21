@@ -5,11 +5,11 @@ const auth = require('../middleware/auth');
 const crypto = require('crypto');
 const { sendAdminOtpEmail } = require('../services/emailService');
 
-// ── GET /api/settings  (PUBLIC — frontend reads this to display GST)
+// ── GET /api/settings  (PUBLIC — frontend reads this to display GST, shipping, site status, company info)
 router.get('/', async (req, res) => {
   try {
     const settings = await Settings.getGlobal();
-    // Only expose safe, public fields
+    // Only expose safe, public fields — DO NOT expose security/2FA settings to the public
     res.json({
       gstRate: settings.gstEnabled ? settings.gstRate : 0,
       gstEnabled: settings.gstEnabled,
@@ -19,8 +19,6 @@ router.get('/', async (req, res) => {
       isMaintenanceMode: settings.isMaintenanceMode,
       isComingSoon: settings.isComingSoon,
       comingSoonLaunchDate: settings.comingSoonLaunchDate,
-      // Pass security details only if they exist, but DO NOT pass hashes!
-      security: settings.security || { twoFactorEnabled: false, otpEmail: '' },
       companyDetails: settings.companyDetails || { name: '', email: '', address: '', gstin: '' }
     });
   } catch (error) {
@@ -29,7 +27,43 @@ router.get('/', async (req, res) => {
   }
 });
 
-// ── POST /api/settings/send-otp (Generate & Send OTP for Admin) ──
+// ── GET /api/settings/admin (ADMIN ONLY — fetch full settings with masked security info) ──
+router.get('/admin', auth, auth.admin, async (req, res) => {
+  try {
+    const settings = await Settings.getGlobal();
+    
+    // Mask email for display in Admin UI (e.g., ms***10@gmail.com)
+    let maskedEmail = '';
+    const email = settings.security?.otpEmail || '';
+    if (email.includes('@')) {
+      const [userPart, domain] = email.split('@');
+      maskedEmail = userPart.length > 3
+        ? `${userPart.slice(0, 2)}***${userPart.slice(-2)}@${domain}`
+        : `${userPart[0]}***@${domain}`;
+    }
+
+    res.json({
+      gstRate: settings.gstRate,
+      gstEnabled: settings.gstEnabled,
+      freeShippingThreshold: settings.freeShippingThreshold,
+      shippingCharge: settings.shippingCharge,
+      serviceablePincodes: settings.serviceablePincodes || [],
+      isMaintenanceMode: settings.isMaintenanceMode,
+      isComingSoon: settings.isComingSoon,
+      comingSoonLaunchDate: settings.comingSoonLaunchDate,
+      security: {
+        twoFactorEnabled: Boolean(settings.security?.twoFactorEnabled),
+        maskedEmail: maskedEmail
+      },
+      companyDetails: settings.companyDetails || { name: '', email: '', address: '', gstin: '' }
+    });
+  } catch (error) {
+    console.error('Admin Settings GET error:', error);
+    res.status(500).json({ message: 'Failed to load admin settings' });
+  }
+});
+
+// ── POST /api/settings/send-otp (Generate & Send OTP to DB configured Admin Email) ──
 router.post('/send-otp', auth, auth.admin, async (req, res) => {
   try {
     const settings = await Settings.findOne({ _id: 'global' });
@@ -49,29 +83,44 @@ router.post('/send-otp', auth, auth.admin, async (req, res) => {
       otp,
     });
 
-    res.json({ message: 'OTP sent to registered admin email' });
+    console.log(`[ADMIN 2FA] OTP generated and sent to: ${targetEmail}`);
+
+    // Mask email for display in modal (e.g., ms***10@gmail.com)
+    let maskedEmail = targetEmail;
+    if (targetEmail.includes('@')) {
+      const [userPart, domain] = targetEmail.split('@');
+      maskedEmail = userPart.length > 3
+        ? `${userPart.slice(0, 2)}***${userPart.slice(-2)}@${domain}`
+        : `${userPart[0]}***@${domain}`;
+    }
+
+    res.json({ 
+      message: `OTP sent to registered admin email (${maskedEmail})`,
+      sentTo: maskedEmail
+    });
   } catch (error) {
     console.error('Send OTP error:', error);
     res.status(500).json({ message: 'Failed to send OTP' });
   }
 });
 
-// ── PATCH /api/settings  (ADMIN ONLY — update GST/shipping/pincode config)
+// ── PATCH /api/settings  (ADMIN ONLY — update GST, shipping, pincodes, site status, invoice details)
 router.patch('/', auth, auth.admin, async (req, res) => {
   try {
     const currentSettings = await Settings.findOne({ _id: 'global' }).select('+adminOtpHash +adminOtpExpires');
 
+    // If 2FA is active in DB, enforce OTP verification
     if (currentSettings?.security?.twoFactorEnabled) {
       const otp = req.body.otp;
       if (!otp) {
-        return res.status(403).json({ message: 'OTP is required to update settings when 2FA is enabled.' });
+        return res.status(403).json({ message: 'OTP verification is required to update settings.' });
       }
-      if (!currentSettings.adminOtpHash || !currentSettings.adminOtpExpires || currentSettings.adminOtpExpires < new Date()) {
+      if (!currentSettings?.adminOtpHash || !currentSettings?.adminOtpExpires || currentSettings.adminOtpExpires < new Date()) {
         return res.status(400).json({ message: 'OTP has expired or is invalid. Please request a new one.' });
       }
       const hashedOtp = crypto.createHash('sha256').update(otp).digest('hex');
       if (hashedOtp !== currentSettings.adminOtpHash) {
-        return res.status(400).json({ message: 'Invalid OTP' });
+        return res.status(400).json({ message: 'Invalid OTP. Please enter the correct code.' });
       }
       // Consume the OTP so it can't be reused
       await Settings.updateOne({ _id: 'global' }, { $unset: { adminOtpHash: "", adminOtpExpires: "" } });
@@ -79,7 +128,7 @@ router.patch('/', auth, auth.admin, async (req, res) => {
 
     const { 
       gstRate, gstEnabled, freeShippingThreshold, shippingCharge, serviceablePincodes,
-      isMaintenanceMode, isComingSoon, comingSoonLaunchDate, security, companyDetails
+      isMaintenanceMode, isComingSoon, comingSoonLaunchDate, companyDetails
     } = req.body;
 
     // Validate
@@ -97,24 +146,18 @@ router.patch('/', auth, auth.admin, async (req, res) => {
     }
 
     const update = { updatedBy: req.user._id };
-    if (gstRate !== undefined)             update.gstRate = Number(gstRate);
-    if (gstEnabled !== undefined)          update.gstEnabled = Boolean(gstEnabled);
+    if (gstRate !== undefined)               update.gstRate = Number(gstRate);
+    if (gstEnabled !== undefined)            update.gstEnabled = Boolean(gstEnabled);
     if (freeShippingThreshold !== undefined) update.freeShippingThreshold = Number(freeShippingThreshold);
-    if (shippingCharge !== undefined)      update.shippingCharge = Number(shippingCharge);
+    if (shippingCharge !== undefined)        update.shippingCharge = Number(shippingCharge);
     if (serviceablePincodes !== undefined) {
       if (!Array.isArray(serviceablePincodes)) return res.status(400).json({ message: 'serviceablePincodes must be an array' });
       update.serviceablePincodes = serviceablePincodes;
     }
-    if (isMaintenanceMode !== undefined)   update.isMaintenanceMode = Boolean(isMaintenanceMode);
-    if (isComingSoon !== undefined)        update.isComingSoon = Boolean(isComingSoon);
+    if (isMaintenanceMode !== undefined)     update.isMaintenanceMode = Boolean(isMaintenanceMode);
+    if (isComingSoon !== undefined)          update.isComingSoon = Boolean(isComingSoon);
     if (comingSoonLaunchDate !== undefined) {
       update.comingSoonLaunchDate = comingSoonLaunchDate ? new Date(comingSoonLaunchDate) : null;
-    }
-    if (security !== undefined) {
-      update.security = {
-        twoFactorEnabled: Boolean(security.twoFactorEnabled),
-        otpEmail: security.otpEmail || ''
-      };
     }
     if (companyDetails !== undefined) {
       update.companyDetails = {
@@ -142,7 +185,6 @@ router.patch('/', auth, auth.admin, async (req, res) => {
         isMaintenanceMode: settings.isMaintenanceMode,
         isComingSoon: settings.isComingSoon,
         comingSoonLaunchDate: settings.comingSoonLaunchDate,
-        security: settings.security,
         companyDetails: settings.companyDetails,
       },
     });

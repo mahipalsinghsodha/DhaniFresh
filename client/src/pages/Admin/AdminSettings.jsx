@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useAuth } from '../../context/AuthContext'
-import { FiPercent, FiTruck, FiSave, FiToggleLeft, FiToggleRight, FiAlertCircle, FiMapPin } from 'react-icons/fi'
+import { FiPercent, FiTruck, FiSave, FiToggleLeft, FiToggleRight, FiAlertCircle, FiMapPin, FiShield, FiLock } from 'react-icons/fi'
 import { toast } from 'react-toastify'
 import api from '../../api/axios'
 import OTPModal from '../../components/OTPModal'
@@ -59,7 +59,6 @@ const AdminSettings = () => {
     isMaintenanceMode: false,
     isComingSoon: false,
     comingSoonLaunchDate: '',
-    security: { twoFactorEnabled: false, otpEmail: '' },
     companyDetails: {
       name: '',
       email: '',
@@ -67,6 +66,8 @@ const AdminSettings = () => {
       gstin: ''
     }
   })
+  const [isServer2FAActive, setIsServer2FAActive] = useState(false)
+  const [maskedOtpEmail, setMaskedOtpEmail] = useState('')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [errors, setErrors] = useState({})
@@ -77,11 +78,14 @@ const AdminSettings = () => {
 
   const fetchSettings = async () => {
     try {
-      const res = await api.get('/api/settings')
+      // Fetch settings from admin endpoint
+      const res = await api.get('/api/settings/admin').catch(() => api.get('/api/settings'))
       setSettings({
         ...res.data,
         comingSoonLaunchDate: res.data.comingSoonLaunchDate ? new Date(res.data.comingSoonLaunchDate).toISOString().slice(0, 16) : ''
       })
+      setIsServer2FAActive(Boolean(res.data.security?.twoFactorEnabled))
+      setMaskedOtpEmail(res.data.security?.maskedEmail || '')
       setPincodeInput(res.data.serviceablePincodes?.join(', ') || '')
     } catch { toast.error('Failed to load settings') }
     finally { setLoading(false) }
@@ -98,10 +102,11 @@ const AdminSettings = () => {
 
   const handleSave = async () => {
     if (!validate()) return
-    if (settings.security?.twoFactorEnabled) {
-      setIsOtpModalOpen(true);
+    // When 2FA is active in DB, prompt for OTP verification to save changes
+    if (isServer2FAActive) {
+      setIsOtpModalOpen(true)
     } else {
-      applySave();
+      applySave()
     }
   }
 
@@ -121,11 +126,12 @@ const AdminSettings = () => {
         ...(otp && { otp })
       }
       const res = await api.patch('/api/settings', payload)
+      const newSettings = res.data.settings
       setSettings({
-        ...res.data.settings,
-        comingSoonLaunchDate: res.data.settings.comingSoonLaunchDate ? new Date(res.data.settings.comingSoonLaunchDate).toISOString().slice(0, 16) : ''
+        ...newSettings,
+        comingSoonLaunchDate: newSettings.comingSoonLaunchDate ? new Date(newSettings.comingSoonLaunchDate).toISOString().slice(0, 16) : ''
       })
-      setPincodeInput(res.data.settings.serviceablePincodes?.join(', ') || '')
+      setPincodeInput(newSettings.serviceablePincodes?.join(', ') || '')
       setIsOtpModalOpen(false)
       toast.success('Settings saved successfully!')
     } catch (err) {
@@ -195,45 +201,75 @@ const AdminSettings = () => {
       <div className="max-w-[1280px] mx-auto px-4 sm:px-6 lg:px-8 py-8 flex flex-col lg:flex-row gap-8">
         <div className="flex-1 space-y-5">
           
-          {/* ── Security Settings (2FA) ── */}
-          <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-card)', boxShadow: 'var(--shadow-sm)', overflow: 'hidden' }}>
-            <div style={{ padding: '16px 24px', borderBottom: '1px solid var(--border-color)', background: 'var(--bg-alt)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <div>
-                <h2 style={{ fontSize: 14, fontWeight: 800, color: 'var(--text-primary)', fontFamily: 'var(--font-display)', margin: 0 }}>Security Verification</h2>
-                <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>Require OTP for critical settings changes</p>
-              </div>
-              <button
-                type="button"
-                onClick={() => handleSecurityChange('twoFactorEnabled', !(settings.security?.twoFactorEnabled))}
-                style={{
-                  display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px', borderRadius: 8, fontSize: 12, fontWeight: 700, border: '1px solid',
-                  ...(settings.security?.twoFactorEnabled ? { background: 'rgba(56,161,105,0.1)', color: 'var(--success)', borderColor: 'rgba(56,161,105,0.3)' } : { background: 'var(--bg-surface)', color: 'var(--text-muted)', borderColor: 'var(--border-color)' })
-                }}
-              >
-                {settings.security?.twoFactorEnabled ? <FiToggleRight size={18} /> : <FiToggleLeft size={18} />} {settings.security?.twoFactorEnabled ? '2FA Enabled' : 'Off'}
-              </button>
-            </div>
-            
-            {settings.security?.twoFactorEnabled && (
-              <div style={{ padding: 24 }}>
-                <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 8, textTransform: 'uppercase' }}>
-                  OTP Email Address
-                </label>
-                <div style={{ display: 'flex', alignItems: 'center', borderRadius: 'var(--radius-input)', border: '1.5px solid var(--border-color)', overflow: 'hidden' }}>
-                  <input
-                    type="email"
-                    value={settings.security?.otpEmail || ''}
-                    onChange={e => handleSecurityChange('otpEmail', e.target.value)}
-                    placeholder="E.g. admin@yourdomain.com"
-                    style={{ flex: 1, padding: '11px 12px', fontSize: 14, color: 'var(--text-primary)', outline: 'none', background: 'var(--bg-surface)', border: 'none', fontWeight: 600 }}
-                  />
+          {/* ── 2FA Security Status (Read-Only & Masked) ── */}
+          {isServer2FAActive && (
+            <div style={{
+              background: 'var(--bg-card)',
+              border: '1.5px solid var(--border-color)',
+              borderRadius: 'var(--radius-card)',
+              padding: '16px 20px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              boxShadow: 'var(--shadow-sm)',
+              gap: 16
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+                <div style={{
+                  width: 40,
+                  height: 40,
+                  borderRadius: 10,
+                  background: 'rgba(56,161,105,0.12)',
+                  color: 'var(--success)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flexShrink: 0
+                }}>
+                  <FiShield size={20} />
                 </div>
-                <p style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 6 }}>
-                  If left empty, OTPs will be sent to the email of the admin making the change.
-                </p>
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <h3 style={{ fontSize: 13, fontWeight: 800, color: 'var(--text-primary)', margin: 0, fontFamily: 'var(--font-display)' }}>
+                      2-Factor Authentication Active
+                    </h3>
+                    <span style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 4,
+                      padding: '2px 7px',
+                      borderRadius: 10,
+                      fontSize: 10,
+                      fontWeight: 700,
+                      background: 'rgba(56,161,105,0.12)',
+                      color: 'var(--success)',
+                      border: '1px solid rgba(56,161,105,0.3)'
+                    }}>
+                      ● Active
+                    </span>
+                  </div>
+                  <p style={{ fontSize: 12, color: 'var(--text-muted)', margin: '3px 0 0' }}>
+                    Saving critical settings requires OTP sent to: <strong style={{ color: 'var(--text-primary)', fontFamily: 'monospace' }}>{maskedOtpEmail || 'Authorized Email'}</strong>
+                  </p>
+                </div>
               </div>
-            )}
-          </div>
+              <div style={{
+                padding: '5px 10px',
+                background: 'var(--bg-alt)',
+                border: '1px solid var(--border-color)',
+                borderRadius: 8,
+                fontSize: 11,
+                fontWeight: 700,
+                color: 'var(--text-muted)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 5,
+                whiteSpace: 'nowrap'
+              }}>
+                <FiLock size={12} /> Database Protected
+              </div>
+            </div>
+          )}
 
           {/* ── Site Status ── */}
           <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-card)', boxShadow: 'var(--shadow-sm)', overflow: 'hidden' }}>
@@ -453,7 +489,6 @@ const AdminSettings = () => {
         isOpen={isOtpModalOpen}
         onClose={() => setIsOtpModalOpen(false)}
         onSuccess={(otp) => applySave(otp)}
-        targetEmail={settings.security?.otpEmail || user?.email}
       />
     </div>
   )
