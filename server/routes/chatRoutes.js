@@ -25,6 +25,14 @@ router.get('/sessions', auth, auth.support, async (req, res) => {
         .limit(limitNum)
         .populate('userId', 'name email avatar')
         .populate('agentId', 'name email avatar')
+        .populate({
+          path: 'orderId',
+          select: 'orderIdString totalPrice orderStatus paymentStatus shippingAddress invoiceNumber trackingNumber orderItems itemsPrice taxPrice shippingPrice paymentMethod',
+          populate: {
+            path: 'orderItems.product',
+            select: 'name image price'
+          }
+        })
         .lean(),
       ChatSession.countDocuments(query),
     ]);

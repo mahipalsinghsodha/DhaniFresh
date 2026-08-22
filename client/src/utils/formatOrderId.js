@@ -1,4 +1,5 @@
 export const formatOrderId = (order) => {
+  if (!order) return '';
   if (order.orderIdString) return order.orderIdString;
   
   const d = new Date(order.createdAt || Date.now());

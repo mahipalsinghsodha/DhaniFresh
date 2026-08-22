@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { FiMessageSquare, FiSend, FiSearch, FiArrowLeft, FiLifeBuoy } from "react-icons/fi";
+import { FiMessageSquare, FiSend, FiSearch, FiArrowLeft, FiLifeBuoy, FiExternalLink } from "react-icons/fi";
 import api from "../../api/axios";
 import { useAuth } from "../../context/AuthContext";
 import RestrictedAccess from "../../components/RestrictedAccess";
@@ -40,7 +40,7 @@ const timeAgo = (date) => {
   return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
 };
 
-export default function AdminSupport() {
+export default function AdminSupport({ onPopOutSession }) {
   const { user, hasPermission } = useAuth();
   const { connect, emit, on, off } = useSocket();
   const [sessions, setSessions] = useState([]);
@@ -288,7 +288,31 @@ export default function AdminSupport() {
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 4 }}>
                       <span style={{ fontSize: 11, color: 'var(--text-secondary)', fontWeight: 600 }}>{s.category}</span>
-                      <StatusDot status={s.status} />
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <StatusDot status={s.status} />
+                        {onPopOutSession && (
+                          <span
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onPopOutSession(s);
+                            }}
+                            title="Open in Floating Window"
+                            style={{
+                              padding: '2px 6px',
+                              borderRadius: 6,
+                              background: 'rgba(27,47,110,0.08)',
+                              color: 'var(--brand-primary)',
+                              fontSize: 10,
+                              fontWeight: 700,
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 3,
+                            }}
+                          >
+                            <FiExternalLink size={10} /> Pop out
+                          </span>
+                        )}
+                      </div>
                     </div>
                     {lastMsg && (
                       <p style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
@@ -341,15 +365,41 @@ export default function AdminSupport() {
                     </div>
                   </div>
                   {/* Actions */}
-                  {selected.status === 'WAITING' && (
-                    <div style={{ display: 'flex', gap: 8 }}>
-                      <button onClick={handleReject} style={{ padding: '6px 12px', borderRadius: 8, border: '1px solid var(--border-color)', background: 'var(--bg-alt)', color: 'var(--text-primary)', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Reject</button>
-                      <button onClick={handleAccept} style={{ padding: '6px 12px', borderRadius: 8, border: 'none', background: 'var(--brand-secondary)', color: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Accept Chat</button>
-                    </div>
-                  )}
-                  {selected.status === 'ACTIVE' && (selected.agentId?._id === user?._id || selected.agentId === user?._id) && (
-                    <button onClick={handleClose} style={{ padding: '6px 12px', borderRadius: 8, border: '1px solid var(--border-color)', background: 'var(--bg-alt)', color: 'var(--text-primary)', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Close Chat</button>
-                  )}
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                    {onPopOutSession && (
+                      <button
+                        onClick={() => {
+                          onPopOutSession(selected);
+                          setSelected(null);
+                        }}
+                        title="Pop out to floating multitasking window"
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 6,
+                          padding: '6px 12px',
+                          borderRadius: 8,
+                          border: '1px solid var(--border-color)',
+                          background: 'rgba(27,47,110,0.06)',
+                          color: 'var(--brand-primary)',
+                          fontSize: 12,
+                          fontWeight: 700,
+                          cursor: 'pointer',
+                        }}
+                      >
+                        <FiExternalLink size={13} /> Pop out
+                      </button>
+                    )}
+                    {selected.status === 'WAITING' && (
+                      <>
+                        <button onClick={handleReject} style={{ padding: '6px 12px', borderRadius: 8, border: '1px solid var(--border-color)', background: 'var(--bg-alt)', color: 'var(--text-primary)', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Reject</button>
+                        <button onClick={handleAccept} style={{ padding: '6px 12px', borderRadius: 8, border: 'none', background: 'var(--brand-secondary)', color: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Accept Chat</button>
+                      </>
+                    )}
+                    {selected.status === 'ACTIVE' && (selected.agentId?._id === user?._id || selected.agentId === user?._id) && (
+                      <button onClick={handleClose} style={{ padding: '6px 12px', borderRadius: 8, border: '1px solid var(--border-color)', background: 'var(--bg-alt)', color: 'var(--text-primary)', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Close Chat</button>
+                    )}
+                  </div>
                 </div>
 
                 {/* Audit Actions (Superadmin visibility) */}

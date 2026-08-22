@@ -93,58 +93,121 @@ router.put("/:id/status", auth, auth.support, async (req, res) => {
   res.json(ticket);
 });
 
+const mongoose = require('mongoose');
+
+const escapeRegex = (string) => {
+  if (!string) return '';
+  return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+};
+
 // Search Users/Orders for Support Panel
 router.get("/search", auth, auth.support, async (req, res) => {
   try {
-    const { q, type } = req.query;
-    if (!q) return res.json({ users: [], orders: [] });
+    const { q, type = 'all' } = req.query;
+    if (!q || !q.trim()) return res.json({ users: [], orders: [] });
 
     const qTrimmed = q.trim();
-    const isObjectId = qTrimmed.match(/^[0-9a-fA-F]{24}$/);
+    const cleanId = qTrimmed.replace(/^#/, '').trim();
+    const escapedQ = escapeRegex(qTrimmed);
+    const escapedCleanId = escapeRegex(cleanId);
+    const isObjectId = mongoose.Types.ObjectId.isValid(cleanId) && cleanId.length === 24;
     
     let userQuery = [];
     let orderQuery = [];
 
-    // Filter logic based on type
+    // Filter logic based on type (with smart multi-field fallback)
     if (type === 'email') {
-      userQuery.push({ email: { $regex: qTrimmed, $options: 'i' } });
+      userQuery.push({ email: { $regex: escapedQ, $options: 'i' } });
+      orderQuery.push(
+        { guestEmail: { $regex: escapedQ, $options: 'i' } },
+        { 'shippingAddress.email': { $regex: escapedQ, $options: 'i' } }
+      );
+      // Fallback: in case an Order ID or Invoice was typed while email filter was selected
+      orderQuery.push(
+        { orderIdString: { $regex: escapedCleanId, $options: 'i' } },
+        { invoiceNumber: { $regex: escapedCleanId, $options: 'i' } }
+      );
     } else if (type === 'phone') {
-      userQuery.push({ phone: { $regex: qTrimmed, $options: 'i' } });
+      userQuery.push({ phone: { $regex: escapedQ, $options: 'i' } });
+      orderQuery.push({ 'shippingAddress.phone': { $regex: escapedQ, $options: 'i' } });
+    } else if (type === 'name') {
+      userQuery.push({ name: { $regex: escapedQ, $options: 'i' } });
+      orderQuery.push({ 'shippingAddress.name': { $regex: escapedQ, $options: 'i' } });
     } else if (type === 'orderId') {
+      // Primary: Order identifiers
+      orderQuery.push(
+        { orderIdString: { $regex: escapedCleanId, $options: 'i' } },
+        { invoiceNumber: { $regex: escapedCleanId, $options: 'i' } },
+        { trackingNumber: { $regex: escapedCleanId, $options: 'i' } },
+        { shiprocketOrderId: { $regex: escapedCleanId, $options: 'i' } },
+        { guestEmail: { $regex: escapedQ, $options: 'i' } }
+      );
       if (isObjectId) {
-        orderQuery.push({ _id: qTrimmed });
-      } else {
-        orderQuery.push({ $expr: { $regexMatch: { input: { $toString: '$_id' }, regex: qTrimmed, options: 'i' } } });
+        orderQuery.push({ _id: cleanId });
       }
+      if (cleanId.length >= 2) {
+        orderQuery.push({ $expr: { $regexMatch: { input: { $toString: '$_id' }, regex: escapedCleanId, options: 'i' } } });
+      }
+
+      // Smart Fallback: Also search User Email and Name so email queries typed with OrderId filter find the user & their orders
+      userQuery.push(
+        { email: { $regex: escapedQ, $options: 'i' } },
+        { name: { $regex: escapedQ, $options: 'i' } }
+      );
     } else if (type === 'paymentId') {
-      orderQuery.push({ 'paymentInfo.razorpay_payment_id': { $regex: qTrimmed, $options: 'i' } });
+      orderQuery.push(
+        { 'paymentInfo.razorpay_payment_id': { $regex: escapedQ, $options: 'i' } },
+        { 'paymentInfo.razorpay_order_id': { $regex: escapedQ, $options: 'i' } }
+      );
     } else if (type === 'invoice') {
-      orderQuery.push({ invoiceNumber: { $regex: qTrimmed, $options: 'i' } });
+      orderQuery.push(
+        { invoiceNumber: { $regex: escapedCleanId, $options: 'i' } },
+        { orderIdString: { $regex: escapedCleanId, $options: 'i' } },
+        { guestEmail: { $regex: escapedQ, $options: 'i' } }
+      );
+      userQuery.push({ email: { $regex: escapedQ, $options: 'i' } });
     } else {
       // Default 'all' behavior
       userQuery.push(
-        { name: { $regex: qTrimmed, $options: 'i' } },
-        { email: { $regex: qTrimmed, $options: 'i' } },
-        { phone: { $regex: qTrimmed, $options: 'i' } }
+        { name: { $regex: escapedQ, $options: 'i' } },
+        { email: { $regex: escapedQ, $options: 'i' } },
+        { phone: { $regex: escapedQ, $options: 'i' } }
       );
+
+      orderQuery.push(
+        { orderIdString: { $regex: escapedCleanId, $options: 'i' } },
+        { invoiceNumber: { $regex: escapedCleanId, $options: 'i' } },
+        { trackingNumber: { $regex: escapedCleanId, $options: 'i' } },
+        { shiprocketOrderId: { $regex: escapedCleanId, $options: 'i' } },
+        { guestEmail: { $regex: escapedQ, $options: 'i' } },
+        { 'shippingAddress.name': { $regex: escapedQ, $options: 'i' } },
+        { 'shippingAddress.phone': { $regex: escapedQ, $options: 'i' } },
+        { 'shippingAddress.email': { $regex: escapedQ, $options: 'i' } },
+        { 'shippingAddress.street': { $regex: escapedQ, $options: 'i' } },
+        { 'shippingAddress.city': { $regex: escapedQ, $options: 'i' } },
+        { 'paymentInfo.razorpay_payment_id': { $regex: escapedQ, $options: 'i' } },
+        { 'paymentInfo.razorpay_order_id': { $regex: escapedQ, $options: 'i' } }
+      );
+
       if (isObjectId) {
-        orderQuery.push({ _id: qTrimmed });
-      } else {
-        orderQuery.push({ 'paymentInfo.razorpay_payment_id': { $regex: qTrimmed, $options: 'i' } });
-        orderQuery.push({ trackingNumber: { $regex: qTrimmed, $options: 'i' } });
-        orderQuery.push({ invoiceNumber: { $regex: qTrimmed, $options: 'i' } });
-        orderQuery.push({ $expr: { $regexMatch: { input: { $toString: '$_id' }, regex: qTrimmed, options: 'i' } } });
+        orderQuery.push({ _id: cleanId });
+      }
+      if (cleanId.length >= 2) {
+        orderQuery.push({ $expr: { $regexMatch: { input: { $toString: '$_id' }, regex: escapedCleanId, options: 'i' } } });
       }
     }
 
     // 1. Fetch Users
     let users = [];
     if (userQuery.length > 0) {
-      users = await User.find({ $or: userQuery }).select('name email phone role isBlocked createdAt');
+      users = await User.find({ $or: userQuery })
+        .select('name email phone role isBlocked createdAt')
+        .limit(20)
+        .lean();
     }
 
-    // 2. Add Users to Order Query
-    if (users.length > 0 && (!type || type === 'all' || type === 'email' || type === 'phone')) {
+    // 2. Add Users to Order Query (always link matched users' orders)
+    if (users.length > 0) {
       orderQuery.push({ user: { $in: users.map(u => u._id) } });
     }
 
@@ -153,12 +216,49 @@ router.get("/search", auth, auth.support, async (req, res) => {
     if (orderQuery.length > 0) {
       orders = await Order.find({ $or: orderQuery })
         .populate('user', 'name email phone')
+        .populate('orderItems.product', 'name image price')
         .sort({ createdAt: -1 })
-        .limit(20);
+        .limit(30)
+        .lean();
     }
 
-
     res.json({ users, orders });
+  } catch (error) {
+    console.error('Support search error:', error);
+    res.status(500).json({ message: error.message || 'Search failed' });
+  }
+});
+
+// Get Single Order Details (Support Panel)
+router.get("/orders/:id", auth, auth.support, async (req, res) => {
+  try {
+    const { id } = req.params;
+    let order = null;
+
+    if (mongoose.Types.ObjectId.isValid(id) && id.length === 24) {
+      order = await Order.findById(id)
+        .populate('user', 'name email phone')
+        .populate('orderItems.product', 'name image price');
+    }
+
+    if (!order) {
+      order = await Order.findOne({
+        $or: [
+          { orderIdString: id },
+          { invoiceNumber: id },
+          { trackingNumber: id },
+          { shiprocketOrderId: id }
+        ]
+      })
+      .populate('user', 'name email phone')
+      .populate('orderItems.product', 'name image price');
+    }
+
+    if (!order) {
+      return res.status(404).json({ message: 'Order not found' });
+    }
+
+    res.json(order);
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
