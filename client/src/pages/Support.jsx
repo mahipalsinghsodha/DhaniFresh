@@ -139,12 +139,14 @@ export default function Support() {
   // ── Chat session state ────────────────────────────────────────────────────
   const [sessionId, setSessionId] = useState(null)
   const [sessionStatus, setSessionStatus] = useState('BOT_HANDLING')
+  const [queueInfo, setQueueInfo] = useState(null)
   const [messages, setMessages] = useState([])
   const [inputText, setInputText] = useState('')
   const [agentTyping, setAgentTyping] = useState(false)
   const [rating, setRating] = useState(0)
   const [ratingComment, setRatingComment] = useState('')
   const [ratingSubmitted, setRatingSubmitted] = useState(false)
+  const [ticketCreatedNotice, setTicketCreatedNotice] = useState(false)
 
   // ── Image upload ─────────────────────────────────────────────────────────
   const [imageFiles, setImageFiles] = useState([])
@@ -234,9 +236,18 @@ export default function Support() {
       setSessionStatus(status)
       setChatPhase('chat')
     }
-    const handleAgentJoined = () => setSessionStatus('ACTIVE')
+    const handleAgentJoined = () => {
+      setSessionStatus('ACTIVE')
+      setQueueInfo(null)
+    }
     const handleAgentTyping = ({ isTyping }) => setAgentTyping(isTyping)
-    const handleStatusChanged = ({ status }) => setSessionStatus(status)
+    const handleStatusChanged = (data) => {
+      const st = typeof data === 'string' ? data : data?.status || 'WAITING'
+      setSessionStatus(st)
+      if (typeof data === 'object') {
+        setQueueInfo(data)
+      }
+    }
     const handleSessionClosed = ({ rating_prompt }) => {
       setSessionStatus('CLOSED')
       sessionStorage.removeItem('chatSessionId')
@@ -435,11 +446,35 @@ export default function Support() {
   )
 
   const statusLabel = {
-    BOT_HANDLING: { label: 'AI Assistant',          dot: '#818cf8' },
-    WAITING:      { label: 'Waiting for agent...',  dot: '#fbbf24' },
-    ACTIVE:       { label: 'Agent connected',       dot: '#34d399' },
-    CLOSED:       { label: 'Chat ended',            dot: '#94a3b8' },
+    BOT_HANDLING:  { label: 'AI Assistant', dot: '#818cf8' },
+    ROUTING:       { label: 'Connecting to specialist...', dot: '#f59e0b' },
+    WAITING:       { label: queueInfo?.position ? `In Queue (#${queueInfo.position})` : 'Waiting for specialist...', dot: '#fbbf24' },
+    OFFLINE_HOURS: { label: 'Live Support Closed', dot: '#ef4444' },
+    ACTIVE:        { label: 'Specialist connected', dot: '#34d399' },
+    CLOSED:        { label: 'Chat ended', dot: '#94a3b8' },
   }[sessionStatus] || { label: 'Connecting...', dot: '#94a3b8' }
+
+  const handleCreateDirectTicketFromChat = async () => {
+    try {
+      const subject = selectedOrder 
+        ? `Order #${selectedOrder._id.slice(-6).toUpperCase()} Support Escalation`
+        : `${topic || 'General'} Live Support Inquiry`
+      
+      const lastUserMsg = [...messages].reverse().find(m => m.senderType === 'USER')?.content || 'Customer requested agent assistance.'
+
+      await api.post('/api/support', {
+        subject,
+        category: topic === 'ORDER' ? 'ORDER_ISSUE' : (topic === 'PAYMENT' ? 'PAYMENT_ISSUE' : (topic === 'RETURN' ? 'RETURN_REQUEST' : 'OTHER')),
+        order: selectedOrder?._id || null,
+        message: lastUserMsg
+      })
+
+      setTicketCreatedNotice(true)
+      toast.success('Support ticket created! Our team will respond shortly.')
+    } catch (err) {
+      toast.error('Failed to create ticket. Please try again.')
+    }
+  }
 
   const canStartChat = topic && (user || (guestName.trim() && guestEmail.trim()))
 
@@ -910,6 +945,44 @@ export default function Support() {
                 {/* ══════ ACTIVE CHAT ══════ */}
                 {chatPhase === 'chat' && (
                   <>
+                    {/* Queue / Offline / Routing Notice Banner */}
+                    {(sessionStatus === 'ROUTING' || sessionStatus === 'WAITING' || sessionStatus === 'OFFLINE_HOURS') && (
+                      <div className="p-3.5 mx-4 mt-3 rounded-2xl bg-amber-50 border border-amber-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs shadow-sm">
+                        <div className="flex items-center gap-2.5 text-amber-900 font-medium">
+                          {sessionStatus === 'ROUTING' ? (
+                            <>
+                              <span className="w-2.5 h-2.5 rounded-full bg-amber-500 animate-ping shrink-0" />
+                              <span><b>Matching Specialist:</b> Ringing available specialists. Please stay on this screen...</span>
+                            </>
+                          ) : sessionStatus === 'OFFLINE_HOURS' ? (
+                            <>
+                              <span className="w-2.5 h-2.5 rounded-full bg-rose-500 shrink-0" />
+                              <span><b>Offline:</b> {queueInfo?.message || 'Live support is currently closed or offline.'}</span>
+                            </>
+                          ) : (
+                            <>
+                              <span className="w-2.5 h-2.5 rounded-full bg-amber-500 animate-pulse shrink-0" />
+                              <span><b>In Queue:</b> {queueInfo?.message || `Position #${queueInfo?.position || 1}. All specialists are currently assisting other customers.`}</span>
+                            </>
+                          )}
+                        </div>
+
+                        {user && !ticketCreatedNotice && (
+                          <button
+                            onClick={handleCreateDirectTicketFromChat}
+                            className="px-3.5 py-1.5 rounded-xl font-bold bg-white hover:bg-amber-100 text-amber-900 border border-amber-300 shadow-sm transition-all shrink-0"
+                          >
+                            Submit Support Ticket Instead →
+                          </button>
+                        )}
+                        {ticketCreatedNotice && (
+                          <span className="text-emerald-700 font-bold flex items-center gap-1">
+                            <CheckCircle size={13} /> Ticket Created
+                          </span>
+                        )}
+                      </div>
+                    )}
+
                     {/* Messages area */}
                     <div style={{ position: 'relative' }}>
                       <div

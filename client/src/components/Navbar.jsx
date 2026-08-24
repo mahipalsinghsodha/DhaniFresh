@@ -9,7 +9,7 @@ import { useNotificationStore } from '../store/notifications'
 import api from '../api/axios'
 import {
   ShoppingCart, User, LogOut, Menu, X, Package,
-  Heart, Bell, ChevronDown, Shield, Search, Sparkles, Loader2, HelpCircle, Globe, Briefcase
+  Heart, Bell, ChevronDown, Shield, Search, Sparkles, Loader2, HelpCircle, Globe, Briefcase, MessageSquare
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 

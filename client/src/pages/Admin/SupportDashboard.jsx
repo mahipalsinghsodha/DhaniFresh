@@ -12,6 +12,7 @@ import { toast } from 'react-toastify';
 import { useAuth } from '../../context/AuthContext';
 import AdminSupport from './AdminSupport';
 import AdminFloatingChat from '../../components/chat/AdminFloatingChat';
+import IncomingChatModal from '../../components/chat/IncomingChatModal';
 import { formatOrderId } from '../../utils/formatOrderId';
 
 export default function SupportDashboard() {
@@ -228,6 +229,9 @@ export default function SupportDashboard() {
 
   return (
     <div className="min-h-screen p-4 md:p-8" style={{ background: 'var(--bg-base)' }}>
+      {/* ── Global Incoming Ring Modal ── */}
+      <IncomingChatModal onAcceptChat={() => setActiveTab('chat')} />
+
       <div className="max-w-[1360px] mx-auto space-y-6">
         
         {/* Header */}

@@ -25,6 +25,8 @@ router.delete('/:id', auth, auth.superadmin, adminController.deleteAdmin);
 router.get('/support-agents', auth, auth.superadmin, adminController.getSupportAgents);
 router.post('/create-support-agent', auth, auth.superadmin, adminController.createSupportAgent);
 router.delete('/support-agent/:id', auth, auth.superadmin, adminController.deleteAdmin);
+router.get('/support-agent/:agentId/history', auth, auth.superadmin, adminController.getAgentRejectionHistory);
+router.post('/support-agent/:id/reset-stats', auth, auth.superadmin, adminController.resetSupportAgentStats);
 
 // Return Requests (Admin+orders)
 router.get('/return-requests', auth, auth.admin, auth.hasPermission('orders'), adminController.getReturnRequests);

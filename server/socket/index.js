@@ -55,6 +55,7 @@ function initSocketServer(httpServer) {
 
   // ── Register event namespaces ──────────────────────────────────────────────
   const { registerChatHandlers } = require('./chatHandlers');
+  const { registerAgentPresence, unregisterAgentPresence, isSupportStaff } = require('./supportQueueManager');
 
   io.on('connection', (socket) => {
     const userId = socket.user?._id?.toString() || 'guest';
@@ -71,10 +72,11 @@ function initSocketServer(httpServer) {
     if (socket.user) {
       socket.join(`user:${userId}`);
 
-      // Admin/agent joins admin room for broadcast events
-      if (role === 'admin' || role === 'superadmin') {
+      // Support staff joins admin room and registers presence
+      if (isSupportStaff(socket.user)) {
         socket.join('admin_room');
-        console.log(`[Socket] Admin ${socket.user.name} joined admin_room`);
+        registerAgentPresence(socket.user, socket.id, io);
+        console.log(`[Socket] Support Staff ${socket.user.name} (${role}) joined admin_room & registered live presence`);
       }
     }
 
@@ -88,6 +90,9 @@ function initSocketServer(httpServer) {
     });
 
     socket.on('disconnect', (reason) => {
+      if (socket.user) {
+        unregisterAgentPresence(socket.user._id, socket.id);
+      }
       console.log(`[Socket] ${role} disconnected: ${userId} — reason: ${reason}`);
     });
 

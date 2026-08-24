@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useAuth } from '../../context/AuthContext'
-import { FiPercent, FiTruck, FiSave, FiToggleLeft, FiToggleRight, FiAlertCircle, FiMapPin, FiShield, FiLock } from 'react-icons/fi'
+import { FiPercent, FiTruck, FiSave, FiToggleLeft, FiToggleRight, FiAlertCircle, FiMapPin, FiShield, FiLock, FiClock, FiHeadphones, FiCheckSquare, FiSquare } from 'react-icons/fi'
 import { toast } from 'react-toastify'
 import api from '../../api/axios'
 import OTPModal from '../../components/OTPModal'
@@ -64,6 +64,15 @@ const AdminSettings = () => {
       email: '',
       address: '',
       gstin: ''
+    },
+    supportSchedule: {
+      enabled: true,
+      workDays: [1, 2, 3, 4, 5, 6],
+      startHour: '09:00',
+      endHour: '20:00',
+      maxConcurrentChats: 3,
+      ringTimeoutSeconds: 30,
+      offlineMessage: 'Our live support team is currently offline or closed for Sunday. Please submit a support ticket.'
     }
   })
   const [isServer2FAActive, setIsServer2FAActive] = useState(false)
@@ -82,7 +91,16 @@ const AdminSettings = () => {
       const res = await api.get('/api/settings/admin').catch(() => api.get('/api/settings'))
       setSettings({
         ...res.data,
-        comingSoonLaunchDate: res.data.comingSoonLaunchDate ? new Date(res.data.comingSoonLaunchDate).toISOString().slice(0, 16) : ''
+        comingSoonLaunchDate: res.data.comingSoonLaunchDate ? new Date(res.data.comingSoonLaunchDate).toISOString().slice(0, 16) : '',
+        supportSchedule: res.data.supportSchedule || {
+          enabled: true,
+          workDays: [1, 2, 3, 4, 5, 6],
+          startHour: '09:00',
+          endHour: '20:00',
+          maxConcurrentChats: 3,
+          ringTimeoutSeconds: 30,
+          offlineMessage: 'Our live support team is currently offline or closed for Sunday. Please submit a support ticket.'
+        }
       })
       setIsServer2FAActive(Boolean(res.data.security?.twoFactorEnabled))
       setMaskedOtpEmail(res.data.security?.maskedEmail || '')
@@ -155,6 +173,24 @@ const AdminSettings = () => {
       ...p,
       companyDetails: { ...(p.companyDetails || {}), [key]: val }
     }))
+  }
+
+  const handleScheduleChange = (field, val) => {
+    setSettings(p => ({
+      ...p,
+      supportSchedule: {
+        ...(p.supportSchedule || {}),
+        [field]: val
+      }
+    }))
+  }
+
+  const toggleWorkDay = (dayIndex) => {
+    const currentDays = settings.supportSchedule?.workDays || [1, 2, 3, 4, 5, 6]
+    const updatedDays = currentDays.includes(dayIndex)
+      ? currentDays.filter(d => d !== dayIndex)
+      : [...currentDays, dayIndex].sort()
+    handleScheduleChange('workDays', updatedDays)
   }
 
   if (user?.role !== 'superadmin') {
@@ -388,6 +424,141 @@ const AdminSettings = () => {
               <div>
                 <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 8, textTransform: 'uppercase' }}>Full Address</label>
                 <textarea value={settings.companyDetails?.address || ''} onChange={e => handleCompanyChange('address', e.target.value)} rows={3} style={{ width: '100%', padding: '10px 12px', borderRadius: 8, border: '1.5px solid var(--border-color)', outline: 'none', fontSize: 14 }} />
+              </div>
+            </div>
+          </div>
+
+          {/* ── Support Operating Schedule & 30s Auto-Dispatch Settings ── */}
+          <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-card)', boxShadow: 'var(--shadow-sm)', overflow: 'hidden' }}>
+            <div style={{ padding: '16px 24px', borderBottom: '1px solid var(--border-color)', background: 'var(--bg-alt)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div>
+                <h2 style={{ fontSize: 14, fontWeight: 800, color: 'var(--text-primary)', fontFamily: 'var(--font-display)', margin: 0, display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <FiHeadphones className="text-amber-500" /> Support Operating Hours & Auto-Dispatch
+                </h2>
+                <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>Configure working days (Sunday off), hours, 30s ring timeout, and capacity</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => handleScheduleChange('enabled', !settings.supportSchedule?.enabled)}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 6, padding: '4px 10px',
+                  borderRadius: 99, fontSize: 11, fontWeight: 800, border: '1px solid', cursor: 'pointer',
+                  background: settings.supportSchedule?.enabled !== false ? 'rgba(16,185,129,0.12)' : 'rgba(100,116,139,0.12)',
+                  borderColor: settings.supportSchedule?.enabled !== false ? 'rgba(16,185,129,0.3)' : 'rgba(100,116,139,0.3)',
+                  color: settings.supportSchedule?.enabled !== false ? '#10b981' : '#64748b'
+                }}
+              >
+                {settings.supportSchedule?.enabled !== false ? <FiToggleRight size={16} /> : <FiToggleLeft size={16} />}
+                {settings.supportSchedule?.enabled !== false ? 'Schedule Active' : 'Restriction Disabled'}
+              </button>
+            </div>
+            <div style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 20 }}>
+              {/* Working Days Selector */}
+              <div>
+                <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 8, textTransform: 'uppercase' }}>
+                  Live Support Working Days (IST)
+                </label>
+                <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-7 gap-2">
+                  {[
+                    { day: 1, label: 'Monday' },
+                    { day: 2, label: 'Tuesday' },
+                    { day: 3, label: 'Wednesday' },
+                    { day: 4, label: 'Thursday' },
+                    { day: 5, label: 'Friday' },
+                    { day: 6, label: 'Saturday' },
+                    { day: 0, label: 'Sunday (Off)' },
+                  ].map(({ day, label }) => {
+                    const isSelected = (settings.supportSchedule?.workDays || [1, 2, 3, 4, 5, 6]).includes(day);
+                    return (
+                      <button
+                        key={day}
+                        type="button"
+                        onClick={() => toggleWorkDay(day)}
+                        className={`px-3 py-2 rounded-xl text-xs font-bold border transition-all flex items-center justify-center gap-1.5 ${
+                          isSelected
+                            ? 'bg-amber-500 text-white border-amber-500 shadow-sm'
+                            : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
+                        }`}
+                      >
+                        {isSelected ? <FiCheckSquare size={13} /> : <FiSquare size={13} />}
+                        <span>{label.slice(0, 3)}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+                <p style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 6 }}>
+                  Uncheck Sunday to automatically close live chat on Sundays and prompt users to create tickets directly.
+                </p>
+              </div>
+
+              {/* Operating Hours & Dispatch Settings */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div>
+                  <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 8, textTransform: 'uppercase' }}>
+                    Opening Time (IST)
+                  </label>
+                  <input
+                    type="time"
+                    value={settings.supportSchedule?.startHour || '09:00'}
+                    onChange={e => handleScheduleChange('startHour', e.target.value)}
+                    style={{ width: '100%', padding: '10px 12px', borderRadius: 8, border: '1.5px solid var(--border-color)', outline: 'none', fontSize: 14 }}
+                  />
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 8, textTransform: 'uppercase' }}>
+                    Closing Time (IST)
+                  </label>
+                  <input
+                    type="time"
+                    value={settings.supportSchedule?.endHour || '20:00'}
+                    onChange={e => handleScheduleChange('endHour', e.target.value)}
+                    style={{ width: '100%', padding: '10px 12px', borderRadius: 8, border: '1.5px solid var(--border-color)', outline: 'none', fontSize: 14 }}
+                  />
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 8, textTransform: 'uppercase' }}>
+                    Ring Acceptance Timeout
+                  </label>
+                  <select
+                    value={settings.supportSchedule?.ringTimeoutSeconds || 30}
+                    onChange={e => handleScheduleChange('ringTimeoutSeconds', Number(e.target.value))}
+                    style={{ width: '100%', padding: '10px 12px', borderRadius: 8, border: '1.5px solid var(--border-color)', outline: 'none', fontSize: 14 }}
+                  >
+                    <option value={15}>15 Seconds</option>
+                    <option value={30}>30 Seconds (Recommended)</option>
+                    <option value={45}>45 Seconds</option>
+                    <option value={60}>60 Seconds</option>
+                  </select>
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 8, textTransform: 'uppercase' }}>
+                    Max Chats / Agent
+                  </label>
+                  <select
+                    value={settings.supportSchedule?.maxConcurrentChats || 3}
+                    onChange={e => handleScheduleChange('maxConcurrentChats', Number(e.target.value))}
+                    style={{ width: '100%', padding: '10px 12px', borderRadius: 8, border: '1.5px solid var(--border-color)', outline: 'none', fontSize: 14 }}
+                  >
+                    <option value={1}>1 Chat (Strict Focus)</option>
+                    <option value={2}>2 Chats</option>
+                    <option value={3}>3 Chats (Standard)</option>
+                    <option value={5}>5 Chats (Heavy)</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Offline / Holiday Message */}
+              <div>
+                <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 8, textTransform: 'uppercase' }}>
+                  Offline / Sunday Closed Notice Message
+                </label>
+                <textarea
+                  value={settings.supportSchedule?.offlineMessage || ''}
+                  onChange={e => handleScheduleChange('offlineMessage', e.target.value)}
+                  rows={2}
+                  placeholder="Displayed to customers when requesting live support during closed hours..."
+                  style={{ width: '100%', padding: '10px 12px', borderRadius: 8, border: '1.5px solid var(--border-color)', outline: 'none', fontSize: 14 }}
+                />
               </div>
             </div>
           </div>

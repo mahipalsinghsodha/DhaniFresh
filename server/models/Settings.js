@@ -53,6 +53,42 @@ const settingsSchema = new mongoose.Schema(
       default: null,
     },
 
+    // ── Support Schedule & Auto-Dispatch Settings ────────────────────────
+    supportSchedule: {
+      enabled: {
+        type: Boolean,
+        default: true,
+      },
+      workDays: {
+        type: [Number],
+        default: [1, 2, 3, 4, 5, 6], // 1=Mon ... 6=Sat, 0=Sun (Sunday OFF by default)
+      },
+      startHour: {
+        type: String,
+        default: '09:00',
+      },
+      endHour: {
+        type: String,
+        default: '20:00',
+      },
+      timezone: {
+        type: String,
+        default: 'Asia/Kolkata',
+      },
+      maxConcurrentChats: {
+        type: Number,
+        default: 3,
+      },
+      ringTimeoutSeconds: {
+        type: Number,
+        default: 30,
+      },
+      offlineMessage: {
+        type: String,
+        default: 'Our live support team is currently offline or closed for Sunday. Please submit a support ticket and our team will get back to you.',
+      },
+    },
+
     // ── Meta ─────────────────────────────────────────────────────────────
     updatedBy: {
       type: mongoose.Schema.Types.ObjectId,

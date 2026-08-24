@@ -192,14 +192,24 @@ router.post('/login', authLimiter, dbCheck, [
       return res.status(403).json({ message: 'Your account has been suspended. Please contact support.' });
     }
 
+    // For support staff: Enforce single active session by revoking previous tokens
+    if (user.role === 'support') {
+      user.tokenVersion = (user.tokenVersion || 0) + 1;
+      user.refreshTokens = [];
+    }
+
     const accessToken  = makeAccessToken(user);
     const refreshToken = makeRefreshToken(user);
 
     // Store hashed refresh token in DB
     const tokenHash = crypto.createHash('sha256').update(refreshToken).digest('hex');
     let activeTokens = (user.refreshTokens || []).filter(t => t.expiresAt > Date.now());
-    // Limit to 5 active sessions per user
-    if (activeTokens.length >= 5) activeTokens.shift();
+    // Limit to 5 active sessions for regular users, 1 for support
+    if (user.role === 'support') {
+      activeTokens = [];
+    } else if (activeTokens.length >= 5) {
+      activeTokens.shift();
+    }
     activeTokens.push({
       tokenHash,
       expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),

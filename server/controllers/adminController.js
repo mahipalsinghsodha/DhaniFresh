@@ -26,10 +26,111 @@ exports.getAllAdmins = async (req, res) => {
   } catch (e) { res.status(500).json({ message: e.message }); }
 };
 
+const ChatSession = require('../models/ChatSession');
+const { getOnlineAgents } = require('../socket/supportQueueManager');
+
 exports.getSupportAgents = async (req, res) => {
   try {
-    const agents = await User.find({ role: 'support' }).select('-password');
-    res.json(agents);
+    const agents = await User.find({
+      $or: [
+        { role: 'support' },
+        { permissions: 'support' }
+      ]
+    }).select('-password').lean();
+
+    const onlineList = getOnlineAgents();
+    const onlineMap = new Map(onlineList.map(a => [a._id.toString(), a]));
+
+    const enrichedAgents = await Promise.all(
+      agents.map(async (agent) => {
+        const activeChats = await ChatSession.countDocuments({
+          agentId: agent._id,
+          status: 'ACTIVE',
+        });
+
+        const onlineInfo = onlineMap.get(agent._id.toString());
+        const isOnline = !!onlineInfo;
+        const stats = agent.supportStats || {
+          dispatchedCount: 0,
+          acceptedCount: 0,
+          rejectedCount: 0,
+          missedCount: 0,
+          resolvedCount: 0,
+          isLive: true,
+        };
+
+        const totalAttempts = (stats.acceptedCount || 0) + (stats.rejectedCount || 0) + (stats.missedCount || 0);
+        const acceptanceRate = stats.dispatchedCount > 0
+          ? Math.round(((stats.acceptedCount || 0) / stats.dispatchedCount) * 100)
+          : (totalAttempts > 0 ? Math.round(((stats.acceptedCount || 0) / totalAttempts) * 100) : 100);
+
+        return {
+          ...agent,
+          activeChats,
+          isOnline,
+          isLive: stats.isLive !== false,
+          acceptanceRate,
+        };
+      })
+    );
+
+    res.json(enrichedAgents);
+  } catch (e) { res.status(500).json({ message: e.message }); }
+};
+
+exports.getAgentRejectionHistory = async (req, res) => {
+  try {
+    const { agentId } = req.params;
+    const sessions = await ChatSession.find({
+      'routingAttempts.agentId': agentId,
+    })
+      .select('sessionId guestName guestEmail category routingAttempts status createdAt updatedAt')
+      .populate('userId', 'name email')
+      .sort({ createdAt: -1 })
+      .limit(50)
+      .lean();
+
+    const history = [];
+    sessions.forEach(s => {
+      const attempts = (s.routingAttempts || []).filter(a => a.agentId?.toString() === agentId.toString());
+      attempts.forEach(att => {
+        history.push({
+          sessionId: s.sessionId,
+          customerName: s.userId?.name || s.guestName || 'Customer',
+          customerEmail: s.userId?.email || s.guestEmail || '',
+          category: s.category,
+          sessionStatus: s.status,
+          action: att.action,
+          dispatchedAt: att.dispatchedAt,
+          respondedAt: att.respondedAt,
+        });
+      });
+    });
+
+    history.sort((a, b) => new Date(b.dispatchedAt) - new Date(a.dispatchedAt));
+    res.json(history);
+  } catch (e) { res.status(500).json({ message: e.message }); }
+};
+
+exports.resetSupportAgentStats = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const user = await User.findById(id);
+    if (!user) return res.status(404).json({ message: 'User not found' });
+
+    user.supportStats = {
+      dispatchedCount: 0,
+      acceptedCount: 0,
+      rejectedCount: 0,
+      missedCount: 0,
+      resolvedCount: 0,
+      isLive: true,
+      lastActiveAt: new Date(),
+    };
+
+    await user.save();
+    await logAction(req, 'RESET_SUPPORT_STATS', 'USER', user._id, { name: user.name });
+    res.json({ message: 'Support stats reset successfully', supportStats: user.supportStats });
   } catch (e) { res.status(500).json({ message: e.message }); }
 };
 

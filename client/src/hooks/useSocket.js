@@ -59,6 +59,11 @@ export function useSocket() {
       setConnectionError(null)
     })
 
+    globalSocket.on('auth:force_logout', (data) => {
+      console.warn('[Socket] Force logout received:', data?.reason)
+      window.dispatchEvent(new CustomEvent('auth:forced_logout', { detail: data }))
+    })
+
     return globalSocket
   }, [])
 

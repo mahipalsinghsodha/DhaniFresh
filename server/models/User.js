@@ -34,6 +34,17 @@ const userSchema = new mongoose.Schema({
 
   isBlocked: { type: Boolean, default: false },
 
+  // ── Support Agent Stats & Live State ─────────────────────────────────────
+  supportStats: {
+    dispatchedCount: { type: Number, default: 0 },
+    acceptedCount:   { type: Number, default: 0 },
+    rejectedCount:   { type: Number, default: 0 },
+    missedCount:     { type: Number, default: 0 },
+    resolvedCount:   { type: Number, default: 0 },
+    isLive:          { type: Boolean, default: true },
+    lastActiveAt:    { type: Date, default: Date.now },
+  },
+
   // ── Loyalty & Wallet System ───────────────────────────────────────────────
   walletBalance: { type: Number, default: 0 },
   rewardPoints: { type: Number, default: 0 },

@@ -34,17 +34,15 @@ const SupportWidget = () => {
   const [actionValue, setActionValue] = useState('')
   const [processing, setProcessing] = useState(false)
 
-  // Hide the floating widget on the Admin Support page because it's embedded there
-  if (location.pathname === '/admin/support') return null
-
   // Show for support role, or superadmin/admin with support access
   const hasSupportAccess = user?.role === 'support' || user?.role === 'superadmin' || (user?.role === 'admin' && user?.permissions?.includes('support'))
-  
+  const isHiddenPage = location.pathname === '/admin/support'
+
   useEffect(() => {
-    if (isOpen && activeTab === 'chats' && hasSupportAccess && !activeChat) {
+    if (isOpen && activeTab === 'chats' && hasSupportAccess && !activeChat && !isHiddenPage) {
       fetchTickets()
     }
-  }, [isOpen, activeTab, hasSupportAccess, activeChat])
+  }, [isOpen, activeTab, hasSupportAccess, activeChat, isHiddenPage])
 
   // Scroll to bottom of chat
   useEffect(() => {
@@ -53,7 +51,8 @@ const SupportWidget = () => {
     }
   }, [activeChat?.messages])
 
-  if (!hasSupportAccess) return null
+  // Hide the floating widget on the Admin Support page or if user doesn't have support access
+  if (isHiddenPage || !hasSupportAccess) return null
 
   const fetchTickets = async () => {
     try {

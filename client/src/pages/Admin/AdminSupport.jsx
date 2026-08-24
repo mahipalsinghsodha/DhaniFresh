@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { FiMessageSquare, FiSend, FiSearch, FiArrowLeft, FiLifeBuoy, FiExternalLink } from "react-icons/fi";
+import { FiMessageSquare, FiSend, FiSearch, FiArrowLeft, FiLifeBuoy, FiExternalLink, FiToggleRight, FiToggleLeft, FiShield } from "react-icons/fi";
 import api from "../../api/axios";
 import { useAuth } from "../../context/AuthContext";
 import RestrictedAccess from "../../components/RestrictedAccess";
@@ -8,8 +8,10 @@ import { toast } from "react-toastify";
 import { useSocket } from "../../hooks/useSocket";
 import ChatBubble from "../../components/chat/ChatBubble";
 import SupportOrderPanel from "../../components/SupportOrderPanel";
+import IncomingChatModal from "../../components/chat/IncomingChatModal";
 
 const STATUS_CFG = {
+  ROUTING: { label: "Ringing", dot: "#f59e0b", text: "#f59e0b", bg: "rgba(245,158,11,0.12)", border: "rgba(245,158,11,0.3)" },
   WAITING: { label: "Waiting", dot: "var(--warning)", text: "var(--warning)", bg: "rgba(245,166,35,0.08)", border: "rgba(245,166,35,0.25)" },
   ACTIVE: { label: "Active", dot: "var(--success)", text: "var(--success)", bg: "rgba(56,161,105,0.08)", border: "rgba(56,161,105,0.25)" },
   CLOSED: { label: "Closed", dot: "var(--text-muted)", text: "var(--text-muted)", bg: "var(--bg-alt)", border: "var(--border-color)" },
@@ -52,6 +54,7 @@ export default function AdminSupport({ onPopOutSession }) {
   const [isMobile, setIsMobile] = useState(typeof window !== 'undefined' && window.innerWidth < 1024);
   const [loading, setLoading] = useState(true);
   const [isUserTyping, setIsUserTyping] = useState(false);
+  const [isAgentLive, setIsAgentLive] = useState(user?.supportStats?.isLive !== false);
   const typingTimerRef = useRef(null);
   const messagesEndRef = useRef(null);
   const messagesContainerRef = useRef(null);
@@ -119,6 +122,10 @@ export default function AdminSupport({ onPopOutSession }) {
     on('admin:session_rejected', handleSessionUpdate);
     on('chat:message', handleMessage);
     on('chat:user_typing', handleUserTyping);
+    on('agent:live_status_updated', ({ isLive }) => {
+      setIsAgentLive(isLive);
+      toast.info(isLive ? '🟢 You are now Online & Taking Chats' : '⚪ You are now Away');
+    });
 
     return () => {
       off('admin:new_session', handleNewSession);
@@ -126,8 +133,20 @@ export default function AdminSupport({ onPopOutSession }) {
       off('admin:session_rejected', handleSessionUpdate);
       off('chat:message', handleMessage);
       off('chat:user_typing', handleUserTyping);
+      off('agent:live_status_updated');
     };
   }, [hasPermission, on, off, connect, selected?.sessionId]);
+
+  const toggleLiveStatus = () => {
+    const nextStatus = !isAgentLive;
+    setIsAgentLive(nextStatus);
+    emit('agent:toggle_live_status', { isLive: nextStatus });
+  };
+
+  const handleIncomingChatAccepted = (incomingSessionId) => {
+    fetchSessions();
+    setSelected(sessions.find(s => s.sessionId === incomingSessionId) || { sessionId: incomingSessionId, status: 'ACTIVE' });
+  };
 
   // Fetch messages when a session is selected
   useEffect(() => {
@@ -171,13 +190,13 @@ export default function AdminSupport({ onPopOutSession }) {
 
   const handleAccept = () => {
     if (!selected) return;
-    emit('agent:join_session', { sessionId: selected.sessionId });
+    emit('agent:accept_incoming', { sessionId: selected.sessionId });
     setSelected(prev => ({ ...prev, status: 'ACTIVE', agentId: user._id }));
   };
 
   const handleReject = () => {
     if (!selected) return;
-    emit('agent:reject_session', { sessionId: selected.sessionId });
+    emit('agent:reject_incoming', { sessionId: selected.sessionId });
     toast.info('Session rejected');
     setSelected(null);
   };
@@ -197,17 +216,55 @@ export default function AdminSupport({ onPopOutSession }) {
     </div>
   );
 
+  const isSuperAdmin = user?.role === 'superadmin' || user?.role === 'admin';
+  const myId = String(user?._id || user?.id || '');
+
   const filtered = sessions.filter(s => {
+    const sessionAgentId = String(s.agentId?._id || s.agentId || '');
+    const isMyChat = sessionAgentId === myId;
+
+    // For support agent (non-superadmin):
+    // 1. ACTIVE chats: Only show chats assigned to THIS agent
+    if (!isSuperAdmin && s.status === 'ACTIVE' && !isMyChat) {
+      return false;
+    }
+
+    // 2. WAITING / ROUTING: Don't show if rejected or timed out by me
+    const isRejectedByMe = s.routingAttempts?.some(
+      r => String(r.agentId?._id || r.agentId) === myId && (r.action === 'REJECTED' || r.action === 'MISSED_TIMEOUT')
+    ) || s.agentActions?.some(
+      a => a.action === 'REJECTED' && String(a.adminId) === myId
+    );
+
+    if (!isSuperAdmin && (s.status === 'WAITING' || s.status === 'ROUTING') && isRejectedByMe) {
+      return false;
+    }
+
+    // 3. CLOSED chats: Support agents only see their own closed chats
+    if (!isSuperAdmin && s.status === 'CLOSED' && !isMyChat) {
+      return false;
+    }
+
     const matchF = filter === "ALL" || s.status === filter;
     const q = search.toLowerCase();
     const matchS = !q || s.guestName?.toLowerCase().includes(q) || s.userId?.name?.toLowerCase().includes(q) || s.sessionId?.toLowerCase().includes(q);
-    const isRejectedByMe = s.agentActions?.some(a => a.action === 'REJECTED' && String(a.adminId) === String(user?._id));
-    return matchF && matchS && !(isRejectedByMe && s.status === 'WAITING');
+
+    return matchF && matchS;
   });
 
   const counts = {
-    waiting: sessions.filter(s => s.status === 'WAITING' && !s.agentActions?.some(a => a.action === 'REJECTED' && String(a.adminId) === String(user?._id))).length,
-    active: sessions.filter(s => s.status === 'ACTIVE').length,
+    waiting: sessions.filter(s => {
+      const isRejectedByMe = s.routingAttempts?.some(
+        r => String(r.agentId?._id || r.agentId) === myId && (r.action === 'REJECTED' || r.action === 'MISSED_TIMEOUT')
+      ) || s.agentActions?.some(
+        a => a.action === 'REJECTED' && String(a.adminId) === myId
+      );
+      return (s.status === 'WAITING' || s.status === 'ROUTING') && (isSuperAdmin || !isRejectedByMe);
+    }).length,
+    active: sessions.filter(s => {
+      const sessionAgentId = String(s.agentId?._id || s.agentId || '');
+      return s.status === 'ACTIVE' && (isSuperAdmin || sessionAgentId === myId);
+    }).length,
   };
 
   const showSidebar = !isMobile || !selected;
@@ -215,22 +272,43 @@ export default function AdminSupport({ onPopOutSession }) {
 
   return (
     <div style={{ display: 'flex', overflow: 'hidden', background: 'var(--bg-base)', height: 'calc(100vh - 106px)' }}>
+      {/* ── Ringing Incoming Modal ── */}
+      <IncomingChatModal onAcceptChat={handleIncomingChatAccepted} />
+
       {/* ─── LEFT: Session List ─── */}
       {showSidebar && (
         <div style={{ width: isMobile ? '100%' : 360, background: 'var(--bg-surface)', borderRight: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', flexShrink: 0 }}>
           <div style={{ padding: '20px 16px 12px', borderBottom: '1px solid var(--border-color)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
-              <div style={{ width: 36, height: 36, background: 'rgba(245,166,35,0.15)', borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <FiLifeBuoy size={18} style={{ color: 'var(--brand-secondary)' }} />
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 16 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <div style={{ width: 36, height: 36, background: 'rgba(245,166,35,0.15)', borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <FiLifeBuoy size={18} style={{ color: 'var(--brand-secondary)' }} />
+                </div>
+                <div>
+                  <h1 style={{ fontSize: 16, fontWeight: 800, color: 'var(--text-primary)', margin: 0 }}>Live Support</h1>
+                  <p style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                    {counts.waiting > 0 ? <span style={{ color: 'var(--warning)', fontWeight: 600 }}>{counts.waiting} waiting</span> : 'Queue empty'}
+                    {counts.active > 0 && <span style={{ margin: '0 4px' }}>·</span>}
+                    {counts.active > 0 && <span style={{ color: 'var(--success)', fontWeight: 600 }}>{counts.active} active</span>}
+                  </p>
+                </div>
               </div>
-              <div>
-                <h1 style={{ fontSize: 16, fontWeight: 800, color: 'var(--text-primary)', margin: 0 }}>Live Chat Support</h1>
-                <p style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-                  {counts.waiting > 0 ? <span style={{ color: 'var(--warning)', fontWeight: 600 }}>{counts.waiting} waiting</span> : 'Queue empty'}
-                  {counts.active > 0 && <span style={{ margin: '0 4px' }}>·</span>}
-                  {counts.active > 0 && <span style={{ color: 'var(--success)', fontWeight: 600 }}>{counts.active} active</span>}
-                </p>
-              </div>
+
+              {/* Agent Live Toggle */}
+              <button
+                onClick={toggleLiveStatus}
+                title={isAgentLive ? "Click to set status to Away" : "Click to set status to Online"}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 6, padding: '5px 10px',
+                  borderRadius: 99, fontSize: 11, fontWeight: 800, cursor: 'pointer', border: '1px solid',
+                  background: isAgentLive ? 'rgba(16,185,129,0.12)' : 'rgba(100,116,139,0.12)',
+                  borderColor: isAgentLive ? 'rgba(16,185,129,0.3)' : 'rgba(100,116,139,0.3)',
+                  color: isAgentLive ? '#10b981' : '#64748b'
+                }}
+              >
+                <span style={{ width: 7, height: 7, borderRadius: '50%', background: isAgentLive ? '#10b981' : '#94a3b8' }} className={isAgentLive ? 'animate-pulse' : ''} />
+                {isAgentLive ? 'Ready' : 'Away'}
+              </button>
             </div>
 
             <div style={{ position: 'relative', marginBottom: 12 }}>

@@ -15,8 +15,34 @@ router.get('/sessions', auth, auth.support, async (req, res) => {
     const limitNum = Math.min(100, parseInt(limit));
     const skip = (pageNum - 1) * limitNum;
 
+    const isSuperAdmin = req.user.role === 'superadmin' || req.user.role === 'admin';
     const query = {};
     if (status) query.status = status;
+
+    if (!isSuperAdmin) {
+      // Support agents only see their own chats, or un-rejected waiting/routing queue
+      const agentFilter = [
+        { agentId: req.user._id },
+        {
+          status: { $in: ['WAITING', 'ROUTING'] },
+          routingAttempts: {
+            $not: {
+              $elemMatch: {
+                agentId: req.user._id,
+                action: { $in: ['REJECTED', 'MISSED_TIMEOUT'] }
+              }
+            }
+          }
+        }
+      ];
+
+      if (query.$or) {
+        query.$and = [{ $or: query.$or }, { $or: agentFilter }];
+        delete query.$or;
+      } else {
+        query.$or = agentFilter;
+      }
+    }
 
     const [sessions, total] = await Promise.all([
       ChatSession.find(query)

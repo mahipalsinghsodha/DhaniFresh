@@ -23,7 +23,8 @@ router.get('/', async (req, res) => {
       isMaintenanceMode: settings.isMaintenanceMode,
       isComingSoon: settings.isComingSoon,
       comingSoonLaunchDate: settings.comingSoonLaunchDate,
-      companyDetails: settings.companyDetails || { name: '', email: '', address: '', gstin: '' }
+      companyDetails: settings.companyDetails || { name: '', email: '', address: '', gstin: '' },
+      supportSchedule: settings.supportSchedule || {}
     };
     await setCache('settings:public', publicData, 300); // 5-minute cache
     res.json(publicData);
@@ -61,7 +62,8 @@ router.get('/admin', auth, auth.admin, async (req, res) => {
         twoFactorEnabled: Boolean(settings.security?.twoFactorEnabled),
         maskedEmail: maskedEmail
       },
-      companyDetails: settings.companyDetails || { name: '', email: '', address: '', gstin: '' }
+      companyDetails: settings.companyDetails || { name: '', email: '', address: '', gstin: '' },
+      supportSchedule: settings.supportSchedule || {}
     });
   } catch (error) {
     console.error('Admin Settings GET error:', error);
@@ -134,7 +136,7 @@ router.patch('/', auth, auth.admin, async (req, res) => {
 
     const { 
       gstRate, gstEnabled, freeShippingThreshold, shippingCharge, serviceablePincodes,
-      isMaintenanceMode, isComingSoon, comingSoonLaunchDate, companyDetails
+      isMaintenanceMode, isComingSoon, comingSoonLaunchDate, companyDetails, supportSchedule
     } = req.body;
 
     // Validate
@@ -173,6 +175,18 @@ router.patch('/', auth, auth.admin, async (req, res) => {
         gstin: companyDetails.gstin || ''
       };
     }
+    if (supportSchedule !== undefined) {
+      update.supportSchedule = {
+        enabled: supportSchedule.enabled !== false,
+        workDays: Array.isArray(supportSchedule.workDays) ? supportSchedule.workDays : [1, 2, 3, 4, 5, 6],
+        startHour: supportSchedule.startHour || '09:00',
+        endHour: supportSchedule.endHour || '20:00',
+        timezone: supportSchedule.timezone || 'Asia/Kolkata',
+        maxConcurrentChats: Number(supportSchedule.maxConcurrentChats) || 3,
+        ringTimeoutSeconds: Number(supportSchedule.ringTimeoutSeconds) || 30,
+        offlineMessage: supportSchedule.offlineMessage || 'Our live support team is currently offline or closed for Sunday. Please submit a support ticket.',
+      };
+    }
 
     const settings = await Settings.findByIdAndUpdate(
       'global',
@@ -195,6 +209,7 @@ router.patch('/', auth, auth.admin, async (req, res) => {
         isComingSoon: settings.isComingSoon,
         comingSoonLaunchDate: settings.comingSoonLaunchDate,
         companyDetails: settings.companyDetails,
+        supportSchedule: settings.supportSchedule,
       },
     });
   } catch (error) {

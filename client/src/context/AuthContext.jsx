@@ -4,6 +4,7 @@
 // ✅ Listens to auth:forced_logout event from Axios interceptor
 
 import { createContext, useState, useEffect, useContext, useCallback } from 'react'
+import { toast } from 'react-toastify'
 import api, { setAccessToken, getAccessToken, refreshAuthToken, setRefreshToken, getRefreshToken } from '../api/axios'
 import i18n from '../i18n'
 
@@ -52,12 +53,16 @@ export const AuthProvider = ({ children }) => {
     initAuth()
   }, [])
 
-  // ── Listen for forced logout (when refresh token expires) ─────────────────
+  // ── Listen for forced logout (when refresh token expires or multi-login kicked out) ───
   useEffect(() => {
-    const handleForcedLogout = () => {
+    const handleForcedLogout = (e) => {
       setUser(null)
       setAccessToken(null)
       setRefreshToken(null)
+      const reason = e?.detail?.reason
+      if (reason) {
+        toast.warn(reason, { toastId: 'force-logout-warn', autoClose: 6000 })
+      }
     }
     window.addEventListener('auth:forced_logout', handleForcedLogout)
     return () => window.removeEventListener('auth:forced_logout', handleForcedLogout)

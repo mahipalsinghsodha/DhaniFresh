@@ -29,10 +29,28 @@ const chatSessionSchema = new mongoose.Schema({
   },
   status: {
     type: String,
-    enum: ['BOT_HANDLING', 'WAITING', 'ACTIVE', 'CLOSED'],
+    enum: ['BOT_HANDLING', 'ROUTING', 'WAITING', 'ACTIVE', 'CLOSED'],
     default: 'BOT_HANDLING',
     index: true,
   },
+  currentDispatchedTo: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    default: null,
+  },
+  dispatchExpiresAt: {
+    type: Date,
+    default: null,
+  },
+  routingAttempts: [
+    {
+      agentId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+      agentName: String,
+      dispatchedAt: { type: Date, default: Date.now },
+      action: { type: String, enum: ['ACCEPTED', 'REJECTED', 'MISSED_TIMEOUT'] },
+      respondedAt: Date,
+    }
+  ],
   category: {
     type: String,
     enum: ['ORDER', 'PAYMENT', 'RETURN', 'PRODUCT', 'OTHER'],
@@ -60,7 +78,7 @@ const chatSessionSchema = new mongoose.Schema({
     {
       adminId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
       adminName: String,
-      action: { type: String, enum: ['ACCEPTED', 'REJECTED'] },
+      action: { type: String, enum: ['ACCEPTED', 'REJECTED', 'MISSED_TIMEOUT'] },
       timestamp: { type: Date, default: Date.now }
     }
   ],
