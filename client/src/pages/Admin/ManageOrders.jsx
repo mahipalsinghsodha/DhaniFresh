@@ -13,6 +13,7 @@ import RestrictedAccess from '../../components/RestrictedAccess'
 import { useSocket } from '../../hooks/useSocket'
 import { useConfirm } from '../../context/ConfirmContext'
 import { formatOrderId } from '../../utils/formatOrderId'
+import Pagination from '../../components/Pagination'
 
 const fmtINR = (val) => `₹${Number(val || 0).toLocaleString('en-IN')}`
 const qrUrl = (data, size = 120) => `https://api.qrserver.com/v1/create-qr-code/?size=${size}x${size}&data=${encodeURIComponent(data)}&margin=6`
@@ -94,6 +95,7 @@ const ManageOrders = () => {
   const [search, setSearch] = useState('')
   const [expandedId, setExpandedId] = useState(null)
   
+  const [limit, setLimit] = useState(20)
   const [page, setPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
   const [totalOrders, setTotalOrders] = useState(0)
@@ -129,55 +131,40 @@ const ManageOrders = () => {
       toast.error('Could not download invoice') 
     }
   }
-  const [startDate, setStartDate] = useState(getDaysAgo(15))
+  const [startDate, setStartDate] = useState(getDaysAgo(30))
   const [endDate, setEndDate] = useState(getDaysAgo(0))
 
-  useEffect(() => { 
-    if (hasPermission('orders')) fetchOrders(true, 1, filter, search, startDate, endDate) 
-  }, [hasPermission])
-
-  useEffect(() => {
-    if (hasPermission('orders') && !loading) {
-      fetchOrders(false, page, filter, search, startDate, endDate)
-    }
-  }, [page])
-
-  useEffect(() => {
-    if (hasPermission('orders') && !loading) {
-      setPage(1)
-      fetchOrders(false, 1, filter, search, startDate, endDate)
-    }
-  }, [filter, search])
-
-  useEffect(() => {
-    if (socket) {
-      socket.on('newOrder', (newOrder) => {
-        setOrders(prev => [newOrder, ...prev])
-        setTotalOrders(prev => prev + 1)
-        toast.info(`New order received: #${formatOrderId(newOrder)}`)
-      })
-      
-      socket.on('orderStatusUpdated', (updatedOrder) => {
-        setOrders(prev => prev.map(o => o._id === updatedOrder._id ? updatedOrder : o))
-      })
-
-      return () => {
-        socket.off('newOrder')
-        socket.off('orderStatusUpdated')
-      }
-    }
-  }, [socket])
-
-  const fetchOrders = async (showLoad = false, pg = 1, currentFilter = filter, currentSearch = search, start = startDate, end = endDate) => {
+  const fetchOrders = async (
+    showLoad = false,
+    pg = page,
+    currentLimit = limit,
+    currentFilter = filter,
+    currentSearch = search,
+    start = startDate,
+    end = endDate
+  ) => {
     if (showLoad) setLoading(true); else setSyncing(true)
     try {
-      const res = await api.get(`/api/orders?page=${pg}&limit=20&filter=${currentFilter}&search=${currentSearch}&startDate=${start}&endDate=${end}`)
-      setOrders(res.data.orders || res.data || [])
-      if (res.data.pages) setTotalPages(res.data.pages)
-      if (res.data.total) setTotalOrders(res.data.total)
-    } catch { toast.error('Failed to load orders') }
-    finally { setLoading(false); setSyncing(false) }
+      const res = await api.get(`/api/orders?page=${pg}&limit=${currentLimit}&filter=${currentFilter}&search=${encodeURIComponent(currentSearch)}&startDate=${start}&endDate=${end}`)
+      setOrders(res.data.orders || [])
+      if (res.data.pages !== undefined) setTotalPages(res.data.pages)
+      if (res.data.total !== undefined) setTotalOrders(res.data.total)
+      if (res.data.page && res.data.page !== pg) {
+        setPage(res.data.page)
+      }
+    } catch { 
+      toast.error('Failed to load orders') 
+    } finally { 
+      setLoading(false)
+      setSyncing(false) 
+    }
   }
+
+  useEffect(() => { 
+    if (hasPermission('orders')) {
+      fetchOrders(orders.length === 0, page, limit, filter, search, startDate, endDate)
+    }
+  }, [hasPermission, page, limit, filter, search])
 
   const handleExportCSV = async () => {
     try {
@@ -374,14 +361,14 @@ const ManageOrders = () => {
               <div className="flex items-center gap-2 rounded-xl px-3 py-2"
                 style={{ background: 'rgba(255,255,255,0.10)', border: '1px solid rgba(255,255,255,0.14)' }}>
                 <FiSearch size={14} style={{ color: 'rgba(255,255,255,0.55)' }} className="shrink-0" />
-                <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search orders…"
+                <input value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} placeholder="Search orders…"
                   className="bg-transparent outline-none text-sm w-32 sm:w-48" style={{ color: '#FFF', caretColor: 'var(--gold)', fontFamily: 'var(--font)' }} />
               </div>
               <button onClick={handleExportCSV} className="flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-semibold transition-all hover:scale-105 active:scale-95"
                 style={{ background: 'rgba(255,255,255,0.15)', color: '#FFF' }}>
                 <FiDownload size={14} /> <span className="hidden xl:inline">Export</span>
               </button>
-              <button onClick={() => fetchOrders(true, page)} disabled={syncing}
+              <button onClick={() => fetchOrders(true, page, limit, filter, search, startDate, endDate)} disabled={syncing}
                 className="flex items-center gap-2 px-3 py-2 text-sm font-semibold rounded-xl transition-all"
                 style={{ background: 'rgba(255,255,255,0.10)', border: '1px solid rgba(255,255,255,0.14)', color: 'rgba(255,255,255,0.80)' }}>
                 <FiRefreshCw size={14} className={syncing ? 'animate-spin' : ''} />
@@ -400,7 +387,7 @@ const ManageOrders = () => {
               { v: 'delivered', l: 'Delivered' },
               { v: 'cancelled', l: 'Cancelled' },
             ].map(({ v, l }) => (
-              <button key={v} onClick={() => setFilter(v)}
+              <button key={v} onClick={() => { setFilter(v); setPage(1); }}
                 className="whitespace-nowrap px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2"
                 style={filter === v
                   ? { background: 'var(--gold)', color: 'var(--navy)', border: 'none' }
@@ -626,16 +613,20 @@ const ManageOrders = () => {
           </div>
         )}
 
-        {/* Pagination */}
-        {totalPages > 1 && (
-          <div className="flex justify-center mt-8 gap-2">
-            {Array.from({ length: totalPages }).map((_, idx) => (
-              <button key={idx} onClick={() => setPage(idx + 1)} className={`w-8 h-8 rounded-lg text-sm font-bold ${page === idx + 1 ? 'bg-[var(--brand-secondary)] text-white' : 'bg-white text-gray-500 border hover:bg-gray-50'}`}>
-                {idx + 1}
-              </button>
-            ))}
-          </div>
-        )}
+        {/* Responsive Smart Pagination with Rows Per Page selector */}
+        <Pagination
+          page={page}
+          totalPages={totalPages}
+          totalItems={totalOrders}
+          pageSize={limit}
+          pageSizeOptions={[20, 50, 100, 200, 500, 1000]}
+          onPageChange={(newPage) => setPage(newPage)}
+          onPageSizeChange={(newLimit) => {
+            setLimit(newLimit)
+            setPage(1)
+          }}
+          itemName="orders"
+        />
 
       </div>
 
@@ -714,4 +705,3 @@ const ManageOrders = () => {
 }
 
 export default ManageOrders
-// force ts update

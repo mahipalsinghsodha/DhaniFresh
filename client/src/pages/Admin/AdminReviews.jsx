@@ -7,6 +7,7 @@ import api from '../../api/axios'
 import { useAuth } from '../../context/AuthContext'
 import { useConfirm } from '../../context/ConfirmContext'
 import RestrictedAccess from '../../components/RestrictedAccess'
+import Pagination from '../../components/Pagination'
 
 const AdminReviews = () => {
   const { hasPermission } = useAuth()
@@ -184,20 +185,18 @@ const AdminReviews = () => {
           </div>
         )}
 
-        {/* Pagination */}
-        {totalPages > 1 && (
-          <div className="flex justify-center mt-8 gap-2">
-            {Array.from({ length: totalPages }).map((_, idx) => (
-              <button key={idx} onClick={() => setPage(idx + 1)} className={`w-8 h-8 rounded-lg text-sm font-bold transition-all ${page === idx + 1 ? 'bg-indigo-600 text-white shadow-md' : 'bg-white text-slate-500 border hover:bg-slate-50'}`}>
-                {idx + 1}
-              </button>
-            ))}
-          </div>
-        )}
+        {/* Responsive Pagination */}
+        <Pagination
+          page={page}
+          totalPages={totalPages}
+          totalItems={totalReviews}
+          pageSize={15}
+          onPageChange={(newPage) => setPage(newPage)}
+          itemName="reviews"
+        />
       </div>
     </div>
   )
 }
 
 export default AdminReviews
-// force ts update

@@ -1033,14 +1033,14 @@ router.get('/', auth, auth.admin, auth.hasPermission('orders'), async (req, res)
     }
     
     if (filter === 'pending') {
-      query.isPaid = false;
       query.isDelivered = false;
-      query.paymentStatus = { $nin: ['CANCELLED', 'FAILED', 'COD_CONFIRMED'] };
-      query.orderStatus = { $ne: 'ACCEPTED' };
+      query.paymentStatus = { $nin: ['CANCELLED', 'FAILED'] };
+      query.orderStatus = { $in: ['PENDING_ACCEPTANCE', 'PENDING'] };
     } else if (filter === 'accepted') {
       query.orderStatus = 'ACCEPTED';
+      query.isDelivered = false;
     } else if (filter === 'cod') {
-      query.paymentStatus = 'COD_CONFIRMED';
+      query.paymentMethod = 'COD';
       query.isDelivered = false;
     } else if (filter === 'paid') {
       query.isPaid = true;
@@ -1068,11 +1068,15 @@ const { getNextInvoiceNumber } = require('../utils/helpers');
     }
 
     const totalCount = await Order.countDocuments(query);
+    const totalPages = Math.ceil(totalCount / limit) || 1;
+    const validPage = Math.max(1, Math.min(page, totalPages));
+    const validSkip = (validPage - 1) * limit;
+
     const orders = await Order.find(query)
       .populate('user', 'name email')
       .populate('orderItems.product')
       .sort({ createdAt: -1 })
-      .skip(skip)
+      .skip(validSkip)
       .limit(limit);
 
     const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
@@ -1086,8 +1090,8 @@ const { getNextInvoiceNumber } = require('../utils/helpers');
         orders, 
         newOrdersCount, 
         total: totalCount, 
-        page, 
-        pages: Math.ceil(totalCount / limit) 
+        page: validPage, 
+        pages: totalPages 
       });
     }
 

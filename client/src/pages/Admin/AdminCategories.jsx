@@ -416,4 +416,3 @@ const AdminCategories = () => {
 }
 
 export default AdminCategories
-// force ts update

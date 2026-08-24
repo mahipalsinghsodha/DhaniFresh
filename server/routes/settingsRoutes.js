@@ -4,13 +4,17 @@ const Settings = require('../models/Settings');
 const auth = require('../middleware/auth');
 const crypto = require('crypto');
 const { sendAdminOtpEmail } = require('../services/emailService');
+const { getCache, setCache, deleteCache } = require('../utils/cache');
 
 // ── GET /api/settings  (PUBLIC — frontend reads this to display GST, shipping, site status, company info)
 router.get('/', async (req, res) => {
   try {
+    const cached = await getCache('settings:public');
+    if (cached) return res.json(cached);
+
     const settings = await Settings.getGlobal();
     // Only expose safe, public fields — DO NOT expose security/2FA settings to the public
-    res.json({
+    const publicData = {
       gstRate: settings.gstEnabled ? settings.gstRate : 0,
       gstEnabled: settings.gstEnabled,
       freeShippingThreshold: settings.freeShippingThreshold,
@@ -20,7 +24,9 @@ router.get('/', async (req, res) => {
       isComingSoon: settings.isComingSoon,
       comingSoonLaunchDate: settings.comingSoonLaunchDate,
       companyDetails: settings.companyDetails || { name: '', email: '', address: '', gstin: '' }
-    });
+    };
+    await setCache('settings:public', publicData, 300); // 5-minute cache
+    res.json(publicData);
   } catch (error) {
     console.error('Settings GET error:', error);
     res.status(500).json({ message: 'Failed to load settings' });
@@ -173,6 +179,9 @@ router.patch('/', auth, auth.admin, async (req, res) => {
       { $set: update },
       { new: true, upsert: true, runValidators: true }
     );
+
+    // Invalidate public settings cache
+    await deleteCache('settings:public');
 
     res.json({
       message: 'Settings updated successfully',

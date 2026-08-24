@@ -639,4 +639,3 @@ const AdminProducts = () => {
 }
 
 export default AdminProducts
-// force ts update

@@ -495,4 +495,3 @@ const AdminSettings = () => {
 }
 
 export default AdminSettings
-// force ts update

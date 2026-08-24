@@ -326,4 +326,3 @@ const AdminManagement = () => {
 };
 
 export default AdminManagement;
-// force ts update

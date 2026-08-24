@@ -259,4 +259,3 @@ const AdminNewsletters = () => {
 }
 
 export default AdminNewsletters
-// force ts update
