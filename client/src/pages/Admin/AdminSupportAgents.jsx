@@ -140,13 +140,16 @@ const AdminSupportAgents = () => {
               </p>
             </div>
             <div className="flex items-center gap-3">
-              <div className="flex items-center gap-2 rounded-xl px-3 py-2.5" style={{ background: 'rgba(255,255,255,0.10)', border: '1px solid rgba(255,255,255,0.14)' }}>
-                <FiSearch size={15} style={{ color: 'rgba(255,255,255,0.55)' }} />
+              <div className="flex items-center gap-2 rounded-xl px-3 py-2.5 bg-slate-100 border border-slate-200">
+                <FiSearch size={15} className="text-slate-400" />
                 <input type="text" placeholder="Search agents..." value={search} onChange={e => setSearch(e.target.value)}
-                  className="bg-transparent outline-none text-sm w-48 text-white placeholder:text-white/40" />
+                  className="bg-transparent outline-none text-sm w-48 text-slate-700 placeholder:text-slate-400" />
               </div>
-              <button onClick={() => setShowCreate(!showCreate)} className="flex items-center gap-2 px-4 py-2.5 text-sm font-semibold rounded-xl bg-white text-[var(--brand-primary)] hover:bg-slate-50 transition-colors shadow-sm">
-                <FiPlus size={16} /> New Agent
+              <button
+                onClick={() => setShowCreate(true)}
+                className="flex items-center gap-2 px-4 py-2 bg-brand-primary hover:bg-brand-primary/90 text-white rounded-xl text-xs sm:text-sm font-bold shadow-sm transition-all"
+              >
+                <FiPlus size={16} /> Add Support Agent
               </button>
             </div>
           </div>
@@ -163,7 +166,7 @@ const AdminSupportAgents = () => {
           </div>
           <div className="bg-white p-4 rounded-2xl border border-emerald-100 shadow-sm">
             <p className="text-xs font-bold text-emerald-600 uppercase flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" /> Live Now
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" /> Live & Online
             </p>
             <p className="text-2xl font-extrabold text-emerald-700 mt-1">{onlineCount}</p>
           </div>
@@ -220,7 +223,7 @@ const AdminSupportAgents = () => {
         <div className="bg-white border border-slate-100 rounded-2xl shadow-sm overflow-hidden">
           <div className="p-4 border-b border-slate-100 flex items-center justify-between">
             <h2 className="text-sm font-extrabold text-slate-800 uppercase tracking-wider flex items-center gap-2">
-              <FiActivity className="text-amber-500" /> Agent Performance & Routing Metrics
+              <FiActivity className="text-amber-500" /> Agent Performance, Work Hours & Ratings
             </h2>
             <button onClick={fetchAgents} className="text-xs font-bold text-brand-primary hover:underline">
               Refresh Data
@@ -232,18 +235,19 @@ const AdminSupportAgents = () => {
                 <tr>
                   <th className="px-6 py-3.5 text-left text-[10px] font-bold text-slate-500 uppercase tracking-wider">Agent Details</th>
                   <th className="px-6 py-3.5 text-left text-[10px] font-bold text-slate-500 uppercase tracking-wider">Live Status</th>
+                  <th className="px-6 py-3.5 text-center text-[10px] font-bold text-slate-500 uppercase tracking-wider">Work Time (Today)</th>
                   <th className="px-6 py-3.5 text-center text-[10px] font-bold text-slate-500 uppercase tracking-wider">Dispatched</th>
                   <th className="px-6 py-3.5 text-center text-[10px] font-bold text-slate-500 uppercase tracking-wider">Accepted (Rate)</th>
                   <th className="px-6 py-3.5 text-center text-[10px] font-bold text-slate-500 uppercase tracking-wider">Rejected</th>
-                  <th className="px-6 py-3.5 text-center text-[10px] font-bold text-slate-500 uppercase tracking-wider">Timeouts (Missed)</th>
-                  <th className="px-6 py-3.5 text-center text-[10px] font-bold text-slate-500 uppercase tracking-wider">Active / Resolved</th>
+                  <th className="px-6 py-3.5 text-center text-[10px] font-bold text-slate-500 uppercase tracking-wider">Rating ⭐</th>
+                  <th className="px-6 py-3.5 text-center text-[10px] font-bold text-slate-500 uppercase tracking-wider">Active</th>
                   <th className="px-6 py-3.5 text-right text-[10px] font-bold text-slate-500 uppercase tracking-wider">Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {filtered.length === 0 ? (
                   <tr>
-                    <td colSpan="8" className="px-6 py-12 text-center">
+                    <td colSpan="9" className="px-6 py-12 text-center">
                       <FiUsers size={32} className="mx-auto text-slate-300 mb-3" />
                       <p className="text-sm font-bold text-slate-500">No support agents found.</p>
                     </td>
@@ -272,16 +276,10 @@ const AdminSupportAgents = () => {
                         </div>
                       </td>
                       <td className="px-6 py-4">
-                        {agent.isOnline ? (
-                          agent.isLive ? (
-                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-extrabold bg-emerald-100 text-emerald-800 border border-emerald-200">
-                              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" /> Online (Ready)
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-extrabold bg-amber-100 text-amber-800 border border-amber-200">
-                              <span className="w-2 h-2 rounded-full bg-amber-500" /> Online (Away)
-                            </span>
-                          )
+                        {agent.isOnline && agent.isLive ? (
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-extrabold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" /> Online
+                          </span>
                         ) : (
                           <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-slate-100 text-slate-500 border border-slate-200">
                             <span className="w-2 h-2 rounded-full bg-slate-400" /> Offline
@@ -357,51 +355,91 @@ const AdminSupportAgents = () => {
                 <div className="p-4 sm:p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50">
                   <div>
                     <h3 className="font-bold text-base text-slate-800">
-                      Routing & Rejection Logs: {historyAgent.name}
+                      Performance & Audit: {historyAgent.name}
                     </h3>
-                    <p className="text-xs text-slate-500 mt-0.5">{historyAgent.email}</p>
+                    <div className="flex flex-wrap items-center gap-3 text-xs text-slate-500 mt-1">
+                      <span>{historyAgent.email}</span>
+                      <span>·</span>
+                      <span className="font-bold text-brand-primary">Work: {formatWorkTime(historyAgent.todayWorkSeconds || 0)} today</span>
+                      <span>·</span>
+                      <span className="font-bold text-amber-600">⭐ {historyAgent.avgRating || 5} ({historyAgent.ratingCount || 0} reviews)</span>
+                    </div>
                   </div>
                   <button onClick={() => setHistoryAgent(null)} className="p-2 text-slate-400 hover:text-slate-700">
                     <FiX size={18} />
                   </button>
                 </div>
 
-                <div className="p-4 sm:p-6 max-h-[60vh] overflow-y-auto">
-                  {loadingHistory ? (
-                    <div className="py-12 text-center text-slate-400 text-sm">Loading history...</div>
-                  ) : historyLogs.length === 0 ? (
-                    <div className="py-12 text-center text-slate-400 text-sm">
-                      <FiCheckCircle size={32} className="mx-auto text-emerald-400 mb-2" />
-                      No routing rejections or timeouts recorded for this agent.
-                    </div>
-                  ) : (
-                    <div className="space-y-3">
-                      {historyLogs.map((log, idx) => (
-                        <div key={idx} className="p-3.5 rounded-xl border border-slate-100 bg-slate-50 flex items-center justify-between gap-4">
-                          <div>
-                            <div className="flex items-center gap-2">
-                              <span className={`px-2 py-0.5 rounded-md text-[10px] font-extrabold uppercase ${
-                                log.action === 'ACCEPTED' ? 'bg-emerald-100 text-emerald-800' :
-                                log.action === 'REJECTED' ? 'bg-rose-100 text-rose-800' : 'bg-orange-100 text-orange-800'
-                              }`}>
-                                {log.action === 'MISSED_TIMEOUT' ? '30s Timeout (Missed)' : log.action}
-                              </span>
-                              <span className="text-xs font-bold text-slate-700">{log.customerName}</span>
-                              <span className="text-[10px] text-slate-400">({log.category})</span>
+                <div className="p-4 sm:p-6 max-h-[60vh] overflow-y-auto space-y-6">
+                  {/* Customer Reviews Section */}
+                  {historyAgent.recentReviews && historyAgent.recentReviews.length > 0 && (
+                    <div>
+                      <h4 className="text-xs font-extrabold uppercase text-slate-500 tracking-wider mb-2.5">
+                        Recent Customer Feedback & Ratings
+                      </h4>
+                      <div className="space-y-2">
+                        {historyAgent.recentReviews.map((rev, i) => (
+                          <div key={i} className="p-3 bg-amber-50/60 border border-amber-200/60 rounded-xl">
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="text-xs font-bold text-slate-800">{rev.customerName}</span>
+                              <span className="text-xs font-extrabold text-amber-600">⭐ {rev.score} / 5</span>
                             </div>
-                            <p className="text-[11px] text-slate-400 mt-1 font-mono">
-                              Session: {log.sessionId}
+                            {rev.comment && (
+                              <p className="text-xs text-slate-600 mt-1 italic">"{rev.comment}"</p>
+                            )}
+                            <p className="text-[10px] text-slate-400 mt-1">
+                              {new Date(rev.submittedAt).toLocaleDateString()} {new Date(rev.submittedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                             </p>
                           </div>
-                          <div className="text-right shrink-0">
-                            <p className="text-xs text-slate-500">
-                              {new Date(log.dispatchedAt).toLocaleDateString()} {new Date(log.dispatchedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                            </p>
-                          </div>
-                        </div>
-                      ))}
+                        ))}
+                      </div>
                     </div>
                   )}
+
+                  {/* Dispatching / Routing History */}
+                  <div>
+                    <h4 className="text-xs font-extrabold uppercase text-slate-500 tracking-wider mb-2.5">
+                      Call Routing & Action Logs
+                    </h4>
+                    {loadingHistory ? (
+                      <div className="py-12 text-center text-slate-400 text-sm">Loading history...</div>
+                    ) : historyLogs.length === 0 ? (
+                      <div className="py-8 text-center text-slate-400 text-sm">
+                        <FiCheckCircle size={32} className="mx-auto text-emerald-400 mb-2" />
+                        No routing actions or rejections recorded for this agent yet.
+                      </div>
+                    ) : (
+                      <div className="space-y-2.5">
+                        {historyLogs.map((log, idx) => (
+                          <div key={idx} className="p-3 rounded-xl border border-slate-100 bg-slate-50 flex items-center justify-between gap-4">
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <span className={`px-2 py-0.5 rounded-md text-[10px] font-extrabold uppercase ${
+                                  log.action === 'ACCEPTED' ? 'bg-emerald-100 text-emerald-800' :
+                                  log.action === 'REJECTED' ? 'bg-rose-100 text-rose-800' : 'bg-orange-100 text-orange-800'
+                                }`}>
+                                  {log.action === 'MISSED_TIMEOUT' ? '30s Timeout (Missed)' : log.action}
+                                </span>
+                                <span className="text-xs font-bold text-slate-700">{log.customerName}</span>
+                                <span className="text-[10px] text-slate-400">({log.category})</span>
+                                {log.rating?.score && (
+                                  <span className="text-[11px] font-bold text-amber-600">⭐ {log.rating.score}/5</span>
+                                )}
+                              </div>
+                              <p className="text-[11px] text-slate-400 mt-1 font-mono">
+                                Session: {log.sessionId}
+                              </p>
+                            </div>
+                            <div className="text-right shrink-0">
+                              <p className="text-xs text-slate-500">
+                                {new Date(log.dispatchedAt).toLocaleDateString()} {new Date(log.dispatchedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                              </p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </div>
               </motion.div>
             </div>

@@ -40,23 +40,34 @@ exports.getSupportAgents = async (req, res) => {
 
     const onlineList = getOnlineAgents();
     const onlineMap = new Map(onlineList.map(a => [a._id.toString(), a]));
+    const todayStr = new Date().toISOString().slice(0, 10);
 
     const enrichedAgents = await Promise.all(
       agents.map(async (agent) => {
-        const activeChats = await ChatSession.countDocuments({
-          agentId: agent._id,
-          status: 'ACTIVE',
-        });
+        const [activeChats, ratedSessions] = await Promise.all([
+          ChatSession.countDocuments({
+            agentId: agent._id,
+            status: 'ACTIVE',
+          }),
+          ChatSession.find({
+            agentId: agent._id,
+            'rating.score': { $exists: true, $ne: null },
+          }).select('rating sessionId guestName createdAt').populate('userId', 'name').lean(),
+        ]);
 
         const onlineInfo = onlineMap.get(agent._id.toString());
         const isOnline = !!onlineInfo;
+        const currentSessionSec = onlineInfo?.currentSessionSec || 0;
+
         const stats = agent.supportStats || {
           dispatchedCount: 0,
           acceptedCount: 0,
           rejectedCount: 0,
           missedCount: 0,
           resolvedCount: 0,
+          totalWorkSeconds: 0,
           isLive: true,
+          dailyStats: { date: todayStr, accepted: 0, rejected: 0, missed: 0, workSeconds: 0 },
         };
 
         const totalAttempts = (stats.acceptedCount || 0) + (stats.rejectedCount || 0) + (stats.missedCount || 0);
@@ -64,12 +75,44 @@ exports.getSupportAgents = async (req, res) => {
           ? Math.round(((stats.acceptedCount || 0) / stats.dispatchedCount) * 100)
           : (totalAttempts > 0 ? Math.round(((stats.acceptedCount || 0) / totalAttempts) * 100) : 100);
 
+        // Calculate Online Work Time
+        let todayWorkSeconds = (stats.dailyStats?.date === todayStr ? (stats.dailyStats.workSeconds || 0) : 0);
+        if (isOnline && onlineInfo?.isLive) {
+          todayWorkSeconds += currentSessionSec;
+        }
+
+        let totalWorkSeconds = (stats.totalWorkSeconds || 0);
+        if (isOnline && onlineInfo?.isLive) {
+          totalWorkSeconds += currentSessionSec;
+        }
+
+        // Calculate Rating & Reviews
+        let avgRating = 5;
+        let ratingCount = ratedSessions.length;
+        if (ratingCount > 0) {
+          const sum = ratedSessions.reduce((acc, s) => acc + (s.rating?.score || 5), 0);
+          avgRating = parseFloat((sum / ratingCount).toFixed(1));
+        }
+
+        const recentReviews = ratedSessions.slice(0, 10).map(s => ({
+          sessionId: s.sessionId,
+          customerName: s.userId?.name || s.guestName || 'Customer',
+          score: s.rating?.score || 5,
+          comment: s.rating?.comment || '',
+          submittedAt: s.rating?.submittedAt || s.createdAt,
+        }));
+
         return {
           ...agent,
           activeChats,
           isOnline,
           isLive: stats.isLive !== false,
           acceptanceRate,
+          todayWorkSeconds,
+          totalWorkSeconds,
+          avgRating,
+          ratingCount,
+          recentReviews,
         };
       })
     );
@@ -82,9 +125,12 @@ exports.getAgentRejectionHistory = async (req, res) => {
   try {
     const { agentId } = req.params;
     const sessions = await ChatSession.find({
-      'routingAttempts.agentId': agentId,
+      $or: [
+        { 'routingAttempts.agentId': agentId },
+        { agentId: agentId },
+      ]
     })
-      .select('sessionId guestName guestEmail category routingAttempts status createdAt updatedAt')
+      .select('sessionId guestName guestEmail category routingAttempts rating status createdAt updatedAt')
       .populate('userId', 'name email')
       .sort({ createdAt: -1 })
       .limit(50)
@@ -93,18 +139,33 @@ exports.getAgentRejectionHistory = async (req, res) => {
     const history = [];
     sessions.forEach(s => {
       const attempts = (s.routingAttempts || []).filter(a => a.agentId?.toString() === agentId.toString());
-      attempts.forEach(att => {
+      if (attempts.length > 0) {
+        attempts.forEach(att => {
+          history.push({
+            sessionId: s.sessionId,
+            customerName: s.userId?.name || s.guestName || 'Customer',
+            customerEmail: s.userId?.email || s.guestEmail || '',
+            category: s.category,
+            sessionStatus: s.status,
+            action: att.action,
+            dispatchedAt: att.dispatchedAt,
+            respondedAt: att.respondedAt,
+            rating: s.rating,
+          });
+        });
+      } else if (s.agentId?.toString() === agentId.toString()) {
         history.push({
           sessionId: s.sessionId,
           customerName: s.userId?.name || s.guestName || 'Customer',
           customerEmail: s.userId?.email || s.guestEmail || '',
           category: s.category,
           sessionStatus: s.status,
-          action: att.action,
-          dispatchedAt: att.dispatchedAt,
-          respondedAt: att.respondedAt,
+          action: 'ACCEPTED',
+          dispatchedAt: s.createdAt,
+          respondedAt: s.createdAt,
+          rating: s.rating,
         });
-      });
+      }
     });
 
     history.sort((a, b) => new Date(b.dispatchedAt) - new Date(a.dispatchedAt));

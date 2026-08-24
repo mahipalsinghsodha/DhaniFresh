@@ -36,11 +36,21 @@ const userSchema = new mongoose.Schema({
 
   // ── Support Agent Stats & Live State ─────────────────────────────────────
   supportStats: {
-    dispatchedCount: { type: Number, default: 0 },
-    acceptedCount:   { type: Number, default: 0 },
-    rejectedCount:   { type: Number, default: 0 },
-    missedCount:     { type: Number, default: 0 },
-    resolvedCount:   { type: Number, default: 0 },
+    dispatchedCount:  { type: Number, default: 0 },
+    acceptedCount:    { type: Number, default: 0 },
+    rejectedCount:    { type: Number, default: 0 },
+    missedCount:      { type: Number, default: 0 },
+    resolvedCount:    { type: Number, default: 0 },
+    totalWorkSeconds: { type: Number, default: 0 },
+    avgRating:        { type: Number, default: 5 },
+    ratingCount:      { type: Number, default: 0 },
+    dailyStats: {
+      date:        { type: String, default: () => new Date().toISOString().slice(0, 10) },
+      accepted:    { type: Number, default: 0 },
+      rejected:    { type: Number, default: 0 },
+      missed:      { type: Number, default: 0 },
+      workSeconds: { type: Number, default: 0 },
+    },
     isLive:          { type: Boolean, default: true },
     lastActiveAt:    { type: Date, default: Date.now },
   },

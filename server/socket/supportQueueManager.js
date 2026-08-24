@@ -46,10 +46,14 @@ function registerAgentPresence(user, socketId, io) {
     }
   }
 
+  const isLive = user.supportStats?.isLive !== false;
+  const now = new Date();
+
   if (!agentPresenceMap.has(uId)) {
     agentPresenceMap.set(uId, {
       socketIds: new Set([socketId]),
-      isLive: user.supportStats?.isLive !== false, // default true
+      isLive,
+      readyStartedAt: isLive ? now : null,
       user: {
         _id: user._id,
         name: user.name,
@@ -65,6 +69,9 @@ function registerAgentPresence(user, socketId, io) {
     } else {
       data.socketIds.add(socketId);
     }
+    if (isLive && !data.readyStartedAt) {
+      data.readyStartedAt = now;
+    }
     data.user = {
       _id: user._id,
       name: user.name,
@@ -75,13 +82,30 @@ function registerAgentPresence(user, socketId, io) {
   }
 }
 
-function unregisterAgentPresence(userId, socketId) {
+async function unregisterAgentPresence(userId, socketId) {
   if (!userId) return;
   const uId = userId.toString();
   if (agentPresenceMap.has(uId)) {
     const data = agentPresenceMap.get(uId);
     data.socketIds.delete(socketId);
     if (data.socketIds.size === 0) {
+      if (data.isLive && data.readyStartedAt) {
+        const elapsedSec = Math.max(0, Math.floor((Date.now() - new Date(data.readyStartedAt).getTime()) / 1000));
+        if (elapsedSec > 0) {
+          const todayStr = new Date().toISOString().slice(0, 10);
+          try {
+            const dbUser = await User.findById(uId);
+            if (dbUser) {
+              dbUser.supportStats = dbUser.supportStats || {};
+              dbUser.supportStats.totalWorkSeconds = (dbUser.supportStats.totalWorkSeconds || 0) + elapsedSec;
+              if (dbUser.supportStats.dailyStats?.date === todayStr) {
+                dbUser.supportStats.dailyStats.workSeconds = (dbUser.supportStats.dailyStats.workSeconds || 0) + elapsedSec;
+              }
+              await dbUser.save({ validateBeforeSave: false });
+            }
+          } catch (err) {}
+        }
+      }
       agentPresenceMap.delete(uId);
     }
   }
@@ -89,13 +113,48 @@ function unregisterAgentPresence(userId, socketId) {
 
 async function setAgentLiveStatus(userId, isLive, io) {
   const uId = userId.toString();
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const now = new Date();
+  let elapsedSec = 0;
+
   if (agentPresenceMap.has(uId)) {
-    agentPresenceMap.get(uId).isLive = isLive;
+    const data = agentPresenceMap.get(uId);
+    if (data.isLive && !isLive && data.readyStartedAt) {
+      elapsedSec = Math.max(0, Math.floor((now.getTime() - new Date(data.readyStartedAt).getTime()) / 1000));
+      data.readyStartedAt = null;
+    } else if (!data.isLive && isLive) {
+      data.readyStartedAt = now;
+    }
+    data.isLive = isLive;
   }
-  await User.findByIdAndUpdate(userId, {
-    'supportStats.isLive': isLive,
-    'supportStats.lastActiveAt': new Date(),
-  });
+
+  const dbUser = await User.findById(userId);
+  if (dbUser) {
+    dbUser.supportStats = dbUser.supportStats || {};
+    dbUser.supportStats.isLive = isLive;
+    dbUser.supportStats.lastActiveAt = now;
+    if (elapsedSec > 0) {
+      dbUser.supportStats.totalWorkSeconds = (dbUser.supportStats.totalWorkSeconds || 0) + elapsedSec;
+      if (dbUser.supportStats.dailyStats?.date !== todayStr) {
+        dbUser.supportStats.dailyStats = {
+          date: todayStr,
+          accepted: 0,
+          rejected: 0,
+          missed: 0,
+          workSeconds: elapsedSec,
+        };
+      } else {
+        dbUser.supportStats.dailyStats.workSeconds = (dbUser.supportStats.dailyStats.workSeconds || 0) + elapsedSec;
+      }
+    }
+    await dbUser.save({ validateBeforeSave: false });
+
+    if (io) {
+      io.to(`user:${uId}`).emit('agent:stats_updated', {
+        supportStats: dbUser.supportStats,
+      });
+    }
+  }
 
   if (io) {
     io.to('admin_room').emit('admin:agent_presence_change', {
@@ -116,10 +175,17 @@ function getOnlineAgents() {
   const list = [];
   agentPresenceMap.forEach((val, key) => {
     if (val.socketIds.size > 0) {
+      let currentSessionSec = 0;
+      if (val.isLive && val.readyStartedAt) {
+        currentSessionSec = Math.max(0, Math.floor((Date.now() - new Date(val.readyStartedAt).getTime()) / 1000));
+      }
+
       list.push({
         _id: key,
         ...val.user,
         isLive: val.isLive,
+        readyStartedAt: val.readyStartedAt,
+        currentSessionSec,
         socketCount: val.socketIds.size,
       });
     }
@@ -377,6 +443,96 @@ async function dispatchNextAgent(sessionId, io, triggerReason = 'INITIAL') {
 /*  5. AGENT RESPONSE HANDLERS (Accept / Reject / Timeout)                     */
 /* ═══════════════════════════════════════════════════════════════════════════ */
 
+async function recordAgentAccept(agentId, io) {
+  try {
+    const todayStr = new Date().toISOString().slice(0, 10);
+    const user = await User.findById(agentId);
+    if (!user) return;
+
+    user.supportStats = user.supportStats || {};
+    if (user.supportStats.dailyStats?.date !== todayStr) {
+      user.supportStats.dailyStats = {
+        date: todayStr,
+        accepted: 0,
+        rejected: 0,
+        missed: 0,
+      };
+    }
+
+    user.supportStats.acceptedCount = (user.supportStats.acceptedCount || 0) + 1;
+    user.supportStats.dailyStats.accepted = (user.supportStats.dailyStats.accepted || 0) + 1;
+    user.supportStats.lastActiveAt = new Date();
+
+    await user.save({ validateBeforeSave: false });
+
+    if (io) {
+      io.to(`user:${agentId.toString()}`).emit('agent:stats_updated', {
+        supportStats: user.supportStats,
+      });
+    }
+  } catch (e) {
+    console.error('[SupportQueue] recordAgentAccept error:', e);
+  }
+}
+
+async function recordAgentRejectionOrTimeout(agentId, isTimeout = false, io) {
+  try {
+    const todayStr = new Date().toISOString().slice(0, 10);
+    const user = await User.findById(agentId);
+    if (!user) return;
+
+    user.supportStats = user.supportStats || {};
+    if (user.supportStats.dailyStats?.date !== todayStr) {
+      user.supportStats.dailyStats = {
+        date: todayStr,
+        accepted: 0,
+        rejected: 0,
+        missed: 0,
+      };
+    }
+
+    if (isTimeout) {
+      user.supportStats.missedCount = (user.supportStats.missedCount || 0) + 1;
+      user.supportStats.dailyStats.missed = (user.supportStats.dailyStats.missed || 0) + 1;
+    } else {
+      user.supportStats.rejectedCount = (user.supportStats.rejectedCount || 0) + 1;
+      user.supportStats.dailyStats.rejected = (user.supportStats.dailyStats.rejected || 0) + 1;
+    }
+
+    const totalDailyRejections = (user.supportStats.dailyStats.rejected || 0) + (user.supportStats.dailyStats.missed || 0);
+
+    // Max 1 rejection allowed per day for support agent -> auto-set to Away to protect queue
+    if (user.role === 'support' && totalDailyRejections >= 1) {
+      user.supportStats.isLive = false;
+      if (agentPresenceMap.has(agentId.toString())) {
+        agentPresenceMap.get(agentId.toString()).isLive = false;
+      }
+      if (io) {
+        io.to(`user:${agentId.toString()}`).emit('agent:rejection_limit_reached', {
+          dailyRejections: totalDailyRejections,
+          maxAllowed: 1,
+          message: '⚠️ Daily Rejection Limit Reached (1/1 today). Your status has been auto-set to Offline.',
+        });
+        io.to('admin_room').emit('admin:agent_presence_change', {
+          agentId: agentId.toString(),
+          isLive: false,
+          isOnline: agentPresenceMap.has(agentId.toString()),
+        });
+      }
+    }
+
+    await user.save({ validateBeforeSave: false });
+
+    if (io) {
+      io.to(`user:${agentId.toString()}`).emit('agent:stats_updated', {
+        supportStats: user.supportStats,
+      });
+    }
+  } catch (e) {
+    console.error('[SupportQueue] recordAgentRejectionOrTimeout error:', e);
+  }
+}
+
 async function handleAgentAccept(sessionId, agentUser, io) {
   try {
     // Clear timer
@@ -409,11 +565,8 @@ async function handleAgentAccept(sessionId, agentUser, io) {
 
     await session.save();
 
-    // Increment Agent Stats
-    await User.findByIdAndUpdate(agentUser._id, {
-      $inc: { 'supportStats.acceptedCount': 1 },
-      'supportStats.lastActiveAt': new Date(),
-    });
+    // Record Agent Acceptance & Daily Stats
+    await recordAgentAccept(agentUser._id, io);
 
     // Dismiss ring modal for this agent
     io.to(`user:${agentUser._id.toString()}`).emit('agent:dismiss_ring', { sessionId, accepted: true });
@@ -493,10 +646,8 @@ async function handleAgentReject(sessionId, agentUser, io) {
     session.dispatchExpiresAt = null;
     await session.save();
 
-    // Increment Agent Rejected Stat
-    await User.findByIdAndUpdate(agentUser._id, {
-      $inc: { 'supportStats.rejectedCount': 1 },
-    });
+    // Record Agent Rejection & Daily Limit Check
+    await recordAgentRejectionOrTimeout(agentUser._id, false, io);
 
     // Dismiss ring modal for this agent
     io.to(`user:${agentUser._id.toString()}`).emit('agent:dismiss_ring', { sessionId, rejected: true });
@@ -535,10 +686,8 @@ async function handleAgentTimeout(sessionId, agentId, io) {
     session.dispatchExpiresAt = null;
     await session.save();
 
-    // Increment Agent Missed Timeout Stat
-    await User.findByIdAndUpdate(agentId, {
-      $inc: { 'supportStats.missedCount': 1 },
-    });
+    // Record Agent Timeout & Daily Limit Check
+    await recordAgentRejectionOrTimeout(agentId, true, io);
 
     // Dismiss ringing modal on the agent's screen
     io.to(`user:${agentId.toString()}`).emit('agent:dismiss_ring', { sessionId, reason: 'TIMEOUT' });

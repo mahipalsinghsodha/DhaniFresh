@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { FiMessageSquare, FiSend, FiSearch, FiArrowLeft, FiLifeBuoy, FiExternalLink, FiToggleRight, FiToggleLeft, FiShield } from "react-icons/fi";
+import { FiMessageSquare, FiSend, FiSearch, FiArrowLeft, FiLifeBuoy, FiExternalLink, FiToggleRight, FiToggleLeft, FiShield, FiClock } from "react-icons/fi";
 import api from "../../api/axios";
 import { useAuth } from "../../context/AuthContext";
 import RestrictedAccess from "../../components/RestrictedAccess";
@@ -42,6 +42,14 @@ const timeAgo = (date) => {
   return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
 };
 
+const formatWorkTime = (sec = 0) => {
+  if (!sec || sec < 60) return `${sec || 0}s`;
+  const m = Math.floor(sec / 60);
+  const h = Math.floor(m / 60);
+  if (h === 0) return `${m}m`;
+  return `${h}h ${m % 60}m`;
+};
+
 export default function AdminSupport({ onPopOutSession }) {
   const { user, hasPermission } = useAuth();
   const { connect, emit, on, off } = useSocket();
@@ -49,12 +57,13 @@ export default function AdminSupport({ onPopOutSession }) {
   const [selected, setSelected] = useState(null);
   const [messages, setMessages] = useState([]);
   const [inputText, setInputText] = useState("");
-  const [filter, setFilter] = useState("ALL");
+  const [filter, setFilter] = useState(user?.role === 'support' ? "ACTIVE" : "ALL");
   const [search, setSearch] = useState("");
   const [isMobile, setIsMobile] = useState(typeof window !== 'undefined' && window.innerWidth < 1024);
   const [loading, setLoading] = useState(true);
   const [isUserTyping, setIsUserTyping] = useState(false);
   const [isAgentLive, setIsAgentLive] = useState(user?.supportStats?.isLive !== false);
+  const [agentStats, setAgentStats] = useState(user?.supportStats || {});
   const typingTimerRef = useRef(null);
   const messagesEndRef = useRef(null);
   const messagesContainerRef = useRef(null);
@@ -124,7 +133,19 @@ export default function AdminSupport({ onPopOutSession }) {
     on('chat:user_typing', handleUserTyping);
     on('agent:live_status_updated', ({ isLive }) => {
       setIsAgentLive(isLive);
-      toast.info(isLive ? '🟢 You are now Online & Taking Chats' : '⚪ You are now Away');
+      toast.info(isLive ? '🟢 You are now Online & Taking Chats' : '⚪ You are now Offline');
+    });
+    on('agent:stats_updated', ({ supportStats }) => {
+      if (supportStats) {
+        setAgentStats(supportStats);
+        if (typeof supportStats.isLive === 'boolean') {
+          setIsAgentLive(supportStats.isLive);
+        }
+      }
+    });
+    on('agent:rejection_limit_reached', ({ message }) => {
+      setIsAgentLive(false);
+      toast.warn(message || '⚠️ Daily Rejection Limit Reached (1/1 today). Set to Offline.');
     });
 
     return () => {
@@ -134,6 +155,8 @@ export default function AdminSupport({ onPopOutSession }) {
       off('chat:message', handleMessage);
       off('chat:user_typing', handleUserTyping);
       off('agent:live_status_updated');
+      off('agent:stats_updated');
+      off('agent:rejection_limit_reached');
     };
   }, [hasPermission, on, off, connect, selected?.sessionId]);
 
@@ -297,7 +320,7 @@ export default function AdminSupport({ onPopOutSession }) {
               {/* Agent Live Toggle */}
               <button
                 onClick={toggleLiveStatus}
-                title={isAgentLive ? "Click to set status to Away" : "Click to set status to Online"}
+                title={isAgentLive ? "Click to set status to Offline" : "Click to set status to Online"}
                 style={{
                   display: 'flex', alignItems: 'center', gap: 6, padding: '5px 10px',
                   borderRadius: 99, fontSize: 11, fontWeight: 800, cursor: 'pointer', border: '1px solid',
@@ -307,9 +330,42 @@ export default function AdminSupport({ onPopOutSession }) {
                 }}
               >
                 <span style={{ width: 7, height: 7, borderRadius: '50%', background: isAgentLive ? '#10b981' : '#94a3b8' }} className={isAgentLive ? 'animate-pulse' : ''} />
-                {isAgentLive ? 'Ready' : 'Away'}
+                {isAgentLive ? 'Online' : 'Offline'}
               </button>
             </div>
+
+            {/* Agent Live Performance Metrics */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, marginBottom: 12, padding: '8px 10px', background: 'var(--bg-alt)', borderRadius: 12, border: '1px solid var(--border-color)' }}>
+              <div style={{ display: 'flex', flexDirection: 'column' }}>
+                <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Today Work</span>
+                <span style={{ fontSize: 12, fontWeight: 800, color: 'var(--brand-primary)', display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <FiClock size={11} /> {formatWorkTime(agentStats?.dailyStats?.workSeconds || 0)}
+                </span>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column' }}>
+                <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Rating ⭐</span>
+                <span style={{ fontSize: 12, fontWeight: 800, color: '#f59e0b' }}>
+                  {agentStats?.avgRating || 5} <span style={{ fontSize: 9, color: 'var(--text-muted)', fontWeight: 600 }}>({agentStats?.ratingCount || 0})</span>
+                </span>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column' }}>
+                <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Today Accepted</span>
+                <span style={{ fontSize: 12, fontWeight: 800, color: '#10b981' }}>
+                  {agentStats?.dailyStats?.accepted || 0}
+                </span>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column' }}>
+                <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Today Rejected</span>
+                <span style={{ fontSize: 12, fontWeight: 800, color: ((agentStats?.dailyStats?.rejected || 0) + (agentStats?.dailyStats?.missed || 0)) >= 1 ? '#ef4444' : 'var(--text-primary)' }}>
+                  {(agentStats?.dailyStats?.rejected || 0) + (agentStats?.dailyStats?.missed || 0)} / 1 max
+                </span>
+              </div>
+            </div>
+            {((agentStats?.dailyStats?.rejected || 0) + (agentStats?.dailyStats?.missed || 0)) >= 1 && !isSuperAdmin && (
+              <div style={{ marginBottom: 12, padding: '6px 10px', borderRadius: 8, background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.25)', color: '#ef4444', fontSize: 10, fontWeight: 700 }}>
+                ⚠️ Daily 1-rejection limit reached. Status set to Offline.
+              </div>
+            )}
 
             <div style={{ position: 'relative', marginBottom: 12 }}>
               <FiSearch size={13} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
@@ -321,12 +377,15 @@ export default function AdminSupport({ onPopOutSession }) {
             </div>
 
             <div style={{ display: 'flex', gap: 6, overflowX: 'auto' }} className="no-scrollbar">
-              {[
+              {(isSuperAdmin ? [
                 { v: 'ALL', label: 'All' },
                 { v: 'WAITING', label: 'Waiting', count: counts.waiting },
                 { v: 'ACTIVE', label: 'Active', count: counts.active },
                 { v: 'CLOSED', label: 'Closed' },
-              ].map(f => (
+              ] : [
+                { v: 'ACTIVE', label: 'My Active Chats', count: counts.active },
+                { v: 'CLOSED', label: 'Resolved History' },
+              ]).map(f => (
                 <button key={f.v} onClick={() => setFilter(f.v)}
                   style={{
                     display: 'flex', alignItems: 'center', gap: 6, padding: '4px 12px', borderRadius: 10, fontSize: 11, fontWeight: 700, whiteSpace: 'nowrap', border: '1px solid', cursor: 'pointer',
