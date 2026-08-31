@@ -3,17 +3,20 @@
 //   ✅ Auto-reconnect logic
 //   ✅ Auth token from memory
 //   ✅ Connection state tracking
+//   ✅ Non-blocking emit buffering
 
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { io } from 'socket.io-client'
 import { getAccessToken } from '../api/axios'
 
-const SOCKET_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000'
+const SOCKET_URL = import.meta.env.DEV
+  ? ''
+  : (import.meta.env.VITE_API_URL ? import.meta.env.VITE_API_URL.replace(/\/+$/, '') : '')
 
 let globalSocket = null // Singleton socket instance
 
 export function useSocket() {
-  const [isConnected, setIsConnected] = useState(false)
+  const [isConnected, setIsConnected] = useState(!!globalSocket?.connected)
   const [connectionError, setConnectionError] = useState(null)
   const listenersRef = useRef({})
 
@@ -21,6 +24,11 @@ export function useSocket() {
   const connect = useCallback(() => {
     if (globalSocket?.connected) {
       setIsConnected(true)
+      return globalSocket
+    }
+
+    if (globalSocket && !globalSocket.connected) {
+      globalSocket.connect()
       return globalSocket
     }
 
@@ -76,24 +84,25 @@ export function useSocket() {
     }
   }, [])
 
-  // ── Emit event ───────────────────────────────────────────────────────────────
+  // ── Emit event (Auto-buffers in Socket.io if connecting) ─────────────────────
   const emit = useCallback((event, data) => {
-    if (!globalSocket?.connected) {
-      console.warn(`[Socket] Cannot emit "${event}" — not connected`)
+    const s = globalSocket || connect()
+    if (!s) {
+      console.warn(`[Socket] Cannot emit "${event}" — socket unavailable`)
       return false
     }
-    globalSocket.emit(event, data)
+    s.emit(event, data)
     return true
-  }, [])
+  }, [connect])
 
   // ── Listen to event ──────────────────────────────────────────────────────────
   const on = useCallback((event, handler) => {
-    if (!globalSocket) return
-    globalSocket.on(event, handler)
-    // Track for cleanup
+    const s = globalSocket || connect()
+    if (!s) return
+    s.on(event, handler)
     if (!listenersRef.current[event]) listenersRef.current[event] = []
     listenersRef.current[event].push(handler)
-  }, [])
+  }, [connect])
 
   const off = useCallback((event, handler) => {
     if (!globalSocket) return

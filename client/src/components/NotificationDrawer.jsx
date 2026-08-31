@@ -3,6 +3,7 @@ import { useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { X, Bell, Check, CheckCheck, Package, MessageSquare, Tag, Info, AlertCircle } from 'lucide-react'
 import { useNotificationStore } from '../store/notifications'
+import { useSupportStore } from '../store/support'
 import { formatDistanceToNow } from 'date-fns'
 import { useNavigate } from 'react-router-dom'
 
@@ -95,6 +96,7 @@ export default function NotificationDrawer() {
     isDrawerOpen, closeDrawer, notifications, unreadCount,
     setNotifications, markRead, markAllRead,
   } = useNotificationStore()
+  const openSupport = useSupportStore(state => state.openSupport)
 
   const handleNotifClick = (notif) => {
     if (!notif.isRead) markRead(notif._id)
@@ -119,7 +121,7 @@ export default function NotificationDrawer() {
       navigate('/products')
       closeDrawer()
     } else if (notif.type === 'CHAT_REPLY') {
-      navigate('/support')
+      openSupport()
       closeDrawer()
     }
   }

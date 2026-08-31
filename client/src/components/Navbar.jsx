@@ -12,6 +12,7 @@ import {
   Heart, Bell, ChevronDown, Shield, Search, Sparkles, Loader2, HelpCircle, Globe, Briefcase, MessageSquare
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+import { useSupportStore } from '../store/support'
 
 const Navbar = () => {
   const { user, logout, hasPermission } = useAuth()
@@ -19,6 +20,7 @@ const Navbar = () => {
   const location = useLocation()
   const { cartCount } = useCart()
   const { unreadCount, toggleDrawer, setNotifications } = useNotificationStore()
+  const openSupport = useSupportStore(state => state.openSupport)
   const [mobileOpen, setMobileOpen] = useState(false)
   const [scrolled, setScrolled] = useState(false)
   const [userMenuOpen, setUserMenuOpen] = useState(false)
@@ -190,19 +192,29 @@ const Navbar = () => {
                   { to: '/products', label: t('navbar.shop', 'Products') },
                   { to: '/about', label: t('navbar.about', 'About Us') },
                   { to: '/blogs', label: t('navbar.blogs', 'Blogs') },
-                  ...(user ? [{ to: '/support', label: t('navbar.help', 'Help') }] : []),
+                  ...(user ? [{ to: '#support', label: t('navbar.help', 'Help'), isSupport: true }] : []),
                   { to: '/contact', label: t('navbar.contact', 'Contact') },
-                ].map(({ to, label }) => (
-                  <Link key={to} to={to} className={navLinkCls(to)}>
-                    {label}
-                    {isActive(to) && (
-                      <motion.span
-                        layoutId="navActive"
-                        className="absolute bottom-0 left-3.5 right-3.5 h-0.5 rounded-full"
-                        style={{ background: 'var(--gold)' }}
-                      />
-                    )}
-                  </Link>
+                ].map(({ to, label, isSupport }) => (
+                  isSupport ? (
+                    <button
+                      key="support-nav-btn"
+                      onClick={() => openSupport()}
+                      className={`${navLinkCls('/support')} cursor-pointer bg-transparent border-none`}
+                    >
+                      {label}
+                    </button>
+                  ) : (
+                    <Link key={to} to={to} className={navLinkCls(to)}>
+                      {label}
+                      {isActive(to) && (
+                        <motion.span
+                          layoutId="navActive"
+                          className="absolute bottom-0 left-3.5 right-3.5 h-0.5 rounded-full"
+                          style={{ background: 'var(--gold)' }}
+                        />
+                      )}
+                    </Link>
+                  )
                 ))}
               </>
             )}
@@ -379,7 +391,7 @@ const Navbar = () => {
                               { to: '/orders', icon: Package, label: t('navbar.orders', 'My Orders') },
                               { to: '/b2b', icon: Briefcase, label: t('navbar.bulkOrders', 'Bulk Orders') },
                               { to: '/wishlist', icon: Heart, label: t('navbar.wishlist', 'Wishlist') },
-                              { to: '/support', icon: HelpCircle, label: t('navbar.helpCenter', 'Support Center') },
+                              { to: '#support', icon: HelpCircle, label: t('navbar.helpCenter', 'Support Center'), isSupportAction: true },
                             ] : []),
                             ...(isAdmin ? [
                               { to: '/admin', icon: Shield, label: t('navbar.adminPanel', 'Admin Panel') },
@@ -389,17 +401,33 @@ const Navbar = () => {
                               { to: '/support-panel', icon: Shield, label: 'Support Tickets' },
                             ] : []),
                           ].map(item => (
-                            <Link key={item.to} to={item.to}
-                              className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-[13px] font-medium transition-all"
-                              style={{ color: 'var(--text-secondary)' }}
-                              onMouseEnter={e => { e.currentTarget.style.background = 'var(--bg-alt)'; e.currentTarget.style.color = 'var(--text-primary)' }}
-                              onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'var(--text-secondary)' }}
-                            >
-                              <div className="w-6 h-6 rounded-lg flex items-center justify-center" style={{ background: 'var(--bg-alt)' }}>
-                                <item.icon size={13} style={{ color: 'var(--text-muted)' }} />
-                              </div>
-                              {item.label}
-                            </Link>
+                            item.isSupportAction ? (
+                              <button
+                                key={item.label}
+                                onClick={() => { setUserMenuOpen(false); openSupport(); }}
+                                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-[13px] font-medium transition-all text-left cursor-pointer border-none bg-transparent"
+                                style={{ color: 'var(--text-secondary)' }}
+                                onMouseEnter={e => { e.currentTarget.style.background = 'var(--bg-alt)'; e.currentTarget.style.color = 'var(--text-primary)' }}
+                                onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'var(--text-secondary)' }}
+                              >
+                                <div className="w-6 h-6 rounded-lg flex items-center justify-center" style={{ background: 'var(--bg-alt)' }}>
+                                  <item.icon size={13} style={{ color: 'var(--text-muted)' }} />
+                                </div>
+                                <span>{item.label}</span>
+                              </button>
+                            ) : (
+                              <Link key={item.to} to={item.to}
+                                className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-[13px] font-medium transition-all"
+                                style={{ color: 'var(--text-secondary)' }}
+                                onMouseEnter={e => { e.currentTarget.style.background = 'var(--bg-alt)'; e.currentTarget.style.color = 'var(--text-primary)' }}
+                                onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'var(--text-secondary)' }}
+                              >
+                                <div className="w-6 h-6 rounded-lg flex items-center justify-center" style={{ background: 'var(--bg-alt)' }}>
+                                  <item.icon size={13} style={{ color: 'var(--text-muted)' }} />
+                                </div>
+                                {item.label}
+                              </Link>
+                            )
                           ))}
                         </div>
                         <div className="p-1.5" style={{ borderTop: '1px solid var(--border-color)' }}>
@@ -662,7 +690,13 @@ const Navbar = () => {
                           <Link to="/orders" className={mobileLinkCls('/orders')}><Package size={16} className="shrink-0" />{t('navbar.orders', 'My Orders')}</Link>
                           <Link to="/b2b" className={mobileLinkCls('/b2b')}><Briefcase size={16} className="shrink-0" />{t('navbar.bulkOrders', 'Bulk Orders')}</Link>
                           <Link to="/wishlist" className={mobileLinkCls('/wishlist')}><Heart size={16} className="shrink-0" />{t('navbar.wishlist', 'Wishlist')}</Link>
-                          <Link to="/support" className={mobileLinkCls('/support')}><HelpCircle size={16} className="shrink-0" />{t('navbar.help', 'Help')}</Link>
+                          <button
+                            onClick={() => { setMobileOpen(false); openSupport(); }}
+                            className={`${mobileLinkCls('/support')} w-full text-left flex items-center gap-3 cursor-pointer bg-transparent border-none`}
+                          >
+                            <HelpCircle size={16} className="shrink-0" />
+                            {t('navbar.help', 'Help')}
+                          </button>
                         </>
                       )}
                       <button onClick={handleLogout}

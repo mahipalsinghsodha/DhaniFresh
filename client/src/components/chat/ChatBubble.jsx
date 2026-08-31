@@ -1,26 +1,27 @@
-// frontend/src/components/chat/ChatBubble.jsx
-// Renders a single chat message bubble
-// Supports: USER, AGENT, BOT, SYSTEM message types
-// Supports: TEXT, IMAGE, ORDER_CARD, QUICK_REPLY message types
-
+// client/src/components/chat/ChatBubble.jsx
+// ── Ultra-Premium Daatasa In-App Support Message Bubble & Action Chips ────────
 import { formatDistanceToNow } from 'date-fns'
-import { Package, Truck, CheckCircle2, Clock, AlertTriangle, XCircle } from 'lucide-react'
+import {
+  Package, Truck, CheckCircle2, Clock, AlertTriangle,
+  XCircle, Headphones, Bot, Sparkles, RotateCcw,
+  ShoppingBag, HelpCircle, ArrowRight
+} from 'lucide-react'
 
 const STATUS_MAP = {
-  DELIVERED:          { bg: 'rgba(16,185,129,0.12)', text: '#10b981', border: 'rgba(16,185,129,0.3)', label: 'Delivered', icon: CheckCircle2 },
-  OUT_FOR_DELIVERY:   { bg: 'rgba(59,130,246,0.12)', text: '#3b82f6', border: 'rgba(59,130,246,0.3)', label: 'Out for Delivery', icon: Truck },
-  SHIPPED:            { bg: 'rgba(99,102,241,0.12)', text: '#6366f1', border: 'rgba(99,102,241,0.3)', label: 'Shipped (In Transit)', icon: Package },
-  PICKED_UP:          { bg: 'rgba(99,102,241,0.12)', text: '#6366f1', border: 'rgba(99,102,241,0.3)', label: 'Shipped', icon: Package },
-  ASSIGNED_TO_COURIER:{ bg: 'rgba(99,102,241,0.12)', text: '#6366f1', border: 'rgba(99,102,241,0.3)', label: 'Assigned to Courier', icon: Package },
-  PROCESSING:         { bg: 'rgba(245,158,11,0.12)', text: '#f59e0b', border: 'rgba(245,158,11,0.3)', label: 'Processing', icon: Clock },
-  ACCEPTED:           { bg: 'rgba(245,158,11,0.12)', text: '#f59e0b', border: 'rgba(245,158,11,0.3)', label: 'Order Accepted', icon: Clock },
-  CONFIRMED:          { bg: 'rgba(245,158,11,0.12)', text: '#f59e0b', border: 'rgba(245,158,11,0.3)', label: 'Confirmed', icon: Clock },
-  PENDING_ACCEPTANCE: { bg: 'rgba(245,158,11,0.12)', text: '#f59e0b', border: 'rgba(245,158,11,0.3)', label: 'Order Placed', icon: Clock },
-  PAID:               { bg: 'rgba(16,185,129,0.12)', text: '#10b981', border: 'rgba(16,185,129,0.3)', label: 'Paid', icon: CheckCircle2 },
-  PENDING:            { bg: 'rgba(245,158,11,0.12)', text: '#f59e0b', border: 'rgba(245,158,11,0.3)', label: 'Pending', icon: Clock },
-  CANCELLED:          { bg: 'rgba(239,68,68,0.12)',  text: '#ef4444', border: 'rgba(239,68,68,0.3)', label: 'Cancelled', icon: XCircle },
-  FAILED:             { bg: 'rgba(239,68,68,0.12)',  text: '#ef4444', border: 'rgba(239,68,68,0.3)', label: 'Failed', icon: AlertTriangle },
-  RETURNED:           { bg: 'rgba(168,85,247,0.12)', text: '#a855f7', border: 'rgba(168,85,247,0.3)', label: 'Returned', icon: Package },
+  DELIVERED:          { bg: 'rgba(16, 185, 129, 0.12)', text: '#059669', border: 'rgba(16, 185, 129, 0.3)', label: 'Delivered', icon: CheckCircle2 },
+  OUT_FOR_DELIVERY:   { bg: 'rgba(59, 130, 246, 0.12)', text: '#2563eb', border: 'rgba(59, 130, 246, 0.3)', label: 'Out for Delivery', icon: Truck },
+  SHIPPED:            { bg: 'rgba(99, 102, 241, 0.12)', text: '#4f46e5', border: 'rgba(99, 102, 241, 0.3)', label: 'Shipped', icon: Truck },
+  PICKED_UP:          { bg: 'rgba(99, 102, 241, 0.12)', text: '#4f46e5', border: 'rgba(99, 102, 241, 0.3)', label: 'In Transit', icon: Truck },
+  ASSIGNED_TO_COURIER:{ bg: 'rgba(99, 102, 241, 0.12)', text: '#4f46e5', border: 'rgba(99, 102, 241, 0.3)', label: 'Courier Assigned', icon: Package },
+  PROCESSING:         { bg: 'rgba(217, 165, 32, 0.14)', text: '#b45309', border: 'rgba(217, 165, 32, 0.35)', label: 'Processing', icon: Clock },
+  ACCEPTED:           { bg: 'rgba(217, 165, 32, 0.14)', text: '#b45309', border: 'rgba(217, 165, 32, 0.35)', label: 'Accepted', icon: Clock },
+  CONFIRMED:          { bg: 'rgba(217, 165, 32, 0.14)', text: '#b45309', border: 'rgba(217, 165, 32, 0.35)', label: 'Confirmed', icon: Clock },
+  PENDING_ACCEPTANCE: { bg: 'rgba(217, 165, 32, 0.14)', text: '#b45309', border: 'rgba(217, 165, 32, 0.35)', label: 'Order Placed', icon: Clock },
+  PAID:               { bg: 'rgba(16, 185, 129, 0.12)', text: '#059669', border: 'rgba(16, 185, 129, 0.3)', label: 'Paid', icon: CheckCircle2 },
+  PENDING:            { bg: 'rgba(217, 165, 32, 0.14)', text: '#b45309', border: 'rgba(217, 165, 32, 0.35)', label: 'Pending', icon: Clock },
+  CANCELLED:          { bg: 'rgba(239, 68, 68, 0.12)', text: '#dc2626', border: 'rgba(239, 68, 68, 0.3)', label: 'Cancelled', icon: XCircle },
+  FAILED:             { bg: 'rgba(239, 68, 68, 0.12)', text: '#dc2626', border: 'rgba(239, 68, 68, 0.3)', label: 'Failed', icon: AlertTriangle },
+  RETURNED:           { bg: 'rgba(168, 85, 247, 0.12)', text: '#9333ea', border: 'rgba(168, 85, 247, 0.3)', label: 'Returned', icon: RotateCcw },
 }
 
 // ── Helper: Format Markdown text (bold **text**, bullets •, newlines) ─────────
@@ -30,13 +31,13 @@ function FormattedText({ text, isUser = false }) {
   const lines = text.split('\n')
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
+    <div className="flex flex-col gap-1">
       {lines.map((line, lineIdx) => {
         if (!line.trim()) {
-          return <div key={lineIdx} style={{ height: '6px' }} />
+          return <div key={lineIdx} className="h-1" />
         }
 
-        // Parse **bold** markers within this line
+        // Parse **bold** markers
         const parts = []
         const regex = /\*\*(.*?)\*\*/g
         let lastIdx = 0
@@ -49,10 +50,7 @@ function FormattedText({ text, isUser = false }) {
           parts.push(
             <strong
               key={`b-${lineIdx}-${match.index}`}
-              style={{
-                fontWeight: 700,
-                color: isUser ? '#ffffff' : 'inherit',
-              }}
+              className={isUser ? "font-bold text-white" : "font-bold text-gray-900 dark:text-white"}
             >
               {match[1]}
             </strong>
@@ -69,10 +67,7 @@ function FormattedText({ text, isUser = false }) {
         return (
           <div
             key={lineIdx}
-            style={{
-              paddingLeft: isBullet ? '2px' : '0px',
-              lineHeight: 1.55,
-            }}
+            className={`leading-relaxed text-[13.5px] ${isBullet ? 'pl-2 text-gray-700 dark:text-gray-300' : ''}`}
           >
             {parts}
           </div>
@@ -82,7 +77,13 @@ function FormattedText({ text, isUser = false }) {
   )
 }
 
-export default function ChatBubble({ message, currentUserId, onQuickReply }) {
+function cleanOptionText(text) {
+  if (!text) return ''
+  // Strip leading emojis and whitespace
+  return text.replace(/^[\p{Emoji}\p{Extended_Pictographic}\uFE0F\u200D\s]+/gu, '').trim()
+}
+
+export default function ChatBubble({ message, onQuickReply }) {
   const { senderType, senderName, content, messageType, metadata, createdAt } = message
 
   const isUser   = senderType === 'USER'
@@ -96,100 +97,71 @@ export default function ChatBubble({ message, currentUserId, onQuickReply }) {
   // ── System message (centered, muted) ──────────────────────────────────────
   if (isSystem) {
     return (
-      <div style={{ textAlign: 'center', padding: '6px 0' }}>
-        <span style={{
-          fontSize: '11px',
-          color: 'var(--text-muted)',
-          background: 'var(--bg-alt)',
-          border: '1px solid var(--border-color)',
-          borderRadius: '20px',
-          padding: '4px 14px',
-          display: 'inline-block',
-          fontFamily: 'var(--font)',
-          fontWeight: 500,
-        }}>
+      <div className="text-center py-1.5 my-1">
+        <span className="text-[11px] text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-800/80 border border-gray-200 dark:border-gray-700 rounded-full px-3.5 py-1 inline-block font-medium shadow-2xs">
           {content}
         </span>
       </div>
     )
   }
 
-  // ── Avatar for bot/agent ───────────────────────────────────────────────────
-  const avatar = isBot ? '🫙' : '👤'
-
-  // Quick reply options can come from QUICK_REPLY message or ORDER_CARD metadata
+  // Quick reply options from metadata
   const quickReplyOptions = (messageType === 'QUICK_REPLY' || messageType === 'ORDER_CARD') && metadata?.options?.length > 0
     ? metadata.options
     : null
 
   return (
-    <div style={{
-      display: 'flex',
-      flexDirection: isUser ? 'row-reverse' : 'row',
-      alignItems: 'flex-end',
-      gap: '8px',
-    }}>
-      {/* Avatar (only for bot/agent) */}
+    <div className={`flex items-end gap-2.5 ${isUser ? 'flex-row-reverse' : 'flex-row'}`}>
+      {/* Bot / Agent Avatar */}
       {!isUser && (
-        <div style={{
-          width: '34px', height: '34px',
-          borderRadius: '50%',
-          background: isBot ? 'var(--brand-gradient)' : 'linear-gradient(135deg, #6366f1, #4f46e5)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontSize: '15px', color: '#fff',
-          flexShrink: 0,
-          boxShadow: 'var(--shadow-sm)',
-        }}>
-          {avatar}
+        <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 shadow-xs text-white ${
+          isBot ? 'bg-gradient-to-br from-amber-500 to-amber-700' : 'bg-gradient-to-br from-blue-600 to-indigo-700'
+        }`}>
+          {isBot ? <Bot size={16} /> : <Headphones size={15} />}
         </div>
       )}
 
-      <div style={{ maxWidth: '85%', display: 'flex', flexDirection: 'column', alignItems: isUser ? 'flex-end' : 'flex-start', gap: '5px' }}>
-        {/* Sender name */}
+      <div className={`max-w-[90%] sm:max-w-[82%] flex flex-col gap-1.5 ${isUser ? 'items-end' : 'items-start'}`}>
+        {/* Sender name label */}
         {!isUser && (
-          <span style={{ fontSize: '11px', color: 'var(--text-muted)', paddingLeft: '4px', fontWeight: 600, fontFamily: 'var(--font)' }}>
-            {senderName}
+          <span className="text-[11px] font-bold text-gray-400 dark:text-gray-400 pl-1">
+            {senderName || (isBot ? 'Daatasa Assistant' : 'Support Agent')}
           </span>
         )}
 
-        {/* ── Order Card ──────────────────────────────────────────────────── */}
+        {/* ── Order Card in Chat ─────────────────────────────────────────── */}
         {messageType === 'ORDER_CARD' && metadata?.orderId ? (
-          <div style={{
-            background: 'var(--bg-card, #ffffff)',
-            border: '1.5px solid var(--border-color, rgba(0,0,0,0.08))',
-            borderRadius: '16px',
-            padding: '16px',
-            width: '100%',
-            maxWidth: '440px',
-            boxShadow: '0 4px 16px rgba(0,0,0,0.04)',
-          }}>
+          <div className="bg-white dark:bg-gray-800/95 border border-amber-200/80 dark:border-gray-700 rounded-2xl p-4 w-full shadow-sm">
             {/* Header: Order ID & Status Badge */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-              <div>
-                <span style={{ fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 700 }}>
-                  Order
-                </span>
-                <div style={{ fontFamily: 'monospace', fontSize: '14px', fontWeight: 800, color: 'var(--text-primary)' }}>
-                  #{String(metadata.orderId).slice(-6).toUpperCase()}
+            <div className="flex justify-between items-center pb-2.5 mb-2.5 border-b border-gray-100 dark:border-gray-700/60">
+              <div className="flex items-center gap-2">
+                <div className="w-7 h-7 rounded-lg bg-amber-50 dark:bg-amber-950/60 text-amber-600 dark:text-amber-400 flex items-center justify-center">
+                  <Package size={15} />
+                </div>
+                <div>
+                  <span className="text-[10px] text-gray-400 uppercase tracking-wider font-extrabold block leading-tight">
+                    Order Summary
+                  </span>
+                  <div className="font-mono text-sm font-extrabold text-gray-900 dark:text-white">
+                    #{String(metadata.orderId).slice(-6).toUpperCase()}
+                  </div>
                 </div>
               </div>
 
               {(() => {
-                const s = STATUS_MAP[metadata.status] || STATUS_MAP[metadata.paymentStatus] || { bg: 'var(--bg-alt)', text: 'var(--text-muted)', border: 'transparent', label: metadata.statusLabel || metadata.status, icon: Package }
+                const s = STATUS_MAP[metadata.status] || STATUS_MAP[metadata.paymentStatus] || {
+                  bg: 'rgba(217, 165, 32, 0.12)',
+                  text: '#b45309',
+                  border: 'rgba(217, 165, 32, 0.3)',
+                  label: metadata.statusLabel || metadata.status,
+                  icon: Package
+                }
                 const IconComponent = s.icon || Package
                 return (
-                  <span style={{
-                    background: s.bg,
-                    color: s.text,
-                    border: `1px solid ${s.border}`,
-                    borderRadius: '20px',
-                    padding: '4px 10px',
-                    fontSize: '11px',
-                    fontWeight: 700,
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: '4px',
-                  }}>
+                  <span
+                    className="px-2.5 py-1 rounded-full text-[11px] font-bold inline-flex items-center gap-1.5 border shadow-2xs"
+                    style={{ background: s.bg, color: s.text, borderColor: s.border }}
+                  >
                     <IconComponent size={12} />
                     {s.label}
                   </span>
@@ -197,157 +169,105 @@ export default function ChatBubble({ message, currentUserId, onQuickReply }) {
               })()}
             </div>
 
-            {/* Tracking Banner if available */}
+            {/* Tracking banner if present */}
             {metadata.trackingNumber && (
-              <div style={{
-                marginBottom: '12px',
-                padding: '8px 12px',
-                background: 'rgba(245,166,35,0.06)',
-                border: '1px solid rgba(245,166,35,0.25)',
-                borderRadius: '10px',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                fontSize: '12px',
-              }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <Truck size={14} style={{ color: 'var(--gold, #d97706)' }} />
-                  <span style={{ color: 'var(--text-muted)' }}>{metadata.shippingProvider || 'Courier'}:</span>
-                  <strong style={{ fontFamily: 'monospace', color: 'var(--text-primary)' }}>{metadata.trackingNumber}</strong>
+              <div className="mb-3 p-2.5 px-3 bg-blue-50/80 dark:bg-blue-950/40 border border-blue-200/70 dark:border-blue-900/50 rounded-xl flex items-center justify-between text-xs">
+                <div className="flex items-center gap-2">
+                  <Truck size={14} className="text-blue-600 dark:text-blue-400" />
+                  <span className="text-gray-600 dark:text-gray-300 font-medium">{metadata.shippingProvider || 'Courier'}:</span>
+                  <strong className="font-mono text-gray-900 dark:text-white font-bold">{metadata.trackingNumber}</strong>
                 </div>
               </div>
             )}
 
-            {/* Items Preview */}
+            {/* Items preview list */}
             {metadata.items?.length > 0 && (
-              <div style={{
-                marginBottom: '12px',
-                padding: '10px',
-                background: 'var(--bg-alt, rgba(0,0,0,0.02))',
-                borderRadius: '10px',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '6px',
-              }}>
+              <div className="mb-3 p-3 bg-gray-50/90 dark:bg-gray-900/60 rounded-xl flex flex-col gap-2 border border-gray-100 dark:border-gray-800">
                 {metadata.items.slice(0, 3).map((item, idx) => (
-                  <div key={idx} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '12px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', overflow: 'hidden' }}>
+                  <div key={idx} className="flex items-center justify-between gap-2 text-xs">
+                    <div className="flex items-center gap-2.5 overflow-hidden">
                       {item.image ? (
-                        <img src={item.image} alt={item.name} style={{ width: '28px', height: '28px', borderRadius: '6px', objectFit: 'cover' }} />
+                        <img src={item.image} alt={item.name} className="w-8 h-8 rounded-lg object-cover border border-gray-200 dark:border-gray-700 shrink-0" />
                       ) : (
-                        <div style={{ width: '28px', height: '28px', borderRadius: '6px', background: 'rgba(245,166,35,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px' }}>🫙</div>
+                        <div className="w-8 h-8 rounded-lg bg-amber-100/80 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 flex items-center justify-center text-xs font-bold shrink-0 border border-amber-200 dark:border-amber-800">
+                          🫙
+                        </div>
                       )}
-                      <span style={{ fontWeight: 600, color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '180px' }}>
+                      <span className="font-semibold text-gray-800 dark:text-gray-200 truncate max-w-[170px] sm:max-w-[200px]">
                         {item.name}
                       </span>
                     </div>
-                    <span style={{ color: 'var(--text-muted)', fontSize: '11px', flexShrink: 0 }}>
-                      Qty: {item.quantity || 1}
-                    </span>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <span className="text-gray-500 dark:text-gray-400 text-[11px] font-medium">
+                        Qty: {item.quantity || 1}
+                      </span>
+                      {item.price && (
+                        <span className="font-bold text-gray-800 dark:text-gray-200 text-xs">
+                          ₹{Number(item.price).toLocaleString('en-IN')}
+                        </span>
+                      )}
+                    </div>
                   </div>
                 ))}
-                {metadata.items.length > 3 && (
-                  <span style={{ fontSize: '10px', color: 'var(--text-muted)', textAlign: 'right' }}>
-                    +{metadata.items.length - 3} more items
-                  </span>
-                )}
+
                 {metadata.totalPrice != null && (
-                  <div style={{ borderTop: '1px dashed var(--border-color)', paddingTop: '6px', marginTop: '2px', display: 'flex', justifyContent: 'space-between', fontWeight: 700, fontSize: '12px' }}>
-                    <span style={{ color: 'var(--text-muted)' }}>Total Amount</span>
-                    <span style={{ color: 'var(--text-primary)' }}>₹{Number(metadata.totalPrice).toLocaleString('en-IN')}</span>
+                  <div className="border-t border-gray-200/80 dark:border-gray-700/80 pt-2 mt-1 flex justify-between items-center font-bold text-xs">
+                    <span className="text-gray-500 dark:text-gray-400">Order Total</span>
+                    <span className="text-amber-800 dark:text-amber-400 text-sm font-black">
+                      ₹{typeof metadata.totalPrice === 'number'
+                        ? metadata.totalPrice.toLocaleString('en-IN')
+                        : String(metadata.totalPrice).replace(/[^0-9.]/g, '')
+                          ? Number(String(metadata.totalPrice).replace(/,/g, '')).toLocaleString('en-IN')
+                          : metadata.totalPrice}
+                    </span>
                   </div>
                 )}
               </div>
             )}
 
-            {/* Content text rendered with bold markdown support */}
+            {/* Content text */}
             {content && (
-              <div style={{
-                color: 'var(--text-primary)',
-                fontSize: '13.5px',
-                lineHeight: 1.55,
-                fontFamily: 'var(--font)',
-                wordBreak: 'break-word',
-              }}>
+              <div className="text-gray-800 dark:text-gray-200 text-[13.5px] pt-1">
                 <FormattedText text={content} isUser={false} />
               </div>
             )}
           </div>
         ) : messageType === 'IMAGE' ? (
-          <div style={{
-            background: isUser ? 'var(--brand-gradient)' : isBot ? 'var(--bg-alt)' : 'var(--bg-surface)',
-            borderRadius: isUser ? '18px 18px 4px 18px' : '18px 18px 18px 4px',
-            padding: '4px',
-            boxShadow: isUser ? 'var(--shadow-brand)' : 'var(--shadow-sm)',
-            border: !isUser && !isBot ? '1.5px solid var(--border-color)' : 'none',
-          }}>
-            <img src={content} alt="Attachment" style={{ maxWidth: '240px', maxHeight: '300px', borderRadius: '14px', objectFit: 'cover', display: 'block' }} />
+          <div className={`p-1 rounded-2xl shadow-xs ${isUser ? 'bg-amber-600' : 'bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700'}`}>
+            <img src={content} alt="Attachment" className="max-w-[240px] max-h-[280px] rounded-xl object-cover block" />
           </div>
         ) : (
-          /* ── Regular text bubble rendered with bold markdown support ─────── */
-          <div style={{
-            background: isUser
-              ? 'var(--brand-gradient)'
-              : isBot
-                ? 'var(--bg-alt)'
-                : 'var(--bg-surface)',
-            color: isUser ? '#fff' : 'var(--text-primary)',
-            borderRadius: isUser
-              ? '18px 18px 4px 18px'
-              : '18px 18px 18px 4px',
-            padding: '11px 16px',
-            fontSize: '14px',
-            lineHeight: 1.55,
-            boxShadow: isUser ? 'var(--shadow-brand)' : 'var(--shadow-sm)',
-            border: !isUser && !isBot ? '1.5px solid var(--border-color)' : 'none',
-            wordBreak: 'break-word',
-            fontFamily: 'var(--font)',
-          }}>
+          /* ── Regular text bubble ─────────────────────────────────────── */
+          <div className={`p-3.5 px-4 text-[13.5px] rounded-2xl shadow-xs leading-relaxed ${
+            isUser
+              ? 'bg-gradient-to-r from-amber-600 to-amber-700 text-white rounded-br-xs'
+              : 'bg-white dark:bg-gray-800/95 text-gray-900 dark:text-gray-100 border border-gray-200/80 dark:border-gray-700/80 rounded-bl-xs'
+          }`}>
             <FormattedText text={content} isUser={isUser} />
           </div>
         )}
 
-        {/* ── Quick Reply Action Buttons ────────────────────────────────────── */}
+        {/* ── Quick Reply Action Buttons (Uniform Clean Pill Buttons, Text Only) ─ */}
         {quickReplyOptions && onQuickReply && (
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '7px', marginTop: '6px', width: '100%' }}>
-            {quickReplyOptions.map((opt, i) => (
-              <button
-                key={i}
-                onClick={() => onQuickReply(opt)}
-                style={{
-                  background: 'var(--bg-surface, #ffffff)',
-                  border: '1.5px solid var(--brand-secondary, #f59e0b)',
-                  color: 'var(--brand-secondary, #d97706)',
-                  borderRadius: '20px',
-                  padding: '7px 14px',
-                  fontSize: '12px',
-                  fontWeight: 700,
-                  cursor: 'pointer',
-                  transition: 'all 0.15s ease',
-                  whiteSpace: 'nowrap',
-                  fontFamily: 'var(--font)',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '5px',
-                  boxShadow: '0 2px 6px rgba(245,158,11,0.08)',
-                }}
-                onMouseEnter={e => {
-                  e.currentTarget.style.background = 'rgba(245,158,11,0.12)'
-                  e.currentTarget.style.transform = 'translateY(-1px)'
-                }}
-                onMouseLeave={e => {
-                  e.currentTarget.style.background = 'var(--bg-surface, #ffffff)'
-                  e.currentTarget.style.transform = 'none'
-                }}
-              >
-                {opt}
-              </button>
-            ))}
+          <div className="flex flex-wrap gap-2 mt-2 w-full">
+            {quickReplyOptions.map((opt, i) => {
+              const cleanLabel = cleanOptionText(opt)
+
+              return (
+                <button
+                  key={i}
+                  onClick={() => onQuickReply(opt)}
+                  className="px-4 py-2 rounded-xl text-xs font-semibold bg-white dark:bg-slate-800 text-gray-800 dark:text-gray-100 border border-gray-200 dark:border-slate-700 hover:border-amber-500 hover:text-amber-800 dark:hover:text-amber-300 hover:bg-amber-50/50 dark:hover:bg-slate-700/50 shadow-2xs hover:shadow-xs active:scale-95 transition-all cursor-pointer inline-flex items-center justify-center text-center"
+                >
+                  <span>{cleanLabel || opt}</span>
+                </button>
+              )
+            })}
           </div>
         )}
 
         {/* Timestamp */}
-        <span style={{ fontSize: '10px', color: 'var(--text-muted)', paddingLeft: '4px', paddingRight: '4px', fontFamily: 'var(--font)' }}>
+        <span className="text-[10px] text-gray-400 px-1 font-medium">
           {timeAgo}
         </span>
       </div>

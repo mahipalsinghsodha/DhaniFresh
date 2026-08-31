@@ -26,7 +26,8 @@
     "seeAllResults": "See all results for",
     "categories": "Categories",
     "shopByCategory": "Shop by Category",
-    "allCategories": "All Categories"
+    "allCategories": "All Categories",
+    "blogs": "Blogs"
   },
   "footer": {
     "contactHeading": "Contact",
@@ -44,6 +45,7 @@
     "quickDisclaimer": "Disclaimer",
     "quickSupport": "Support",
     "quickFAQ": "FAQ",
+    "bulkOrders": "Bulk Orders & B2B",
     "newsletterTitle": "Newsletter",
     "newsletterDesc": "Get the latest updates via email. Don't miss it. Unsubscribe anytime.",
     "newsletterSuccess": "You're subscribed! Check your inbox.",

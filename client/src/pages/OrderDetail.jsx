@@ -4,6 +4,7 @@ import { FiArrowLeft, FiPrinter, FiX, FiRefreshCcw, FiExternalLink, FiHelpCircle
 import { toast } from 'react-toastify';
 import api from '../api/axios';
 import OrderTimeline from '../components/OrderTimeline';
+import { useSupportStore } from '../store/support';
 import { formatOrderId } from '../utils/formatOrderId';
 import { useSocket } from '../hooks/useSocket';
 
@@ -16,26 +17,25 @@ const OrderDetail = () => {
   const [cancelModal, setCancelModal] = useState(false);
   const [reason, setReason] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const openSupport = useSupportStore(state => state.openSupport);
 
-  const socket = useSocket();
+  const { emit, on, off } = useSocket();
 
   useEffect(() => {
     fetchOrder();
     
-    if (socket) {
-      socket.emit('joinOrderRoom', id);
-      const handleUpdate = (updatedOrder) => {
-        if (updatedOrder._id === id) {
-          setOrder(updatedOrder);
-          toast.info('Order status updated!');
-        }
-      };
-      socket.on('orderStatusUpdated', handleUpdate);
-      return () => {
-        socket.off('orderStatusUpdated', handleUpdate);
-      };
-    }
-  }, [id, socket]);
+    emit('joinOrderRoom', id);
+    const handleUpdate = (updatedOrder) => {
+      if (!updatedOrder || updatedOrder._id === id || String(updatedOrder._id) === String(id) || updatedOrder.orderId === id) {
+        fetchOrder();
+        toast.info('Order status updated!');
+      }
+    };
+    on('orderStatusUpdated', handleUpdate);
+    return () => {
+      off('orderStatusUpdated', handleUpdate);
+    };
+  }, [id, emit, on, off]);
 
   const fetchOrder = async () => {
     try {
@@ -100,9 +100,9 @@ const OrderDetail = () => {
     );
   }
 
-  const isVoid = ['CANCELLED', 'FAILED'].includes(order.paymentStatus);
-  const isCancellable = !order.isDelivered && !isVoid;
-  const isReturnable = order.isDelivered && !order.returnRequest?.status && ((Date.now() - new Date(order.deliveredAt).getTime()) / (1000 * 60 * 60 * 24) <= 7);
+  const isVoid = ['CANCELLED', 'FAILED'].includes(order.paymentStatus) || order.orderStatus === 'CANCELLED';
+  const isCancellable = !order.isDelivered && order.orderStatus !== 'DELIVERED' && !isVoid;
+  const isReturnable = (order.isDelivered || order.orderStatus === 'DELIVERED') && !isVoid && !order.returnRequest?.status && ((Date.now() - new Date(order.deliveredAt || order.updatedAt).getTime()) / (1000 * 60 * 60 * 24) <= 7);
 
   return (
     <div className="min-h-screen py-8 px-4 sm:px-6 lg:px-8" style={{ background: 'var(--bg-base)' }}>
@@ -135,9 +135,13 @@ const OrderDetail = () => {
                 <FiRefreshCcw /> Request Return
               </Link>
             )}
-            <Link to="/support" className="px-4 py-2 rounded-xl text-sm font-bold flex items-center gap-2" style={{ background: 'var(--brand-gradient)', color: '#fff', border: '1px solid var(--border-color)' }}>
+            <button
+              onClick={() => openSupport(order)}
+              className="px-4 py-2 rounded-xl text-sm font-bold flex items-center gap-2 cursor-pointer transition-all shadow-xs"
+              style={{ background: 'var(--brand-gradient)', color: '#fff', border: '1px solid var(--border-color)' }}
+            >
               <FiHelpCircle /> Need Help?
-            </Link>
+            </button>
           </div>
         </div>
 

@@ -144,8 +144,9 @@ const Register = () => {
     };
     window.addEventListener('message', messageListener);
 
+    const authBaseUrl = import.meta.env.DEV ? '' : (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/+$/, '')
     window.open(
-      `${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/auth/google`,
+      `${authBaseUrl}/api/auth/google`,
       'Google Login',
       `width=${width},height=${height},left=${left},top=${top}`
     )

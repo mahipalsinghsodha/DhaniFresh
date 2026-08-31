@@ -61,6 +61,11 @@ const chatSessionSchema = new mongoose.Schema({
     ref: 'Order',
     default: null,
   },
+  language: {
+    type: String,
+    enum: ['en', 'hi'],
+    default: 'en',
+  },
   // Rating submitted by user after chat closes
   rating: {
     score: { type: Number, min: 1, max: 5 },

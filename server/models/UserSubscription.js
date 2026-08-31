@@ -46,8 +46,8 @@ const userSubscriptionSchema = new mongoose.Schema({
   timestamps: true
 });
 
-// Index for looking up subscriptions by razorpay id easily in webhooks
-userSubscriptionSchema.index({ razorpaySubscriptionId: 1 });
+// Index for looking up subscriptions by user easily
 userSubscriptionSchema.index({ user: 1 });
 
 module.exports = mongoose.model('UserSubscription', userSubscriptionSchema);
+

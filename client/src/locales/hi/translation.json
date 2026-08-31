@@ -26,7 +26,8 @@
     "seeAllResults": "सभी परिणाम देखें",
     "categories": "श्रेणियां",
     "shopByCategory": "श्रेणी के अनुसार खरीदें",
-    "allCategories": "सभी श्रेणियां"
+    "allCategories": "सभी श्रेणियां",
+    "blogs": "ब्लॉग"
   },
   "footer": {
     "contactHeading": "संपर्क करें",
@@ -44,6 +45,7 @@
     "quickDisclaimer": "अस्वीकरण",
     "quickSupport": "सहयोग",
     "quickFAQ": "सामान्य प्रश्न",
+    "bulkOrders": "थोक ऑर्डर और B2B",
     "newsletterTitle": "न्यूज़लेटर",
     "newsletterDesc": "ईमेल के माध्यम से नवीनतम अपडेट प्राप्त करें। इसे याद न करें। कभी भी सदस्यता समाप्त करें।",
     "newsletterSuccess": "आपने सदस्यता ले ली है! अपना इनबॉक्स जांचें।",

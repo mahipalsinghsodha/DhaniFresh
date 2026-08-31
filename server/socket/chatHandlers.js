@@ -7,7 +7,7 @@ const ChatMessage = require('../models/ChatMessage');
 const Notification = require('../models/Notification');
 const SupportTicket = require('../models/SupportTicket');
 const User = require('../models/User');
-const { handleBotMessage } = require('./aiBot');
+const { handleBotMessage, fetchOrderDetails } = require('./aiBot');
 const { sendSupportReplyEmail } = require('../services/emailService');
 const {
   isSupportStaff,
@@ -44,37 +44,46 @@ function registerChatHandlers(io, socket) {
   /* ── USER: Start a new chat session ─────────────────────────────────────── */
   socket.on('chat:start', async (data) => {
     try {
-      const { guestName, guestEmail, category = 'OTHER', orderId, subIssue, initialMessage } = data;
+      const { guestName, guestEmail, category = 'OTHER', orderId, subIssue, initialMessage, language = 'en' } = data;
+
+      let resolvedUserId = socket.user?._id || null;
+      if (!resolvedUserId && guestEmail) {
+        const foundUser = await User.findOne({ email: guestEmail.toLowerCase().trim() }).select('_id name').lean();
+        if (foundUser) resolvedUserId = foundUser._id;
+      }
 
       let validOrderId = null;
-      if (orderId && require('mongoose').Types.ObjectId.isValid(orderId)) {
-        validOrderId = orderId;
+      if (orderId) {
+        const ord = await fetchOrderDetails(orderId, resolvedUserId);
+        if (ord) validOrderId = ord._id;
       }
+
+      const activeLang = (language || '').startsWith('hi') ? 'hi' : 'en';
 
       const sessionId = generateSessionId();
       const session = await ChatSession.create({
         sessionId,
-        userId:     socket.user?._id || null,
+        userId:     resolvedUserId,
         guestName:  socket.user?.name || guestName,
         guestEmail: socket.user?.email || guestEmail,
         status:     'BOT_HANDLING',
         category,
         orderId:    validOrderId,
+        language:   activeLang,
       });
 
       // Join the session room
       socket.join(`session:${sessionId}`);
       socket.sessionId = sessionId;
 
-      socket.emit('chat:session_created', { sessionId, status: 'BOT_HANDLING' });
+      socket.emit('chat:session_created', { sessionId, status: 'BOT_HANDLING', language: activeLang });
 
       const userMsgContent = initialMessage || subIssue;
 
       if (userMsgContent) {
-        // If an initial message or quick reply option was selected
         const userMsg = await ChatMessage.create({
           sessionId,
-          senderId:   socket.user?._id || 'guest',
+          senderId:   resolvedUserId || 'guest',
           senderType: 'USER',
           senderName: socket.user?.name || session.guestName || 'Guest',
           content:    userMsgContent,
@@ -83,7 +92,6 @@ function registerChatHandlers(io, socket) {
 
         socket.emit('chat:message', userMsg);
 
-        // Check if user requested human escalation directly (e.g. "Talk to a person" / "Talk to a human agent")
         if (needsEscalation(userMsgContent)) {
           setTimeout(() => {
             escalateToHuman(io, socket, session, 'User requested human agent').catch(console.error);
@@ -97,22 +105,31 @@ function registerChatHandlers(io, socket) {
         return;
       }
 
-      // If an order ID is provided without a sub-issue (greet with order card)
+      // If an order ID is provided (greet with order card & status-aware buttons)
       if (validOrderId) {
         setTimeout(() => {
           handleBotMessage(session, '', io, socket, 'order_welcome').catch(console.error);
         }, 350);
       } else {
-        // Standard welcome message for non-order general support
+        // Standard welcome message with clean options
+        const isHindi = activeLang === 'hi';
+        const welcomeContent = isHindi
+          ? `नमस्ते ${socket.user?.name || guestName || ''}! 👋 मैं आपका दातासा सहायता असिस्टेंट हूँ। मैं आपकी क्या सहायता कर सकता हूँ?`
+          : `Hi ${socket.user?.name || guestName || 'there'}! 👋 I'm Daatasa Support Assistant. How can I help you today?`;
+
+        const quickReplies = isHindi
+          ? ['📦 मेरे ऑर्डर्स', '📍 ऑर्डर ट्रैक करें', '↩️ 7-दिन रिटर्न पॉलिसी', '🫙 शुद्ध बिलोना घी', '💬 एजेंट से बात करें']
+          : ['📦 My Orders', '📍 Track Order', '↩️ 7-Day Return Policy', '🫙 Pure Bilona Ghee', '💬 Talk to a human agent'];
+
         const welcomeMessage = await ChatMessage.create({
           sessionId,
           senderId:   'BOT',
           senderType: 'BOT',
-          senderName: 'Ghee Assistant',
-          content:    `Hi ${socket.user?.name || guestName || 'there'}! 👋 I'm Ghee Assistant. How can I help you today?`,
+          senderName: 'Daatasa Assistant',
+          content:    welcomeContent,
           messageType: 'QUICK_REPLY',
           metadata: {
-            options: getCategoryQuickReplies(category),
+            options: quickReplies,
           },
         });
 
@@ -124,16 +141,36 @@ function registerChatHandlers(io, socket) {
     }
   });
 
+  /* ── USER: Switch Language on the fly ───────────────────────────────────── */
+  socket.on('chat:set_language', async ({ sessionId, language }) => {
+    try {
+      if (!sessionId || !language) return;
+      const activeLang = language.startsWith('hi') ? 'hi' : 'en';
+      await ChatSession.findOneAndUpdate({ sessionId }, { language: activeLang });
+    } catch (err) {
+      console.error('[Chat] set_language error:', err);
+    }
+  });
+
   /* ── USER: Send a message ───────────────────────────────────────────────── */
   socket.on('chat:message', async (data) => {
     try {
-      const { sessionId, content, messageType = 'TEXT' } = data;
+      const { sessionId, content, messageType = 'TEXT', language } = data;
       if (!sessionId || !content?.trim()) return;
       if (content.trim().length > 5000) {
         return socket.emit('chat:error', { message: 'Message cannot exceed 5000 characters' });
       }
 
-      const session = await ChatSession.findOne({ sessionId });
+      const updateFields = { lastMessageAt: new Date() };
+      if (language) {
+        updateFields.language = language.startsWith('hi') ? 'hi' : 'en';
+      }
+
+      const session = await ChatSession.findOneAndUpdate(
+        { sessionId },
+        updateFields,
+        { new: true }
+      );
       if (!session) return socket.emit('chat:error', { message: 'Session not found' });
 
       // Save user message first so all agents can see what the user asked
@@ -164,18 +201,22 @@ function registerChatHandlers(io, socket) {
         lastMessageAt: new Date(),
       });
 
+      // If in WAITING and no agent is assigned yet, user can continue chatting with AI Bot
+      if (session.status === 'WAITING' && !session.agentId && !needsEscalation(content)) {
+        session.status = 'BOT_HANDLING';
+        await ChatSession.findOneAndUpdate({ sessionId }, { status: 'BOT_HANDLING' });
+        io.to(`session:${sessionId}`).emit('chat:status_changed', {
+          status: 'BOT_HANDLING',
+          message: 'Connected to AI Assistant',
+        });
+      }
+
       // If bot is handling, route to AI
       if (session.status === 'BOT_HANDLING') {
-        // Detect frustration: 3+ messages → escalate
-        const userMsgCount = await ChatMessage.countDocuments({ sessionId, senderType: 'USER' });
-        if (userMsgCount >= 3 && session.botMessageCount >= 3) {
-          await escalateToHuman(io, socket, session, 'Multiple unanswered questions detected.');
-          return;
-        }
-
         // Route to AI bot (async, don't await — bot responds via socket.io)
         handleBotMessage(session, content.trim(), io, socket).catch(console.error);
       }
+
     } catch (error) {
       console.error('[Chat] chat:message error:', error);
       socket.emit('chat:error', { message: 'Message failed to send.' });
@@ -413,14 +454,24 @@ async function escalateToHuman(io, socket, session, reason = 'User requested hum
   }
 }
 
-/* ── Quick reply options by category ────────────────────────────────────── */
-function getCategoryQuickReplies(category) {
+/* ── Quick reply options by category (Multilingual) ────────────────────── */
+function getCategoryQuickReplies(category, isHindi = false) {
+  if (isHindi) {
+    const mapHi = {
+      ORDER:   ['📍 ऑर्डर ट्रैक करें', '📋 ऑर्डर स्थिति', '❌ ऑर्डर कैंसिल करें', '💬 एजेंट से बात करें'],
+      PAYMENT: ['पेमेंट कट गया लेकिन ऑर्डर नहीं बना', 'रिफंड स्थिति', '💬 एजेंट से बात करें'],
+      RETURN:  ['↩️ रिटर्न प्रोसेस शुरू करें', 'रिफंड स्थिति', '7-दिन रिटर्न पॉलिसी', '💬 एजेंट से बात करें'],
+      PRODUCT: ['🫙 बिलोना घी कैसे बनता है?', '🥛 A2 गाय vs भैंस का घी', 'स्वास्थ्य लाभ', '💬 एजेंट से बात करें'],
+      OTHER:   ['📍 ऑर्डर ट्रैक करें', '↩️ रिटर्न पॉलिसी', '🫙 बिलोना घी कैसे बनता है?', '💬 एजेंट से बात करें'],
+    };
+    return mapHi[category] || mapHi.OTHER;
+  }
   const map = {
-    ORDER:   ['Where is my order?', 'Track with order ID', 'Cancel order'],
-    PAYMENT: ['Payment failed', 'Refund status', 'Wrong amount charged'],
-    RETURN:  ['Start a return', 'Refund status', 'Return policy'],
-    PRODUCT: ['Product ingredients', 'Storage tips', 'Place a new order'],
-    OTHER:   ['Track my order', 'Return policy', 'Talk to a person'],
+    ORDER:   ['📍 Track Order', '📋 Order Status', '❌ Cancel Order', '💬 Talk to a human agent'],
+    PAYMENT: ['Payment failed but deducted', 'Refund status', '💬 Talk to a human agent'],
+    RETURN:  ['↩️ Start Return Process', 'Refund status', 'Return policy', '💬 Talk to a human agent'],
+    PRODUCT: ['🫙 How is Bilona Ghee made?', '🥛 A2 Cow vs Buffalo Ghee', 'Health Benefits', '💬 Talk to a human agent'],
+    OTHER:   ['📍 Track Order', '↩️ Return policy', '🫙 How is Bilona Ghee made?', '💬 Talk to a human agent'],
   };
   return map[category] || map.OTHER;
 }

@@ -32,7 +32,9 @@ const OrderTimeline = ({ order }) => {
     }
   ];
 
-  if (paymentStatus === 'CANCELLED') {
+  const isCancelled = paymentStatus === 'CANCELLED' || order.orderStatus === 'CANCELLED';
+
+  if (isCancelled) {
     steps.push({
       id: 'cancelled',
       title: 'Order Cancelled',
@@ -47,10 +49,10 @@ const OrderTimeline = ({ order }) => {
       id: 'shipped',
       title: 'Shipped',
       icon: FiTruck,
-      history: getHistory(['SHIPPED']),
-      isActive: ['SHIPPED', 'DELIVERED'].includes(paymentStatus) || !!trackingNumber,
-      isCompleted: ['SHIPPED', 'DELIVERED'].includes(paymentStatus) || !!trackingNumber,
-      extraInfo: trackingNumber ? `Via ${shippingProvider} - Tracking: ${trackingNumber}` : null
+      history: getHistory(['SHIPPED', 'PICKED_UP', 'ASSIGNED_TO_COURIER']),
+      isActive: ['ASSIGNED_TO_COURIER', 'PICKED_UP', 'SHIPPED', 'OUT_FOR_DELIVERY', 'DELIVERED'].includes(order.orderStatus) || !!trackingNumber,
+      isCompleted: ['ASSIGNED_TO_COURIER', 'PICKED_UP', 'SHIPPED', 'OUT_FOR_DELIVERY', 'DELIVERED'].includes(order.orderStatus) || !!trackingNumber,
+      extraInfo: trackingNumber ? `Via ${shippingProvider || 'Courier'} - Tracking: ${trackingNumber}` : null
     });
 
     steps.push({
@@ -58,8 +60,8 @@ const OrderTimeline = ({ order }) => {
       title: 'Delivered',
       icon: FiCheckCircle,
       history: getHistory(['DELIVERED']),
-      isActive: isDelivered || paymentStatus === 'DELIVERED',
-      isCompleted: isDelivered || paymentStatus === 'DELIVERED'
+      isActive: order.orderStatus === 'DELIVERED' || isDelivered,
+      isCompleted: order.orderStatus === 'DELIVERED' || isDelivered
     });
   }
 

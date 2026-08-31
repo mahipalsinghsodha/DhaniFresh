@@ -1,60 +1,37 @@
-// socket/aiBot.js
-// AI-powered Support Assistant with Real-Time Order Intelligence
-// Handles: 📍 Track Order, 📋 Order Status, 🚚 Delivery Issue, ↩️ Return / Refund, ⚠️ Product Issue, 💬 Other Issue
-// Features: Live database lookups, 7-day return calculations, rich order cards, human escalation
-
-const Anthropic = require('@anthropic-ai/sdk').default;
+// server/socket/aiBot.js
+// ── Clean, 100% Self-Service Interactive Customer Support Engine ──────────────
 const ChatMessage = require('../models/ChatMessage');
 const ChatSession = require('../models/ChatSession');
 const Order = require('../models/Order');
 const Product = require('../models/Product');
 const mongoose = require('mongoose');
 
-// Only initialize Anthropic client if API key is present and looks valid (sk-ant-...)
-let anthropic = null;
-if (process.env.ANTHROPIC_API_KEY && process.env.ANTHROPIC_API_KEY.startsWith('sk-ant-')) {
-  try {
-    anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-  } catch (err) {
-    console.warn('[Bot] Anthropic SDK init failed, using enhanced Order Intelligence Engine:', err.message);
-  }
-}
-
 const BOT_NAME = 'Ghee Assistant';
 const BOT_SENDER = 'BOT';
 
-// ── Standard Quick Reply Options for Orders ──────────────────────────────────
-const ORDER_QUICK_REPLIES = [
-  '📍 Track Order',
-  '📋 Order Status',
-  '🚚 Delivery Issue',
-  '↩️ Return / Refund',
-  '⚠️ Product Issue',
-  '💬 Other Issue',
-];
-
-// ── Helper: Format Order Status ──────────────────────────────────────────────
+// ── Helper: Format Order Status (Bilingual) ──────────────────────────────────
 function getStatusDetails(order) {
   if (order.orderStatus === 'DELIVERED' || order.isDelivered) {
-    return { label: 'Delivered', key: 'DELIVERED', color: '#10b981', emoji: '✅' };
+    return { label: 'Delivered', labelHi: 'डिलीवर हो चुका है', key: 'DELIVERED', color: '#10b981', emoji: '✅' };
   }
   if (order.orderStatus === 'CANCELLED' || order.paymentStatus === 'CANCELLED') {
-    return { label: 'Cancelled', key: 'CANCELLED', color: '#ef4444', emoji: '❌' };
+    return { label: 'Cancelled', labelHi: 'रद्द (Cancelled)', key: 'CANCELLED', color: '#ef4444', emoji: '❌' };
   }
   if (order.orderStatus === 'OUT_FOR_DELIVERY') {
-    return { label: 'Out for Delivery', key: 'OUT_FOR_DELIVERY', color: '#3b82f6', emoji: '🚚' };
+    return { label: 'Out for Delivery', labelHi: 'आज डिलीवरी के लिए निकला है', key: 'OUT_FOR_DELIVERY', color: '#3b82f6', emoji: '🚚' };
   }
-  if (order.orderStatus === 'PICKED_UP' || order.orderStatus === 'ASSIGNED_TO_COURIER') {
-    return { label: 'Shipped (In Transit)', key: 'SHIPPED', color: '#6366f1', emoji: '📦' };
+  if (order.orderStatus === 'PICKED_UP' || order.orderStatus === 'ASSIGNED_TO_COURIER' || order.orderStatus === 'SHIPPED') {
+    return { label: 'Shipped (In Transit)', labelHi: 'भेज दिया गया है (रास्ते में है)', key: 'SHIPPED', color: '#6366f1', emoji: '📦' };
   }
   if (order.orderStatus === 'ACCEPTED' || order.isPaid) {
-    return { label: 'Processing', key: 'PROCESSING', color: '#f59e0b', emoji: '⏳' };
+    return { label: 'Processing', labelHi: 'तैयार किया जा रहा है (Processing)', key: 'PROCESSING', color: '#f59e0b', emoji: '⏳' };
   }
-  if (order.paymentStatus === 'COD_CONFIRMED' || order.orderStatus === 'PENDING_ACCEPTANCE') {
-    return { label: 'Order Confirmed', key: 'CONFIRMED', color: '#f59e0b', emoji: '📝' };
+  if (order.paymentStatus === 'COD_CONFIRMED' || order.orderStatus === 'PENDING_ACCEPTANCE' || order.orderStatus === 'CONFIRMED') {
+    return { label: 'Order Confirmed', labelHi: 'ऑर्डर कन्फर्म हो चुका है', key: 'CONFIRMED', color: '#f59e0b', emoji: '📝' };
   }
   return {
     label: order.orderStatus ? order.orderStatus.replace(/_/g, ' ') : 'Pending',
+    labelHi: order.orderStatus ? order.orderStatus.replace(/_/g, ' ') : 'लंबित (Pending)',
     key: order.orderStatus || 'PENDING',
     color: '#f59e0b',
     emoji: '⏳',
@@ -69,9 +46,7 @@ async function fetchOrderDetails(orderId, userId = null) {
       ? { _id: orderId }
       : { 'paymentInfo.razorpay_order_id': orderId };
 
-    // If userId provided, enforce ownership unless admin
     if (userId && mongoose.Types.ObjectId.isValid(userId)) {
-      // Find order
       const ord = await Order.findOne(query)
         .populate('orderItems.product', 'name image price weight')
         .lean();
@@ -88,87 +63,113 @@ async function fetchOrderDetails(orderId, userId = null) {
   }
 }
 
-// ── Deterministic Order Intelligence Engine ──────────────────────────────────
-async function generateOrderResponse(order, queryText, subIssue = null) {
+// ── Deterministic Bilingual Order Intelligence Engine ────────────────────────
+async function generateOrderResponse(order, queryText, subIssue = null, language = 'en') {
+  const isHindi = language === 'hi';
+
   if (!order) {
     return {
-      message: "I could not find the details for this order. Please make sure the order ID is correct, or speak with our support team.",
+      message: isHindi
+        ? "मुझे इस ऑर्डर का विवरण नहीं मिल सका। कृपया सुनिश्चित करें कि ऑर्डर ID सही है, या हमारी सहायता टीम से संपर्क करें।"
+        : "I could not find the details for this order. Please make sure the order ID is correct, or speak with our support team.",
       messageType: 'QUICK_REPLY',
-      metadata: { options: ['Talk to a human agent', 'Browse FAQs'] },
+      metadata: {
+        options: isHindi
+          ? ['💬 एजेंट से बात करें', 'सामान्य प्रश्न देखें']
+          : ['💬 Talk to a human agent', 'Browse FAQs'],
+      },
     };
   }
 
   const orderShortId = order._id.toString().slice(-6).toUpperCase();
   const statusInfo = getStatusDetails(order);
+  const currentStatusLabel = isHindi ? statusInfo.labelHi : statusInfo.label;
   const items = order.orderItems || [];
   const totalPrice = Number(order.totalPrice ?? 0).toLocaleString('en-IN');
-  const orderDate = new Date(order.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+  const orderDate = new Date(order.createdAt).toLocaleDateString(isHindi ? 'hi-IN' : 'en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
   const courierName = order.shippingProvider || 'Daatasa Express Courier';
   const trackingNo = order.trackingNumber || `DT-${order._id.toString().slice(-8).toUpperCase()}`;
 
   const itemSummary = items.map(i => {
-    const name = i.name || i.product?.name || 'Vedic Bilona Cow Ghee';
-    return `• ${name} (Qty: ${i.quantity || 1}, ₹${Number(i.price || 0).toLocaleString('en-IN')})`;
+    const name = i.name || i.product?.name || (isHindi ? 'वैदिक बिलोना गाय का घी' : 'Vedic Bilona Cow Ghee');
+    return isHindi
+      ? `• ${name} (मात्रा: ${i.quantity || 1}, ₹${Number(i.price || 0).toLocaleString('en-IN')})`
+      : `• ${name} (Qty: ${i.quantity || 1}, ₹${Number(i.price || 0).toLocaleString('en-IN')})`;
   }).join('\n');
 
   const orderCardMetadata = {
     orderId: order._id.toString(),
     status: statusInfo.key,
-    statusLabel: statusInfo.label,
+    statusLabel: currentStatusLabel,
     items: items.map(i => ({
-      name: i.name || i.product?.name || 'Vedic Cow Ghee',
+      name: i.name || i.product?.name || (isHindi ? 'वैदिक गाय का घी' : 'Vedic Cow Ghee'),
       quantity: i.quantity || 1,
       price: i.price,
       image: i.image || i.product?.image || null,
     })),
-    totalPrice: order.totalPrice,
-    paymentMethod: order.paymentMethod,
-    paymentStatus: order.paymentStatus,
-    trackingNumber: trackingNo,
-    shippingProvider: courierName,
-    isDelivered: order.isDelivered,
-    deliveredAt: order.deliveredAt,
-    createdAt: order.createdAt,
-    shippingAddress: order.shippingAddress,
+    totalPrice,
+    courierName,
+    trackingNo,
   };
 
   const textLower = (queryText || '').toLowerCase();
   const issueKey = (subIssue || '').toUpperCase();
+  
+  const statusKey = statusInfo.key;
+  const isDelivered = statusKey === 'DELIVERED';
+  const isShipped = statusKey === 'SHIPPED' || statusKey === 'OUT_FOR_DELIVERY';
+  const isCancelled = statusKey === 'CANCELLED';
+  const isOut = statusKey === 'OUT_FOR_DELIVERY';
 
-  // ── INTENT 1: TRACK ORDER ──────────────────────────────────────────────────
-  if (issueKey === 'TRACK' || textLower.includes('track') || textLower.includes('where is my order') || textLower.includes('location')) {
+  // ── INTENT 1: LIVE TRACKING ───────────────────────────────────────────────
+  if (issueKey === 'TRACK' || textLower.includes('track') || textLower.includes('ट्रैक') || textLower.includes('kahan') || textLower.includes('कहाँ')) {
     let trackingMsg = '';
+    let trackingOptions = [];
 
-    if (order.isDelivered || order.orderStatus === 'DELIVERED') {
-      const delDate = order.deliveredAt ? new Date(order.deliveredAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : orderDate;
-      trackingMsg = `📍 **Live Tracking — Order #${orderShortId}**\n\n` +
-        `✅ **Status**: Delivered on ${delDate}\n` +
-        `🚚 **Courier Partner**: ${courierName}\n` +
-        `📦 **Tracking / AWB**: ${trackingNo}\n` +
-        `🏠 **Delivered To**: ${order.shippingAddress?.city || 'Your destination'}, ${order.shippingAddress?.state || ''}\n\n` +
-        `Your pure Bilona Ghee package has been successfully delivered! Let us know if you have any questions or need a return.`;
-    } else if (order.orderStatus === 'OUT_FOR_DELIVERY') {
-      trackingMsg = `📍 **Live Tracking — Order #${orderShortId}**\n\n` +
-        `🚚 **Status**: Out for Delivery Today!\n` +
-        `🛵 **Courier**: ${courierName} (AWB: ${trackingNo})\n` +
-        `📞 The delivery executive will contact you on ${order.shippingAddress?.phone || 'your registered number'} before arrival.\n\n` +
-        `Your package is expected to arrive within a few hours.`;
-    } else if (order.orderStatus === 'PICKED_UP' || order.orderStatus === 'ASSIGNED_TO_COURIER') {
-      trackingMsg = `📍 **Live Tracking — Order #${orderShortId}**\n\n` +
-        `📦 **Status**: Shipped & In Transit\n` +
-        `🚚 **Courier**: ${courierName}\n` +
-        `🔖 **AWB / Tracking No**: ${trackingNo}\n` +
-        `⏱️ **Estimated Delivery**: 2–3 business days\n\n` +
-        `Your order is on the way from our Vedic bilona kitchen. You will receive SMS alerts as it reaches your city hub.`;
-    } else if (order.orderStatus === 'CANCELLED' || order.paymentStatus === 'CANCELLED') {
-      trackingMsg = `📍 **Order #${orderShortId} is Cancelled**\n\n` +
-        `This order was cancelled. If you were charged, a full refund of ₹${totalPrice} is initiated to your original payment method.`;
+    if (isDelivered) {
+      trackingMsg = isHindi
+        ? `📍 **ऑर्डर #${orderShortId} डिलीवर हो चुका है!**\n\n` +
+          `• **डिलीवरी पार्टनर**: ${courierName}\n` +
+          `• **ट्रैकिंग नंबर**: \`${trackingNo}\`\n` +
+          `• **डिलीवरी स्थिति**: ✅ सुरक्षित रूप से आपके पते पर पहुंचा दिया गया है।\n\n` +
+          `यदि आपको पैकेज में कोई समस्या आई है, तो आप 7 दिनों के भीतर रिटर्न/रिप्लेसमेंट ले सकते हैं:`
+        : `📍 **Order #${orderShortId} has been Delivered!**\n\n` +
+          `• **Courier Partner**: ${courierName}\n` +
+          `• **Tracking / AWB**: \`${trackingNo}\`\n` +
+          `• **Delivery Status**: ✅ Delivered safely to your shipping address.\n\n` +
+          `If you experienced any issue with your package, you can request a return within 7 days:`;
+      trackingOptions = isHindi
+        ? ['↩️ 7-दिन रिटर्न / रिफंड', '⚠️ उत्पाद समस्या', '💬 एजेंट से बात करें']
+        : ['↩️ 7-Day Return / Refund', '⚠️ Product Issue', '💬 Talk to a human agent'];
+    } else if (isShipped) {
+      trackingMsg = isHindi
+        ? `🚚 **ऑर्डर #${orderShortId} लाइव ट्रैकिंग**\n\n` +
+          `• **कूरियर**: ${courierName}\n` +
+          `• **AWB नंबर**: \`${trackingNo}\`\n` +
+          `• **स्थिति**: ${isOut ? '🛵 आज आपके पते पर डिलीवरी के लिए निकल चुका है!' : '📦 कूरियर हब से आपके शहर के लिए रवाना हो चुका है।'}\n` +
+          `• **अनुमानित डिलीवरी**: अगले 24–48 घंटों में।`
+        : `🚚 **Order #${orderShortId} Live Tracking**\n\n` +
+          `• **Courier**: ${courierName}\n` +
+          `• **AWB Number**: \`${trackingNo}\`\n` +
+          `• **Status**: ${isOut ? '🛵 Out for delivery today to your address!' : '📦 In transit to your nearest delivery hub.'}\n` +
+          `• **Estimated Delivery**: Within next 24–48 hours.`;
+      trackingOptions = isHindi
+        ? ['🚚 डिलीवरी सहायता', '❌ ऑर्डर कैंसिल (डोरस्टेप RTO)', '💬 एजेंट से बात करें']
+        : ['🚚 Delivery Help', '❌ Cancel Order (Doorstep RTO)', '💬 Talk to a human agent'];
     } else {
-      trackingMsg = `📍 **Live Tracking — Order #${orderShortId}**\n\n` +
-        `⏳ **Status**: Order Confirmed & Being Prepared\n` +
-        `🧈 We are hand-packing your fresh Vedic Bilona Ghee in glass jars to prevent transit leaks.\n` +
-        `🚚 **Expected Dispatch**: Within 24 hours via ${courierName}.\n` +
-        `You will receive the tracking number as soon as the courier picks it up.`;
+      // Confirmed, Processing, Pending
+      trackingMsg = isHindi
+        ? `⏳ **ऑर्डर #${orderShortId} ट्रैकिंग**\n\n` +
+          `• **स्थिति**: 📝 ${currentStatusLabel}\n` +
+          `• **तैयारी**: हमारा शुद्ध वैदिक बिलोना घी ताजगी के साथ पैक किया जा रहा है।\n` +
+          `• **डिस्पैच**: 24 घंटे के भीतर कूरियर को सौंपा जाएगा। डिस्पैच होते ही SMS/Email पर लाइव AWB ट्रैकिंग लिंक मिलेगा!`
+        : `⏳ **Order #${orderShortId} Tracking**\n\n` +
+          `• **Status**: 📝 ${statusInfo.label}\n` +
+          `• **Preparation**: Your fresh Vedic Bilona Ghee is being packaged.\n` +
+          `• **Dispatch**: Will be handed over to the courier within 24 hours. Tracking link will be sent via SMS/Email upon dispatch!`;
+      trackingOptions = isHindi
+        ? ['❌ ऑर्डर कैंसिल करें', '📋 ऑर्डर स्थिति', '💬 एजेंट से बात करें']
+        : ['❌ Cancel Order', '📋 Order Status', '💬 Talk to a human agent'];
     }
 
     return {
@@ -176,90 +177,305 @@ async function generateOrderResponse(order, queryText, subIssue = null) {
       messageType: 'ORDER_CARD',
       metadata: {
         ...orderCardMetadata,
-        options: ['📋 Order Status', '🚚 Delivery Issue', '↩️ Return / Refund', '💬 Talk to a human agent'],
+        options: trackingOptions,
       },
     };
   }
 
-  // ── INTENT 2: ORDER STATUS ────────────────────────────────────────────────
-  if (issueKey === 'STATUS' || textLower.includes('order status') || textLower.includes('status') || textLower.includes('details')) {
-    const statusMsg = `📋 **Order Details & Status — #${orderShortId}**\n\n` +
-      `• **Status**: ${statusInfo.emoji} ${statusInfo.label}\n` +
-      `• **Order Date**: ${orderDate}\n` +
-      `• **Payment**: ${order.paymentMethod === 'COD' ? 'Cash on Delivery' : 'Online Payment'} (${order.paymentStatus || 'COMPLETED'})\n` +
-      `• **Total Amount**: ₹${totalPrice}\n\n` +
-      `📦 **Items Ordered**:\n${itemSummary}\n\n` +
-      `📍 **Delivery Address**: ${order.shippingAddress?.street || ''}, ${order.shippingAddress?.city || ''}, ${order.shippingAddress?.state || ''} - ${order.shippingAddress?.zipCode || ''}`;
+  // ── INTENT 2: ORDER STATUS & INVOICE SUMMARY ───────────────────────────────
+  if (issueKey === 'STATUS' || textLower.includes('status') || textLower.includes('स्थिति') || textLower.includes('bill') || textLower.includes('बिल') || textLower.includes('invoice')) {
+    const address = order.shippingAddress;
+    const addrStr = address ? `${address.street || ''}, ${address.city || ''}, ${address.state || ''} - ${address.zipCode || ''}` : '';
+
+    const statusMsg = isHindi
+      ? `📋 **ऑर्डर #${orderShortId} सारांश**\n\n` +
+        `• **स्थिति**: ${statusInfo.emoji} ${currentStatusLabel}\n` +
+        `• **तारीख**: ${orderDate}\n` +
+        `• **कुल राशि**: ₹${totalPrice} (${order.isPaid ? '✅ ऑनलाइन भुगतान प्राप्त' : '💵 कैश ऑन डिलीवरी (COD)'})\n` +
+        (addrStr ? `• **डिलीवरी पता**: ${addrStr}\n\n` : '\n') +
+        `**ऑर्डर किए गए उत्पाद**:\n${itemSummary}`
+      : `📋 **Order #${orderShortId} Details**\n\n` +
+        `• **Status**: ${statusInfo.emoji} ${statusInfo.label}\n` +
+        `• **Date**: ${orderDate}\n` +
+        `• **Total Amount**: ₹${totalPrice} (${order.isPaid ? '✅ Paid Online' : '💵 Cash on Delivery'})\n` +
+        (addrStr ? `• **Delivery Address**: ${addrStr}\n\n` : '\n') +
+        `**Order Items**:\n${itemSummary}`;
+
+    let statusOptions = [];
+    if (isDelivered) {
+      statusOptions = isHindi
+        ? ['↩️ 7-दिन रिटर्न / रिफंड', '⚠️ उत्पाद समस्या', '💬 एजेंट से बात करें']
+        : ['↩️ 7-Day Return / Refund', '⚠️ Product Issue', '💬 Talk to a human agent'];
+    } else if (isCancelled) {
+      statusOptions = isHindi
+        ? ['💳 रिफंड स्थिति चेक करें', '🫙 नए उत्पाद देखें', '💬 एजेंट से बात करें']
+        : ['💳 Check Refund Status', '🫙 Browse Products', '💬 Talk to a human agent'];
+    } else {
+      statusOptions = isHindi
+        ? ['❌ ऑर्डर कैंसिल करें', '📍 ऑर्डर ट्रैक करें', '💬 एजेंट से बात करें']
+        : ['❌ Cancel Order', '📍 Track Order', '💬 Talk to a human agent'];
+    }
 
     return {
       message: statusMsg,
       messageType: 'ORDER_CARD',
       metadata: {
         ...orderCardMetadata,
-        options: ['📍 Track Order', '🚚 Delivery Issue', '↩️ Return / Refund', '⚠️ Product Issue', '💬 Talk to a human agent'],
+        options: statusOptions,
       },
     };
   }
 
-  // ── INTENT 3: DELIVERY ISSUE ──────────────────────────────────────────────
-  if (issueKey === 'DELIVERY' || textLower.includes('delivery') || textLower.includes('delay') || textLower.includes('late') || textLower.includes('not received')) {
-    let deliveryMsg = '';
+  // ── INTENT 3: CANCEL ORDER (Direct Self-Service DB Execution) ───────────────
+  const isCancelQuery =
+    issueKey === 'CANCEL' ||
+    textLower.includes('cancel') ||
+    textLower.includes('cancle') ||
+    textLower.includes('canr') ||
+    textLower.includes('cant') ||
+    textLower.includes('कैंसिल') ||
+    textLower.includes('रद्द') ||
+    textLower.includes('रोकें') ||
+    textLower.includes('बंद करें');
 
-    if (order.isDelivered || order.orderStatus === 'DELIVERED') {
-      deliveryMsg = `🚚 **Delivery Assistance — Order #${orderShortId}**\n\n` +
-        `Our records show your order was marked **Delivered**.\n\n` +
-        `If you have not received it yet:\n` +
-        `1. Please check with household members, neighbors, or building security.\n` +
-        `2. Sometimes couriers mark delivery slightly ahead of time during the final route.\n\n` +
-        `If it is still not found, I can immediately raise an urgent courier investigation or connect you with a live agent to resolve this.`;
-    } else if (order.orderStatus === 'OUT_FOR_DELIVERY') {
-      deliveryMsg = `🚚 **Order #${orderShortId} is Out for Delivery**\n\n` +
-        `Your package is currently in the delivery vehicle with ${courierName}. The courier executive will call on ${order.shippingAddress?.phone || 'your phone'} before delivery.\n\n` +
-        `If you need delivery rescheduled or special instructions, please let us know!`;
+  if (isCancelQuery) {
+    let cancelMsg = '';
+    let cancelOptions = [];
+
+    if (isCancelled) {
+      cancelMsg = isHindi
+        ? `❌ **ऑर्डर #${orderShortId} पहले से ही रद्द (Cancelled) है**\n\n` +
+          `• **रिफंड राशि**: ₹${totalPrice}\n` +
+          `• **रिफंड स्थिति**: यदि यह प्रीपेड ऑर्डर था, तो रिफंड 5–7 कार्य दिवसों में आपके मूल बैंक / UPI खाते में जमा हो जाएगा।\n\n` +
+          `अधिक सहायता के लिए नीचे सहायता टीम से संपर्क करें।`
+        : `❌ **Order #${orderShortId} is already Cancelled**\n\n` +
+          `• **Refund Amount**: ₹${totalPrice}\n` +
+          `• **Refund Status**: If this was a prepaid order, the refund is processed within 5–7 business days back to your original payment method.\n\n` +
+          `Feel free to connect with our support team for any questions.`;
+      cancelOptions = isHindi ? ['रिफंड स्थिति चेक करें', '💬 एजेंट से बात करें'] : ['Check Refund Status', '💬 Talk to a human agent'];
+    } else if (isDelivered) {
+      cancelMsg = isHindi
+        ? `📦 **ऑर्डर #${orderShortId} पहले ही डिलीवर हो चुका है**\n\n` +
+          `यह ऑर्डर डिलीवर हो चुका है, इसलिए इसे सीधे कैंसिल नहीं किया जा सकता।\n\n` +
+          `✨ **लेकिन आप 7 दिन के अंदर रिटर्न / रिफंड का अनुरोध कर सकते हैं!**\n` +
+          `• 100% रिफंड या फ्री रिप्लेसमेंट।\n` +
+          `• कूरियर द्वारा फ्री डोरस्टेप पिकअप।`
+        : `📦 **Order #${orderShortId} has already been Delivered**\n\n` +
+          `Since the package is already delivered, it cannot be cancelled directly.\n\n` +
+          `✨ **However, you can request a 7-Day Return / Refund!**\n` +
+          `• 100% refund of ₹${totalPrice} or free replacement.\n` +
+          `• Free doorstep reverse pickup by our courier.`;
+      cancelOptions = isHindi ? ['↩️ 7-दिन रिटर्न / रिफंड', '💬 एजेंट से बात करें'] : ['↩️ 7-Day Return / Refund', '💬 Talk to a human agent'];
+    } else if (isShipped) {
+      cancelMsg = isHindi
+        ? `🚚 **ऑर्डर #${orderShortId} रास्ते में है (डिस्पैच हो चुका है)**\n\n` +
+          `• **कूरियर**: ${courierName}\n` +
+          `• **AWB नंबर**: ${trackingNo}\n\n` +
+          `चूंकि पैकेज कूरियर पार्टनर को सौंपा जा चुका है, इसलिए सिस्टम से डायरेक्ट कैंसिलेशन संभव नहीं है।\n\n` +
+          `💡 **आसान समाधान**:\n` +
+          `जब डिलीवरी बॉय पैकेज लेकर आए, तो आप डिलीवरी लेने से मना (Refuse Delivery) कर सकते हैं। पैकेज वापस आते ही आपका ₹${totalPrice} का 100% रिफंड जारी कर दिया जाएगा!`
+        : `🚚 **Order #${orderShortId} is in Transit (Already Shipped)**\n\n` +
+          `• **Courier**: ${courierName}\n` +
+          `• **AWB Number**: ${trackingNo}\n\n` +
+          `Since the package is with the courier partner, online cancellation is no longer possible.\n\n` +
+          `💡 **Easy Solution**:\n` +
+          `You can simply refuse delivery at your doorstep when the courier arrives (Doorstep RTO). Once the package returns, your 100% refund of ₹${totalPrice} will be processed immediately!`;
+      cancelOptions = isHindi ? ['📍 ऑर्डर ट्रैक करें', '💬 एजेंट से बात करें'] : ['📍 Track Order', '💬 Talk to a human agent'];
     } else {
-      deliveryMsg = `🚚 **Delivery Assistance — Order #${orderShortId}**\n\n` +
-        `Your order is being handled with priority via **${courierName}** (Tracking: ${trackingNo}).\n` +
-        `• Standard delivery timeline: 3–5 business days across India.\n\n` +
-        `If you are experiencing an unexpected delay, tap "Talk to a human agent" below and our support team will expedite it with the courier manager.`;
+      // Pending, Confirmed, Processing
+      if (textLower.includes('पुष्टि') || textLower.includes('confirm order cancellation') || textLower.includes('confirm cancel')) {
+        try {
+          // 1. Restore stock for cancelled items
+          for (const item of (order.orderItems || [])) {
+            const pId = item.product?._id || item.product;
+            if (pId) {
+              await Product.findByIdAndUpdate(pId, { $inc: { stock: item.quantity || 1 } });
+            }
+          }
+
+          // 2. Razorpay refund (if paid online)
+          let refundInfo = null;
+          const isOnlinePaid =
+            order.paymentStatus === 'PAID' &&
+            order.paymentMethod === 'Online' &&
+            order.paymentInfo?.razorpay_payment_id;
+
+          if (isOnlinePaid) {
+            try {
+              const razorpay = require('../config/razorpay');
+              const refund = await razorpay.payments.refund(
+                order.paymentInfo.razorpay_payment_id,
+                { amount: Math.round(order.totalPrice * 100) }
+              );
+              refundInfo = {
+                refund_id: refund.id,
+                status: refund.status,
+                amount: order.totalPrice,
+                initiatedAt: new Date(),
+              };
+            } catch (refundErr) {
+              console.error('[Bot] Razorpay refund error:', refundErr.message);
+            }
+          }
+
+          // 3. Update database record with correct schema fields
+          const updatePayload = {
+            orderStatus: 'CANCELLED',
+            paymentStatus: 'CANCELLED',
+            cancelledAt: new Date(),
+            cancelledBy: 'user',
+            cancelReason: 'Cancelled via Self-Service Support Assistant',
+            $push: {
+              statusHistory: {
+                status: 'CANCELLED',
+                note: 'Order cancelled via Self-Service Support Assistant',
+                updatedAt: new Date(),
+              },
+            },
+          };
+          if (refundInfo) updatePayload.refundInfo = refundInfo;
+
+          const updatedDoc = await Order.findByIdAndUpdate(
+            order._id,
+            updatePayload,
+            { new: true }
+          ).populate('orderItems.product', 'name image price weight').lean();
+
+          if (updatedDoc) {
+            order = updatedDoc;
+          }
+
+          // 4. Update card metadata status to CANCELLED
+          orderCardMetadata.status = 'CANCELLED';
+          orderCardMetadata.statusLabel = isHindi ? 'रद्द (Cancelled)' : 'Cancelled';
+
+          // 5. Send cancellation email (non-fatal)
+          try {
+            const { sendCancelEmail } = require('../services/emailService');
+            const destEmail = order.user?.email || order.guestEmail;
+            const destName = order.user?.name || order.shippingAddress?.name || 'Customer';
+            if (destEmail) {
+              await sendCancelEmail({
+                to: destEmail,
+                userName: destName,
+                orderId: order._id.toString(),
+                totalPrice: order.totalPrice,
+                reason: 'Cancelled via Self-Service Support Assistant',
+                isRefund: !!refundInfo,
+                refundId: refundInfo?.refund_id,
+              });
+            }
+          } catch (emailErr) {
+            console.error('[Bot] Cancel email error:', emailErr.message);
+          }
+
+          // 6. Real-time socket broadcast to order room & user room
+          try {
+            const { getIO } = require('./index');
+            const ioInstance = getIO();
+            ioInstance.to(`order:${order._id}`).emit('orderStatusUpdated', updatedDoc || order);
+            if (order.user) {
+              const uId = (order.user._id || order.user).toString();
+              ioInstance.to(`user:${uId}`).emit('orderStatusUpdated', updatedDoc || order);
+            }
+          } catch (socketErr) {
+            console.error('[Bot] Socket broadcast error:', socketErr.message);
+          }
+
+          cancelMsg = isHindi
+            ? `✅ **ऑर्डर #${orderShortId} सफलतापूर्वक रद्द (Cancelled) कर दिया गया है!**\n\n` +
+              `• **रिफंड राशि**: ₹${totalPrice}\n` +
+              `• **रिफंड समयावधि**: 5–7 कार्य दिवस (सीधे आपके मूल भुगतान स्रोत / बैंक खाते में)\n\n` +
+              `पुष्टिकरण SMS/ईमेल भी भेज दिया गया है। यदि आपको कोई अन्य सहायता चाहिए, तो नीचे चुनें:`
+            : `✅ **Order #${orderShortId} has been Successfully Cancelled!**\n\n` +
+              `• **Refund Amount**: ₹${totalPrice}\n` +
+              `• **Refund Timeline**: 5–7 business days (Credited back to your original payment method)\n\n` +
+              `A confirmation notification has been sent. Feel free to explore our other products or connect with an agent:`;
+          cancelOptions = isHindi
+            ? ['🫙 शुद्ध घी उत्पाद देखें', '💬 एजेंट से बात करें']
+            : ['🫙 View Ghee Products', '💬 Talk to a human agent'];
+        } catch (cErr) {
+          console.error('[Bot] Order cancel error:', cErr.message);
+        }
+      } else {
+        cancelMsg = isHindi
+          ? `❌ **ऑर्डर #${orderShortId} कैंसिलेशन अनुरोध**\n\n` +
+            `• **ऑर्डर स्थिति**: ${statusInfo.emoji} ${currentStatusLabel}\n` +
+            `• **ऑर्डर मूल्य**: ₹${totalPrice} (${items.length} आइटम)\n\n` +
+            `✅ आपका ऑर्डर अभी डिस्पैच नहीं हुआ है, इसलिए इसे कैंसिल किया जा सकता है!\n\n` +
+            `• **रिफंड**: यदि प्रीपेड भुगतान किया था, तो पूरा ₹${totalPrice} आपके बैंक खाते / UPI में 5–7 दिनों में वापस आ जाएगा।\n\n` +
+            `कैंसिल करने के लिए नीचे **"❌ ऑर्डर कैंसिल की पुष्टि करें"** पर टैप करें:`
+          : `❌ **Cancellation Request — Order #${orderShortId}**\n\n` +
+            `• **Order Status**: ${statusInfo.emoji} ${statusInfo.label}\n` +
+            `• **Order Value**: ₹${totalPrice} (${items.length} item${items.length !== 1 ? 's' : ''})\n\n` +
+            `✅ Your order has not been dispatched yet and is eligible for cancellation!\n\n` +
+            `• **Refund**: If prepaid, the entire amount of ₹${totalPrice} will be credited back to your original payment method in 5–7 business days.\n\n` +
+            `To proceed, tap **"❌ Confirm Order Cancellation"** below:`;
+        cancelOptions = isHindi
+          ? ['❌ ऑर्डर कैंसिल की पुष्टि करें', '📍 ऑर्डर ट्रैक करें', '💬 एजेंट से बात करें']
+          : ['❌ Confirm Order Cancellation', '📍 Track Order', '💬 Talk to a human agent'];
+      }
     }
 
     return {
-      message: deliveryMsg,
+      message: cancelMsg,
       messageType: 'ORDER_CARD',
       metadata: {
         ...orderCardMetadata,
-        options: ['📍 Track Order', '💬 Talk to a human agent', '↩️ Return / Refund'],
+        options: cancelOptions,
       },
     };
   }
 
   // ── INTENT 4: RETURN / REFUND ─────────────────────────────────────────────
-  if (issueKey === 'RETURN' || textLower.includes('return') || textLower.includes('refund') || textLower.includes('exchange')) {
+  if (issueKey === 'RETURN' || textLower.includes('return') || textLower.includes('refund') || textLower.includes('रिटर्न') || textLower.includes('रिफंड') || textLower.includes('वापस')) {
     let returnMsg = '';
+    let returnOptions = [];
 
-    if (!order.isDelivered && order.orderStatus !== 'DELIVERED') {
-      returnMsg = `↩️ **Return / Refund — Order #${orderShortId}**\n\n` +
-        `Your order is currently **${statusInfo.label}** and has not been delivered yet.\n\n` +
-        `• Return requests can be initiated once the order is delivered.\n` +
-        `• If you wish to **cancel** this order before dispatch, please let us know or tap below to connect with an agent.`;
+    if (!isDelivered) {
+      returnMsg = isHindi
+        ? `↩️ **रिटर्न / रिफंड — ऑर्डर #${orderShortId}**\n\n` +
+          `आपका ऑर्डर अभी **${currentStatusLabel}** है और अभी तक डिलीवर नहीं हुआ है।\n\n` +
+          `• रिटर्न का अनुरोध ऑर्डर डिलीवर होने के बाद 7 दिनों के भीतर शुरू किया जा सकता है।\n` +
+          `• यदि आप डिस्पैच से पहले इस ऑर्डर को रद्द (Cancel) करना चाहते हैं, तो नीचे कैंसिलेशन चुनें:`
+        : `↩️ **Return / Refund — Order #${orderShortId}**\n\n` +
+          `Your order is currently **${statusInfo.label}** and has not been delivered yet.\n\n` +
+          `• Return requests can be initiated within 7 days once the package is delivered.\n` +
+          `• If you wish to cancel this order before dispatch, you can cancel below:`;
+      returnOptions = isHindi
+        ? ['❌ ऑर्डर कैंसिल करें', '📍 ऑर्डर ट्रैक करें', '💬 एजेंट से बात करें']
+        : ['❌ Cancel Order', '📍 Track Order', '💬 Talk to a human agent'];
     } else {
-      // Delivered order: check 7-day policy
-      const deliveryDate = order.deliveredAt ? new Date(order.deliveredAt) : new Date(order.updatedAt);
-      const daysPassed = Math.max(0, Math.floor((Date.now() - deliveryDate.getTime()) / (1000 * 60 * 60 * 24)));
+      const deliveryDate = order.deliveredAt ? new Date(order.deliveredAt) : new Date(order.updatedAt || order.createdAt);
+      const daysPassed = Math.floor((Date.now() - deliveryDate.getTime()) / (1000 * 60 * 60 * 24));
       const daysLeft = Math.max(0, 7 - daysPassed);
 
-      if (daysPassed <= 7) {
-        returnMsg = `↩️ **Return / Refund Eligibility — Order #${orderShortId}**\n\n` +
-          `✅ **Eligible for Return** (${daysLeft} day${daysLeft === 1 ? '' : 's'} remaining in your 7-day window).\n\n` +
-          `Under Daatasa's **7-Day Bilona Ghee Guarantee**:\n` +
-          `• 100% refund of ₹${totalPrice} or free replacement.\n` +
-          `• Free doorstep reverse pickup by our courier.\n` +
-          `• Refunds are credited back to your original payment method / bank account within 5–7 business days.\n\n` +
-          `To proceed, please tell us the reason for return, or tap below to speak with an agent.`;
+      if (daysLeft > 0) {
+        returnMsg = isHindi
+          ? `↩️ **7-दिन रिटर्न व रिफंड गारंटी — ऑर्डर #${orderShortId}**\n\n` +
+            `✅ **यह ऑर्डर रिटर्न के लिए पात्र है** (7-दिन की विंडो में से ${daysLeft} दिन शेष हैं)।\n\n` +
+            `दातासा की **7-दिन बिलोना घी गारंटी** के तहत:\n` +
+            `• ₹${totalPrice} का 100% रिफंड या फ्री रिप्लेसमेंट।\n` +
+            `• हमारे कूरियर द्वारा फ्री डोरस्टेप रिवर्स पिकअप।\n` +
+            `• रिफंड 5–7 कार्य दिवसों में सीधे आपके मूल भुगतान स्रोत में ट्रांसफर हो जाता है।`
+          : `↩️ **7-Day Return & Refund Guarantee — Order #${orderShortId}**\n\n` +
+            `✅ **Eligible for Return** (${daysLeft} day${daysLeft === 1 ? '' : 's'} remaining in your 7-day window).\n\n` +
+            `Under Daatasa's **7-Day Bilona Ghee Guarantee**:\n` +
+            `• 100% refund of ₹${totalPrice} or free replacement.\n` +
+            `• Free doorstep reverse pickup by our courier.\n` +
+            `• Refunds are credited back to your original payment method within 5–7 business days.`;
+        returnOptions = isHindi
+          ? ['💬 एजेंट से रिटर्न शुरू करें', '⚠️ उत्पाद समस्या (फ्री रिप्लेसमेंट)', '💬 एजेंट से बात करें']
+          : ['💬 Start Return with Agent', '⚠️ Product Issue (Replacement)', '💬 Talk to a human agent'];
       } else {
-        returnMsg = `↩️ **Return / Refund Policy — Order #${orderShortId}**\n\n` +
-          `This order was delivered on ${deliveryDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })} (${daysPassed} days ago).\n\n` +
-          `Our standard return policy is 7 days from delivery. If you experienced an exceptional quality issue, please connect with our support team below for a manual review.`;
+        returnMsg = isHindi
+          ? `↩️ **रिटर्न पॉलिसी — ऑर्डर #${orderShortId}**\n\n` +
+            `यह ऑर्डर डिलीवरी के 7 दिन से अधिक पुराना हो चुका है।\n\n` +
+            `यदि आपको कोई विशेष गुणवत्ता संबंधी समस्या आई है, तो मैन्युअल समीक्षा के लिए नीचे सहायता टीम से संपर्क करें।`
+          : `↩️ **Return Policy — Order #${orderShortId}**\n\n` +
+            `This order was delivered more than 7 days ago.\n\n` +
+            `If you experienced an exceptional quality issue, please connect with our support team below for assistance.`;
+        returnOptions = isHindi ? ['💬 एजेंट से बात करें', 'सामान्य प्रश्न देखें'] : ['💬 Talk to a human agent', 'Browse FAQs'];
       }
     }
 
@@ -268,204 +484,184 @@ async function generateOrderResponse(order, queryText, subIssue = null) {
       messageType: 'ORDER_CARD',
       metadata: {
         ...orderCardMetadata,
-        options: ['Start Return Process', 'Check Refund Policy', '💬 Talk to a human agent'],
+        options: returnOptions,
       },
     };
   }
 
-  // ── INTENT 5: PRODUCT ISSUE ───────────────────────────────────────────────
-  if (issueKey === 'PRODUCT' || textLower.includes('product') || textLower.includes('damaged') || textLower.includes('broken') || textLower.includes('leak') || textLower.includes('quality') || textLower.includes('smell') || textLower.includes('taste')) {
-    const productMsg = `⚠️ **Product Quality Guarantee — Order #${orderShortId}**\n\n` +
-      `You ordered:\n${itemSummary}\n\n` +
-      `At Daatasa, every batch of A2 Vedic Cow Ghee is traditionally prepared using the bilona method with zero chemicals.\n\n` +
-      `✨ **Our Guarantee**:\n` +
-      `If you received a broken seal, leakage, broken jar, or have any purity/quality concern, we offer an **Instant Free Replacement** or **100% Refund**!\n\n` +
-      `📷 **Quick Tip**: You can upload a photo of the package using the 📎 image attachment icon below, and our team will process your replacement right away.`;
+  // ── INTENT 5: PRODUCT QUALITY ISSUE ───────────────────────────────────────
+  if (issueKey === 'PRODUCT' || textLower.includes('product') || textLower.includes('उत्पाद') || textLower.includes('damaged') || textLower.includes('leak') || textLower.includes('खराब')) {
+    const productMsg = isHindi
+      ? `⚠️ **उत्पाद गुणवत्ता गारंटी — ऑर्डर #${orderShortId}**\n\n` +
+        `आपने ऑर्डर किया था:\n${itemSummary}\n\n` +
+        `दातासा में A2 वैदिक गाय का घी बिना किसी केमिकल के पारंपरिक बिलोना विधि से तैयार किया जाता है।\n\n` +
+        `✨ **हमारी गारंटी**:\n` +
+        `यदि आपको टूटा हुआ सील, लीकेज, टूटा हुआ जार मिला है या शुद्धता से जुड़ी कोई चिंता है, तो हम **तुरंत फ्री रिप्लेसमेंट** या **100% रिफंड** प्रदान करते हैं!\n\n` +
+        `📷 आप नीचे एजेंट से चैट करके फोटो साझा कर सकते हैं, हमारी टीम तुरंत प्रक्रिया शुरू करेगी।`
+      : `⚠️ **Product Quality Guarantee — Order #${orderShortId}**\n\n` +
+        `You ordered:\n${itemSummary}\n\n` +
+        `At Daatasa, every batch of A2 Vedic Cow Ghee is traditionally prepared using the bilona method with zero chemicals.\n\n` +
+        `✨ **Our Guarantee**:\n` +
+        `If you received a broken seal, leakage, broken jar, or have any purity/quality concern, we offer an **Instant Free Replacement** or **100% Refund**!\n\n` +
+        `📷 You can chat with an agent below and share a photo for instant processing.`;
 
     return {
       message: productMsg,
       messageType: 'ORDER_CARD',
       metadata: {
         ...orderCardMetadata,
-        options: ['Request Free Replacement', 'Request Refund', '💬 Talk to a human agent'],
+        options: isHindi
+          ? ['💬 एजेंट से रिप्लेसमेंट मांगें', '📍 ऑर्डर ट्रैक करें', '💬 एजेंट से बात करें']
+          : ['💬 Request Replacement with Agent', '📍 Track Order', '💬 Talk to a human agent'],
       },
     };
   }
 
-  // ── INTENT 6: OTHER ISSUE ─────────────────────────────────────────────────
-  if (issueKey === 'OTHER' || textLower.includes('other issue') || textLower === 'other' || textLower.includes('other query') || textLower.includes('another issue')) {
-    const otherMsg = `💬 **Other Queries & Assistance — Order #${orderShortId}**\n\n` +
-      `Please select what you need help with regarding this order:\n\n` +
-      `• 🧾 **Tax Invoice & Bill**: View or email GST tax invoice\n` +
-      `• ❌ **Cancel Order**: Check cancellation eligibility and refunds\n` +
-      `• 📍 **Change Delivery Address**: Update shipping address or phone number\n` +
-      `• 💳 **Payment & Billing**: Payment status, duplicate charges, or COD queries\n` +
-      `• 💬 **Talk to a Human Agent**: Live chat with support\n\n` +
-      `Or feel free to type any specific question directly below!`;
-
-    return {
-      message: otherMsg,
-      messageType: 'ORDER_CARD',
-      metadata: {
-        ...orderCardMetadata,
-        options: [
-          '🧾 Download Invoice',
-          '❌ Cancel Order',
-          '📍 Change Address / Phone',
-          '💳 Payment Query',
-          '💬 Talk to a human agent',
-        ],
-      },
-    };
+  // ── INTENT 6: DEFAULT ORDER WELCOME (Status-Aware Contextual Menu) ────────
+  let contextOptions = [];
+  if (isDelivered) {
+    contextOptions = isHindi
+      ? ['↩️ 7-दिन रिटर्न / रिफंड', '⚠️ उत्पाद समस्या (रिप्लेसमेंट)', '📋 इनवॉइस व सारांश', '💬 एजेंट से बात करें']
+      : ['↩️ 7-Day Return / Refund', '⚠️ Product Issue (Replacement)', '📋 Invoice & Summary', '💬 Talk to a human agent'];
+  } else if (isCancelled) {
+    contextOptions = isHindi
+      ? ['💳 रिफंड स्थिति चेक करें', '🫙 शुद्ध घी उत्पाद देखें', '💬 एजेंट से बात करें']
+      : ['💳 Check Refund Status', '🫙 View Ghee Products', '💬 Talk to a human agent'];
+  } else if (isShipped) {
+    contextOptions = isHindi
+      ? ['📍 लाइव कूरियर ट्रैकिंग', '🚚 डिलीवरी सहायता', '❌ ऑर्डर कैंसिल (डोरस्टेप RTO)', '💬 एजेंट से बात करें']
+      : ['📍 Live Courier Tracking', '🚚 Delivery Assistance', '❌ Cancel Order (Doorstep RTO)', '💬 Talk to a human agent'];
+  } else {
+    // Pending, Confirmed, Processing (Prominent CANCEL button!)
+    contextOptions = isHindi
+      ? ['❌ ऑर्डर कैंसिल करें', '📍 ऑर्डर ट्रैक करें', '📋 ऑर्डर स्थिति', '💬 एजेंट से बात करें']
+      : ['❌ Cancel Order', '📍 Track Order', '📋 Order Status', '💬 Talk to a human agent'];
   }
 
-  // ── INTENT 6A: INVOICE / BILL ─────────────────────────────────────────────
-  if (textLower.includes('invoice') || textLower.includes('bill') || textLower.includes('receipt') || textLower.includes('tax')) {
-    const invoiceMsg = `🧾 **Tax Invoice & Receipt — Order #${orderShortId}**\n\n` +
-      `• **Invoice Number**: ${order.invoiceNumber || 'INV-' + orderShortId}\n` +
-      `• **Order Total**: ₹${totalPrice} (Inclusive of GST)\n` +
-      `• **Payment Mode**: ${order.paymentMethod === 'COD' ? 'Cash on Delivery (COD)' : 'Online Payment (Prepaid)'}\n` +
-      `• **Order Date**: ${orderDate}\n\n` +
-      `📄 You can view and download your full GST invoice from **Order History**. If you require a business GST invoice with your company GSTIN, tap below to have our support team email it to you.`;
-
-    return {
-      message: invoiceMsg,
-      messageType: 'ORDER_CARD',
-      metadata: {
-        ...orderCardMetadata,
-        options: ['Email Invoice', '💬 Talk to a human agent', '📋 Order Status'],
-      },
-    };
-  }
-
-  // ── INTENT 6B: CANCEL ORDER ───────────────────────────────────────────────
-  if (textLower.includes('cancel order') || textLower.includes('cancellation') || textLower.includes('cancel')) {
-    let cancelMsg = '';
-
-    if (order.orderStatus === 'CANCELLED' || order.paymentStatus === 'CANCELLED') {
-      cancelMsg = `❌ **Order #${orderShortId} is Already Cancelled**\n\n` +
-        `This order was previously cancelled. If any payment was deducted, a refund of ₹${totalPrice} has been processed back to your original payment source (takes 5–7 business days to reflect).`;
-    } else if (order.isDelivered || order.orderStatus === 'DELIVERED') {
-      cancelMsg = `❌ **Cannot Cancel — Order #${orderShortId} is Delivered**\n\n` +
-        `This order has already been delivered. Instead of cancellation, you can initiate a return under our **7-Day Quality Guarantee** for a full refund or free replacement!`;
-    } else if (order.orderStatus === 'SHIPPED' || order.orderStatus === 'PICKED_UP' || order.orderStatus === 'OUT_FOR_DELIVERY') {
-      cancelMsg = `🚚 **Order #${orderShortId} Has Already Shipped**\n\n` +
-        `Your package is already in transit with **${courierName}** (AWB: ${trackingNo}).\n\n` +
-        `• Direct cancellation is not possible once dispatched.\n` +
-        `• **Easy Refund**: You can simply reject/refuse delivery at your doorstep when the delivery partner arrives. The package will return to us, and 100% refund of ₹${totalPrice} will be credited to your payment method automatically.`;
-    } else {
-      cancelMsg = `❌ **Cancel Order Request — #${orderShortId}**\n\n` +
-        `Your order is currently **${statusInfo.label}** and has not been dispatched yet.\n\n` +
-        `Would you like to cancel this order? Once confirmed, a full refund of ₹${totalPrice} will be processed immediately.`;
-    }
-
-    return {
-      message: cancelMsg,
-      messageType: 'ORDER_CARD',
-      metadata: {
-        ...orderCardMetadata,
-        options: order.orderStatus === 'DELIVERED'
-          ? ['↩️ Return / Refund', '💬 Talk to a human agent']
-          : ['Confirm Cancellation', 'Keep My Order', '💬 Talk to a human agent'],
-      },
-    };
-  }
-
-  // ── INTENT 6C: CHANGE ADDRESS OR PHONE ────────────────────────────────────
-  if (textLower.includes('change address') || textLower.includes('update address') || textLower.includes('change phone') || textLower.includes('phone number') || textLower.includes('shipping address')) {
-    let addrMsg = '';
-
-    if (order.orderStatus === 'SHIPPED' || order.orderStatus === 'PICKED_UP' || order.orderStatus === 'OUT_FOR_DELIVERY' || order.isDelivered) {
-      addrMsg = `📍 **Address Modification — Order #${orderShortId}**\n\n` +
-        `Your order is currently **${statusInfo.label}** with ${courierName}.\n\n` +
-        `Shipping manifests are locked once the courier receives the package. However, when the delivery executive calls you on ${order.shippingAddress?.phone || 'your phone'} before delivery, you can coordinate landmark directions or a neighbor drop-off directly with them!`;
-    } else {
-      addrMsg = `📍 **Change Delivery Details — Order #${orderShortId}**\n\n` +
-        `Current address on file:\n` +
-        `• **Address**: ${order.shippingAddress?.street || ''}, ${order.shippingAddress?.city || ''}, ${order.shippingAddress?.state || ''} - ${order.shippingAddress?.zipCode || ''}\n` +
-        `• **Phone**: ${order.shippingAddress?.phone || 'N/A'}\n\n` +
-        `Since your order is still in packaging, we can update it! Please type your new address or phone number below, or tap to speak with our support agent.`;
-    }
-
-    return {
-      message: addrMsg,
-      messageType: 'ORDER_CARD',
-      metadata: {
-        ...orderCardMetadata,
-        options: ['💬 Talk to a human agent', '📍 Track Order', '📋 Order Status'],
-      },
-    };
-  }
-
-  // ── INTENT 6D: PAYMENT & BILLING ──────────────────────────────────────────
-  if (textLower.includes('payment') || textLower.includes('charged') || textLower.includes('deduct') || textLower.includes('double') || textLower.includes('razorpay') || textLower.includes('billing')) {
-    const payMsg = `💳 **Payment & Billing Summary — Order #${orderShortId}**\n\n` +
-      `• **Payment Method**: ${order.paymentMethod === 'COD' ? 'Cash on Delivery (COD)' : 'Prepaid Online'}\n` +
-      `• **Payment Status**: ${order.paymentStatus || 'COMPLETED'}\n` +
-      `• **Total Amount**: ₹${totalPrice}\n\n` +
-      `💡 **Quick Help**:\n` +
-      `1. **Double Deductions**: If money was deducted twice by mistake, Razorpay automatically reverses the duplicate charge within 24–48 hours.\n` +
-      `2. **COD to UPI**: You can pay via UPI scanner directly to the courier agent upon delivery.\n` +
-      `3. If you need a payment verification check, our support agent is ready to assist!`;
-
-    return {
-      message: payMsg,
-      messageType: 'ORDER_CARD',
-      metadata: {
-        ...orderCardMetadata,
-        options: ['💬 Talk to a human agent', '📋 Order Status', '📍 Track Order'],
-      },
-    };
-  }
-
-  // ── INTENT 7: DEFAULT ORDER WELCOME ───────────────────────────────────────
-  const welcomeMsg = `🫙 **Order #${orderShortId} Details Loaded**\n\n` +
-    `• **Items**: ${items.length} item${items.length !== 1 ? 's' : ''} (₹${totalPrice})\n` +
-    `• **Status**: ${statusInfo.emoji} ${statusInfo.label}\n` +
-    `• **Order Date**: ${orderDate}\n\n` +
-    `How can I assist you with this order? Select an option below or type your query:`;
+  const welcomeMsg = isHindi
+    ? `मैं इस ऑर्डर के बारे में आपकी क्या सहायता कर सकता हूँ? नीचे विकल्प चुनें:`
+    : `How can I assist you with this order? Select an option below:`;
 
   return {
     message: welcomeMsg,
     messageType: 'ORDER_CARD',
     metadata: {
       ...orderCardMetadata,
-      options: ORDER_QUICK_REPLIES,
+      options: contextOptions,
     },
   };
 }
 
-// ── Claude System Prompt (When API is configured) ────────────────────────────
-const SYSTEM_PROMPT = `You are "Ghee Assistant", the intelligent and caring AI customer support specialist for Daatasa, 
-an authentic Indian brand selling 100% pure A2 Vedic Gir Cow Bilona Ghee and organic health products.
+// ── Helper: Smart Order Finder for Logged-in & Guest Users ──────────────────
+async function resolveUserOrder(session, userMessage) {
+  const text = (userMessage || '').trim();
+  const textLower = text.toLowerCase();
 
-Capabilities:
-1. Provide real-time order status, tracking, and courier updates
-2. Handle return/refund eligibility checks (7-day bilona ghee guarantee)
-3. Answer questions about ghee making (traditional bilona method from curd, hand-churned, wooden churner, earthen pots)
-4. Address delivery delays, damaged packaging, or broken seals with replacements/refunds
-5. Escalate complex requests to human agents when appropriate (needs_human=true)
+  // 1. If session already has orderId, fetch that order
+  if (session.orderId) {
+    const ord = await fetchOrderDetails(session.orderId, session.userId);
+    if (ord) return { order: ord, multipleOrders: null };
+  }
 
-Rules:
-- Be polite, knowledgeable, and concise (under 3 sentences per point)
-- Always use ₹ for Indian Rupee prices
-- Plain text / clear markdown formatting
-- Respond in JSON format:
-{
-  "message": "...",
-  "needs_human": false,
-  "quick_replies": ["📍 Track Order", "📋 Order Status", "🚚 Delivery Issue", "↩️ Return / Refund", "⚠️ Product Issue", "💬 Other Issue"],
-  "order_card": null
-}`;
+  // 2. Check if user typed or clicked a specific order ID in message
+  const hexMatch = text.match(/\b([0-9a-fA-F]{24})\b/);
+  const shortIdMatch = text.match(/#([0-9a-zA-Z]{5,8})\b/) || text.match(/\b([0-9a-zA-Z]{6,8})\b/);
 
-// ── Main Bot Entry Point ────────────────────────────────────────────────────
+  if (hexMatch) {
+    const found = await fetchOrderDetails(hexMatch[1]);
+    if (found) {
+      await ChatSession.findOneAndUpdate({ sessionId: session.sessionId }, { orderId: found._id });
+      return { order: found, multipleOrders: null };
+    }
+  }
+
+  if (shortIdMatch && (textLower.includes('order') || text.includes('#') || text.length <= 14)) {
+    const shortCode = (shortIdMatch[1] || shortIdMatch[0]).replace('#', '').toLowerCase();
+    const query = session.userId ? { user: session.userId } : {};
+    const orders = await Order.find(query)
+      .sort({ createdAt: -1 })
+      .limit(20)
+      .populate('orderItems.product', 'name image price weight')
+      .lean();
+
+    const matched = orders.find(o =>
+      o._id.toString().toLowerCase().endsWith(shortCode) ||
+      (o.orderIdString && o.orderIdString.toLowerCase().includes(shortCode))
+    );
+
+    if (matched) {
+      await ChatSession.findOneAndUpdate({ sessionId: session.sessionId }, { orderId: matched._id });
+      return { order: matched, multipleOrders: null };
+    }
+  }
+
+  // 3. If user is logged in (session.userId) and asks about orders/tracking/cancel/refund
+  const isOrderQuery =
+    textLower.includes('track') ||
+    textLower.includes('order') ||
+    textLower.includes('status') ||
+    textLower.includes('delivery') ||
+    textLower.includes('cancel') ||
+    textLower.includes('cancle') ||
+    textLower.includes('canr') ||
+    textLower.includes('cant') ||
+    textLower.includes('refund') ||
+    textLower.includes('return') ||
+    textLower.includes('kahan') ||
+    textLower.includes('kab aayega') ||
+    textLower.includes('mera order') ||
+    textLower.includes('ऑर्डर') ||
+    textLower.includes('ट्रैक') ||
+    textLower.includes('कैंसिल') ||
+    textLower.includes('रद्द') ||
+    textLower.includes('वापस') ||
+    textLower.includes('रिफंड') ||
+    textLower.includes('रिटर्न');
+
+  if (session.userId && isOrderQuery) {
+    const userOrders = await Order.find({ user: session.userId })
+      .sort({ createdAt: -1 })
+      .limit(5)
+      .populate('orderItems.product', 'name image price weight')
+      .lean();
+
+    if (userOrders.length === 1) {
+      await ChatSession.findOneAndUpdate({ sessionId: session.sessionId }, { orderId: userOrders[0]._id });
+      return { order: userOrders[0], multipleOrders: null };
+    } else if (userOrders.length > 1) {
+      return { order: null, multipleOrders: userOrders };
+    } else {
+      return { order: null, multipleOrders: [], noOrders: true };
+    }
+  }
+
+  // 4. Guest user asks to track order without an ID
+  if (!session.userId && (textLower.includes('track order') || textLower.includes('where is my order') || textLower === '📍 track order')) {
+    return { order: null, multipleOrders: null, promptGuestOrderId: true };
+  }
+
+  return { order: null, multipleOrders: null };
+}
+
+// ── Main Self-Service Support Bot Entry Point ─────────────────────────────────
 async function handleBotMessage(session, userMessage, io, socket, mode = 'normal') {
   try {
     const sessionId = session.sessionId;
 
+    // Detect user/website language (Hindi vs English)
+    const userText = (userMessage || '').trim();
+    let sessionLang = session.language;
+    if (!sessionLang) {
+      const dbSession = await ChatSession.findOne({ sessionId }).select('language').lean();
+      sessionLang = dbSession?.language;
+    }
+    const hasDevanagari = /[\u0900-\u097F]/.test(userText);
+    const isUserHindi = hasDevanagari || (sessionLang && sessionLang.toLowerCase().startsWith('hi'));
+    const activeLang = isUserHindi ? 'hi' : 'en';
+
     // Check if user requested human escalation
-    const lower = (userMessage || '').toLowerCase();
-    if (lower.includes('human') || lower.includes('agent') || lower.includes('person') || lower.includes('speak to someone') || lower.includes('talk to a human')) {
+    const lower = userText.toLowerCase();
+    if (lower.includes('human') || lower.includes('agent') || lower.includes('person') || lower.includes('speak to someone') || lower.includes('talk to a human') || lower.includes('एजेंट')) {
       const { escalateToHuman } = require('./chatHandlers');
       await escalateToHuman(io, socket, session, 'User requested human agent');
       return;
@@ -474,17 +670,121 @@ async function handleBotMessage(session, userMessage, io, socket, mode = 'normal
     // Emit typing indicator
     io.to(`session:${sessionId}`).emit('chat:agent_typing', { isTyping: true });
 
-    // Fetch order if associated with session
-    let order = null;
-    if (session.orderId) {
-      order = await fetchOrderDetails(session.orderId, session.userId);
+    // ── Check Order Context & Auto-Discovery ──────────────────────────────────
+    const { order, multipleOrders, noOrders, promptGuestOrderId } = await resolveUserOrder(session, userMessage);
+
+    // If multiple recent orders found for logged in user
+    if (multipleOrders && multipleOrders.length > 0) {
+      const isHindi = activeLang === 'hi';
+      const options = multipleOrders.map(o => {
+        const shortId = o._id.toString().slice(-6).toUpperCase();
+        const status = getStatusDetails(o).label;
+        const price = Number(o.totalPrice || 0).toLocaleString('en-IN');
+        return isHindi
+          ? `📦 ऑर्डर #${shortId} (₹${price} • ${status})`
+          : `📦 Order #${shortId} (₹${price} • ${status})`;
+      });
+      options.push(isHindi ? '💬 एजेंट से बात करें' : '💬 Talk to a human agent');
+
+      await new Promise(r => setTimeout(r, 400));
+      io.to(`session:${sessionId}`).emit('chat:agent_typing', { isTyping: false });
+
+      const contentMsg = isHindi
+        ? `📋 **आपके हालिया ऑर्डर्स**\n\nआपके खाते में ${multipleOrders.length} ऑर्डर्स मिले हैं। आप किस ऑर्डर की जानकारी देखना चाहते हैं? नीचे चुनें:`
+        : `📋 **Your Recent Orders**\n\nFound ${multipleOrders.length} orders on your account. Which order would you like help with? Select below:`;
+
+      const botMsg = await ChatMessage.create({
+        sessionId,
+        senderId: BOT_SENDER,
+        senderType: 'BOT',
+        senderName: BOT_NAME,
+        content: contentMsg,
+        messageType: 'QUICK_REPLY',
+        metadata: { options },
+      });
+
+      await ChatSession.findOneAndUpdate(
+        { sessionId },
+        { $inc: { botMessageCount: 1 }, lastMessageAt: new Date() }
+      );
+
+      io.to(`session:${sessionId}`).emit('chat:message', botMsg);
+      return;
+    }
+
+    // If logged in user asked for order but has zero orders
+    if (noOrders) {
+      const isHindi = activeLang === 'hi';
+      await new Promise(r => setTimeout(r, 400));
+      io.to(`session:${sessionId}`).emit('chat:agent_typing', { isTyping: false });
+
+      const contentMsg = isHindi
+        ? `🔍 **कोई एक्टिव ऑर्डर नहीं मिला**\n\nआपके अकाउंट पर अभी कोई ऑर्डर नहीं मिला।\n\nक्या आप शुद्ध वैदिक A2 बिलोना घी के बारे में जानना चाहते हैं? नीचे विकल्प चुनें:`
+        : `🔍 **No Active Orders Found**\n\nNo orders were found on your account.\n\nWould you like to explore our pure Vedic A2 Bilona Ghee? Select an option below:`;
+
+      const defaultOptions = isHindi
+        ? ['🫙 बिलोना घी कैसे बनता है?', '🥛 A2 गाय vs भैंस का घी', '↩️ रिटर्न पॉलिसी', '💬 एजेंट से बात करें']
+        : ['🫙 How is Bilona Ghee made?', '🥛 A2 Cow vs Buffalo Ghee', '↩️ Return Policy', '💬 Talk to a human agent'];
+
+      const botMsg = await ChatMessage.create({
+        sessionId,
+        senderId: BOT_SENDER,
+        senderType: 'BOT',
+        senderName: BOT_NAME,
+        content: contentMsg,
+        messageType: 'QUICK_REPLY',
+        metadata: {
+          options: defaultOptions,
+        },
+      });
+
+      await ChatSession.findOneAndUpdate(
+        { sessionId },
+        { $inc: { botMessageCount: 1 }, lastMessageAt: new Date() }
+      );
+
+      io.to(`session:${sessionId}`).emit('chat:message', botMsg);
+      return;
+    }
+
+    // If guest user asks to track order without an ID
+    if (promptGuestOrderId) {
+      const isHindi = activeLang === 'hi';
+      await new Promise(r => setTimeout(r, 400));
+      io.to(`session:${sessionId}`).emit('chat:agent_typing', { isTyping: false });
+
+      const contentMsg = isHindi
+        ? `📦 **लाइव ऑर्डर ट्रैकिंग**\n\nअपना ऑर्डर ट्रैक करने के लिए कृपया अपना **6-अंकों का ऑर्डर ID** (जैसे \`#1A2B3C\`) यहाँ संदेश में लिखें। मैं तुरंत लाइव स्थिति चेक कर दूँगा!`
+        : `📦 **Live Order Tracking**\n\nTo track your package, please type your **6-Digit Order ID** (e.g. \`#1A2B3C\`) below. I will fetch the live courier status immediately!`;
+
+      const botMsg = await ChatMessage.create({
+        sessionId,
+        senderId: BOT_SENDER,
+        senderType: 'BOT',
+        senderName: BOT_NAME,
+        content: contentMsg,
+        messageType: 'QUICK_REPLY',
+        metadata: {
+          options: isHindi
+            ? ['💬 एजेंट से बात करें', '↩️ रिटर्न पॉलिसी']
+            : ['💬 Talk to a human agent', '↩️ Return Policy'],
+        },
+      });
+
+      await ChatSession.findOneAndUpdate(
+        { sessionId },
+        { $inc: { botMessageCount: 1 }, lastMessageAt: new Date() }
+      );
+
+      io.to(`session:${sessionId}`).emit('chat:message', botMsg);
+      return;
     }
 
     // ── Route 1: Order-specific query / welcome ──────────────────────────────
     if (order || mode === 'order_welcome' || mode === 'auto_fetch_order') {
-      const response = await generateOrderResponse(order, userMessage, mode === 'order_welcome' ? null : null);
+      const response = await generateOrderResponse(order, userMessage, mode === 'order_welcome' ? null : null, activeLang);
 
-      await new Promise(r => setTimeout(r, 600)); // Natural typing pause
+      await new Promise(r => setTimeout(r, 400));
       io.to(`session:${sessionId}`).emit('chat:agent_typing', { isTyping: false });
 
       const botMsg = await ChatMessage.create({
@@ -506,121 +806,117 @@ async function handleBotMessage(session, userMessage, io, socket, mode = 'normal
       return;
     }
 
-    // ── Route 2: Claude AI Bot (if Anthropic API key is valid) ───────────────
-    if (anthropic) {
-      try {
-        const history = await ChatMessage.find({ sessionId })
-          .sort({ createdAt: -1 })
-          .limit(8)
-          .lean();
-
-        const messages = history.reverse().filter(m => m.senderType === 'USER' || m.senderType === 'BOT').map(m => ({
-          role: m.senderType === 'USER' ? 'user' : 'assistant',
-          content: m.content,
-        }));
-
-        if (userMessage) {
-          messages.push({ role: 'user', content: userMessage });
-        }
-
-        const cleanMessages = [];
-        for (const msg of messages) {
-          const last = cleanMessages[cleanMessages.length - 1];
-          if (last && last.role === msg.role) {
-            last.content += '\n' + msg.content;
-          } else {
-            cleanMessages.push({ ...msg });
-          }
-        }
-
-        if (cleanMessages.length === 0 || cleanMessages[cleanMessages.length - 1].role !== 'user') {
-          cleanMessages.push({ role: 'user', content: userMessage || 'Hello' });
-        }
-
-        const aiResponse = await anthropic.messages.create({
-          model: 'claude-sonnet-4-5',
-          max_tokens: 800,
-          system: SYSTEM_PROMPT,
-          messages: cleanMessages,
-        });
-
-        const textBlock = aiResponse.content.find(b => b.type === 'text');
-        let botResponse = { message: textBlock?.text || 'How can I assist you further?', needs_human: false };
-
-        try {
-          const jsonMatch = textBlock?.text?.match(/\{[\s\S]*\}/);
-          if (jsonMatch) botResponse = JSON.parse(jsonMatch[0]);
-        } catch { }
-
-        io.to(`session:${sessionId}`).emit('chat:agent_typing', { isTyping: false });
-
-        if (botResponse.needs_human) {
-          const { escalateToHuman } = require('./chatHandlers');
-          await escalateToHuman(io, socket, session, 'Bot escalation');
-          return;
-        }
-
-        const botMsg = await ChatMessage.create({
-          sessionId,
-          senderId: BOT_SENDER,
-          senderType: 'BOT',
-          senderName: BOT_NAME,
-          content: botResponse.message,
-          messageType: botResponse.quick_replies?.length ? 'QUICK_REPLY' : 'TEXT',
-          metadata: botResponse.quick_replies?.length ? { options: botResponse.quick_replies } : {},
-        });
-
-        await ChatSession.findOneAndUpdate(
-          { sessionId },
-          { $inc: { botMessageCount: 1 }, lastMessageAt: new Date() }
-        );
-
-        io.to(`session:${sessionId}`).emit('chat:message', botMsg);
-        return;
-      } catch (anthropicErr) {
-        console.warn('[Bot] Anthropic API failed, falling back to rule-based engine:', anthropicErr.message);
-      }
-    }
-
-    // ── Route 3: General Intelligent Fallback ────────────────────────────────
-    await handleGeneralFallback(session, userMessage, io, socket);
+    // ── Route 2: General Deterministic Self-Service Help ─────────────────────
+    await handleGeneralSelfService(session, userMessage, io, socket, activeLang);
 
   } catch (error) {
     console.error('[Bot] handleBotMessage error:', error.message);
     io.to(`session:${session.sessionId}`).emit('chat:agent_typing', { isTyping: false });
 
+    const isHindi = (session.language === 'hi');
     const botMsg = await ChatMessage.create({
       sessionId: session.sessionId,
       senderId: BOT_SENDER,
       senderType: 'BOT',
       senderName: BOT_NAME,
-      content: "I'm here to help! Please select an option below or speak with our live support team.",
+      content: isHindi
+        ? "मैं आपकी सहायता के लिए यहाँ हूँ! कृपया नीचे एक विकल्प चुनें या हमारे लाइव एजेंट से संपर्क करें।"
+        : "I'm here to help! Please select an option below or speak with our live support team.",
       messageType: 'QUICK_REPLY',
-      metadata: { options: ['📍 Track Order', '📋 Order Status', '↩️ Return / Refund', '💬 Talk to a human agent'] },
+      metadata: {
+        options: isHindi
+          ? ['📍 ऑर्डर ट्रैक करें', '📋 ऑर्डर स्थिति', '↩️ रिटर्न / रिफंड', '💬 एजेंट से बात करें']
+          : ['📍 Track Order', '📋 Order Status', '↩️ Return / Refund', '💬 Talk to a human agent'],
+      },
     });
 
     io.to(`session:${session.sessionId}`).emit('chat:message', botMsg);
   }
 }
 
-// ── General Fallback for Non-Order Queries ──────────────────────────────────
-async function handleGeneralFallback(session, userMessage, io, socket) {
+// ── General Self-Service Knowledge Base (100% Deterministic & Instant) ───────
+async function handleGeneralSelfService(session, userMessage, io, socket, activeLang = 'en') {
   const lower = (userMessage || '').toLowerCase();
-  let reply = "Hello! 👋 I'm your Daatasa Ghee Assistant. How can I help you today?";
-  let options = ['📍 Track Order', '↩️ Return Policy', '🫙 How is Bilona Ghee made?', '💬 Talk to a human agent'];
+  const isHindi = activeLang === 'hi';
 
-  if (lower.includes('bilona') || lower.includes('method') || lower.includes('how') || lower.includes('cow') || lower.includes('gir') || lower.includes('pure')) {
-    reply = "🧈 **Daatasa Traditional Bilona Ghee** is made from grass-fed A2 Gir Cow milk using the ancient Vedic method:\n1. Fresh whole milk is cultured into curd.\n2. Curd is bi-directionally hand-churned with a wooden bilona to extract makkhan (butter).\n3. Butter is slow-cooked on firewood in brass containers to yield 100% golden, aromatic granular ghee with zero preservatives!";
-    options = ['Order Bilona Ghee', 'Health Benefits of A2 Ghee', '📍 Track Order', '💬 Talk to a human agent'];
-  } else if (lower.includes('return') || lower.includes('refund') || lower.includes('policy')) {
-    reply = "↩️ **Daatasa Return Policy**:\nWe offer a **7-Day Quality Guarantee** from the date of delivery. If you are unsatisfied or received a damaged jar, we offer free doorstep pickup and 100% refund in 5–7 business days.";
-    options = ['Start a Return', '📍 Track Order', '💬 Talk to a human agent'];
-  } else if (lower.includes('shipping') || lower.includes('delivery') || lower.includes('time')) {
-    reply = "🚚 **Shipping Policy**:\n• Free delivery across India on orders above ₹500.\n• Metro cities receive deliveries within 2–3 business days; other cities within 3–5 business days.";
-    options = ['📍 Track Order', '📋 Order Status', '💬 Talk to a human agent'];
+  let reply = isHindi
+    ? "नमस्ते! 👋 मैं आपका दातासा सहायता असिस्टेंट हूँ। कृपया नीचे दिए गए विकल्पों में से चुनें:"
+    : "Hello! 👋 I'm your Daatasa Support Assistant. Please select an option below:";
+
+  let options = isHindi
+    ? ['📍 ऑर्डर ट्रैक करें', '↩️ 7-दिन रिटर्न पॉलिसी', '🫙 बिलोना घी कैसे बनता है?', '🚚 डिलीवरी का समय', '💬 एजेंट से बात करें']
+    : ['📍 Track Order', '↩️ 7-Day Return Policy', '🫙 How Bilona Ghee is made?', '🚚 Delivery Timeline', '💬 Talk to a human agent'];
+
+  if (lower.includes('bilona') || lower.includes('method') || lower.includes('cow') || lower.includes('gir') || lower.includes('pure') || lower.includes('बिलोना') || lower.includes('घी') || lower.includes('गाय')) {
+    reply = isHindi
+      ? "🧈 **दातासा 5-चरणीय पारंपरिक वैदिक बिलोना विधि**:\n\n" +
+        "1. ताजे A2 देशी गाय के दूध को धीमी आंच पर उबाला जाता है।\n" +
+        "2. रात भर मिट्टी के बर्तनों में दही जमाया जाता है।\n" +
+        "3. लकड़ी के पारंपरिक बिलोने (रावणो) से हाथ से मथकर ताजा मक्खन निकाला जाता है।\n" +
+        "4. पीतल के बर्तनों में उपलों की धीमी आंच पर पकाकर 100% शुद्ध, दानेदार और सुगंधित घी बनता है!\n\n" +
+        "✨ 100% प्राकृतिक, रसायन-मुक्त, बिना किसी प्रिजर्वेटिव के।"
+      : "🧈 **Daatasa 5-Step Traditional Vedic Bilona Process**:\n\n" +
+        "1. Fresh A2 Desi Cow milk is slow-boiled in traditional vessels.\n" +
+        "2. Cultured into rich curd (Dahi) overnight in clay pots.\n" +
+        "3. Bi-directionally hand-churned using wooden bilona to extract fresh butter.\n" +
+        "4. Slow-simmered on low firewood heat to produce 100% pure, aromatic granular ghee!\n\n" +
+        "✨ 100% Pure, Natural, Zero Chemicals, Zero Preservatives.";
+    options = isHindi
+      ? ['🥛 A2 गाय vs भैंस का घी', '↩️ 7-दिन रिटर्न पॉलिसी', '💬 एजेंट से बात करें']
+      : ['🥛 A2 Cow vs Buffalo Ghee', '↩️ 7-Day Return Policy', '💬 Talk to a human agent'];
+  } else if (lower.includes('buffalo') || lower.includes('भैंस') || lower.includes('cow vs') || lower.includes('a2')) {
+    reply = isHindi
+      ? "🥛 **A2 गाय का घी vs भैंस का बिलोना घी**:\n\n" +
+        "• **A2 गिर/थारपारकर गाय घी (₹1,450 / 1L)**: गहरा सुनहरा रंग, हल्का और पचने में आसान, बच्चों, बुजुर्गों, याददाश्त और दिल की सेहत के लिए सर्वोत्तम।\n" +
+        "• **भैंस का बिलोना घी (₹950 / 1L)**: गाढ़ा सफेद दानेदार, प्राकृतिक ऊर्जा और हेल्दी फैट्स से भरपूर, वजन बढ़ाने और मिठाइयों के लिए उत्तम।"
+      : "🥛 **A2 Cow Ghee vs Buffalo Bilona Ghee**:\n\n" +
+        "• **A2 Gir/Tharparkar Cow Ghee (₹1,450 / 1L)**: Deep golden color, light and easy to digest. Best for memory, digestion, heart health, and immunity.\n" +
+        "• **Pure Buffalo Bilona Ghee (₹950 / 1L)**: Rich white granular texture, high natural energy. Ideal for fitness, healthy weight gain, and traditional sweets.";
+    options = isHindi
+      ? ['🫙 बिलोना घी कैसे बनता है?', '🚚 डिलीवरी का समय', '💬 एजेंट से बात करें']
+      : ['🫙 How Bilona Ghee is made?', '🚚 Delivery Timeline', '💬 Talk to a human agent'];
+  } else if (lower.includes('return') || lower.includes('refund') || lower.includes('policy') || lower.includes('रिटर्न') || lower.includes('रिफंड') || lower.includes('वापस')) {
+    reply = isHindi
+      ? "↩️ **दातासा 7-दिन शुद्धता और गुणवत्ता गारंटी**:\n\n" +
+        "• हम डिलीवरी की तारीख से **7 दिनों की 100% गारंटी** प्रदान करते हैं।\n" +
+        "• यदि जार टूटा हुआ है, लीकेज है या कोई गुणवत्ता समस्या है, तो हम **फ्री डोरस्टेप रिवर्स पिकअप** और 100% रिफंड (5–7 कार्य दिवस) या **फ्री रिप्लेसमेंट** देते हैं।"
+      : "↩️ **Daatasa 7-Day Quality Guarantee**:\n\n" +
+        "• We offer a **100% 7-Day Quality Guarantee** from the date of delivery.\n" +
+        "• If you receive a damaged jar, leakage, or quality issue, we provide **Free Doorstep Reverse Pickup** and 100% refund (5–7 business days) or **Free Replacement**.";
+    options = isHindi
+      ? ['📍 ऑर्डर ट्रैक करें', '💬 एजेंट से बात करें']
+      : ['📍 Track Order', '💬 Talk to a human agent'];
+  } else if (lower.includes('shipping') || lower.includes('delivery') || lower.includes('time') || lower.includes('डिलीवरी') || lower.includes('पहुंचेगा') || lower.includes('दिन')) {
+    reply = isHindi
+      ? "🚚 **शिपिंग व डिलीवरी समयावधि**:\n\n" +
+        "• ₹500 से अधिक के सभी ऑर्डर्स पर **फ्री डिलीवरी**।\n" +
+        "• **मेट्रो शहर**: 2–3 कार्य दिवस।\n" +
+        "• **अन्य शहर व कस्बे**: 3–5 कार्य दिवस।\n" +
+        "• ऑर्डर डिस्पैच होते ही SMS और ईमेल पर लाइव कूरियर ट्रैकिंग AWB लिंक भेजा जाता है।"
+      : "🚚 **Shipping & Delivery Timelines**:\n\n" +
+        "• **Free Shipping** across India on all orders above ₹500.\n" +
+        "• **Metro Cities**: 2–3 business days.\n" +
+        "• **Rest of India**: 3–5 business days.\n" +
+        "• Live courier tracking AWB link is shared via SMS/Email upon dispatch.";
+    options = isHindi
+      ? ['📍 ऑर्डर ट्रैक करें', '↩️ 7-दिन रिटर्न पॉलिसी', '💬 एजेंट से बात करें']
+      : ['📍 Track Order', '↩️ 7-Day Return Policy', '💬 Talk to a human agent'];
+  } else if (lower.includes('payment') || lower.includes('पेमेंट') || lower.includes('भुगतान') || lower.includes('upi') || lower.includes('cod')) {
+    reply = isHindi
+      ? "💳 **भुगतान और सुरक्षा**:\n\n" +
+        "• हम UPI (GPay, PhonePe, Paytm), क्रेडिट/डेबिट कार्ड, नेट बैंकिंग और COD स्वीकार करते हैं।\n" +
+        "• यदि पैसे कट गए लेकिन ऑर्डर नहीं बना, तो बैंक 48 घंटों में स्वतः रिफंड कर देता है।\n" +
+        "• सभी ऑनलाइन ट्रांजेक्शन Razorpay 256-bit SSL द्वारा सुरक्षित हैं।"
+      : "💳 **Payments & Security**:\n\n" +
+        "• We accept UPI (GPay, PhonePe, Paytm), Cards, Net Banking, and Cash on Delivery (COD).\n" +
+        "• If money was deducted for a failed payment, banks auto-refund within 48 hours.\n" +
+        "• All transactions are 100% secure via Razorpay 256-bit SSL encryption.";
+    options = isHindi
+      ? ['📍 ऑर्डर ट्रैक करें', '💬 एजेंट से बात करें']
+      : ['📍 Track Order', '💬 Talk to a human agent'];
   }
 
-  await new Promise(r => setTimeout(r, 600));
+  await new Promise(r => setTimeout(r, 400));
   io.to(`session:${session.sessionId}`).emit('chat:agent_typing', { isTyping: false });
 
   const botMsg = await ChatMessage.create({
@@ -645,5 +941,4 @@ module.exports = {
   handleBotMessage,
   fetchOrderDetails,
   generateOrderResponse,
-  ORDER_QUICK_REPLIES,
 };

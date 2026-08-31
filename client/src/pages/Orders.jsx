@@ -6,22 +6,41 @@ import { toast } from 'react-toastify'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   FiPackage, FiPrinter, FiChevronDown, FiMapPin, FiCalendar,
-  FiCreditCard, FiCheckCircle, FiTruck, FiClock, FiShoppingBag,
+  FiCreditCard, FiCheckCircle, FiCheck, FiTruck, FiClock, FiShoppingBag,
   FiX, FiAlertCircle, FiRefreshCw, FiArrowRight, FiStar, FiHelpCircle, FiRotateCcw
 } from 'react-icons/fi'
 import api from '../api/axios'
 import { useCart } from '../context/CartContext'
 import OrderTimeline from '../components/OrderTimeline'
 import { useSocket } from '../hooks/useSocket'
+import { useSupportStore } from '../store/support'
 import { formatOrderId } from '../utils/formatOrderId'
 
 const getStatus = (order) => {
-  if (order.isDelivered) return { label: 'Delivered', cls: 'badge-success', icon: FiCheckCircle }
-  if (order.paymentStatus === 'CANCELLED') return { label: 'Cancelled', cls: 'badge-muted', icon: FiX }
-  if (order.paymentStatus === 'FAILED') return { label: 'Failed', cls: 'badge-danger', icon: FiAlertCircle }
-  if (order.paymentStatus === 'EXPIRED') return { label: 'Expired', cls: 'badge-muted', icon: FiClock }
-  if (['SHIPPED', 'ASSIGNED_TO_COURIER', 'OUT_FOR_DELIVERY'].includes(order.orderStatus)) return { label: 'Shipped', cls: 'badge-info', icon: FiTruck }
-  if (order.orderStatus === 'ACCEPTED' || order.acceptedAt) return { label: 'Confirmed', cls: 'badge-info', icon: FiCheck }
+  if (order.orderStatus === 'CANCELLED' || order.paymentStatus === 'CANCELLED') {
+    return { label: 'Cancelled', cls: 'badge-muted', icon: FiX }
+  }
+  if (order.orderStatus === 'RETURNED' || order.returnRequest?.status === 'RETURN_APPROVED') {
+    return { label: 'Returned', cls: 'badge-muted', icon: FiRotateCcw }
+  }
+  if (order.paymentStatus === 'FAILED') {
+    return { label: 'Failed', cls: 'badge-danger', icon: FiAlertCircle }
+  }
+  if (order.paymentStatus === 'EXPIRED') {
+    return { label: 'Expired', cls: 'badge-muted', icon: FiClock }
+  }
+  if (order.orderStatus === 'DELIVERED' || order.isDelivered) {
+    return { label: 'Delivered', cls: 'badge-success', icon: FiCheckCircle }
+  }
+  if (order.orderStatus === 'OUT_FOR_DELIVERY') {
+    return { label: 'Out for Delivery', cls: 'badge-info', icon: FiTruck }
+  }
+  if (['SHIPPED', 'ASSIGNED_TO_COURIER', 'PICKED_UP'].includes(order.orderStatus)) {
+    return { label: 'In Transit', cls: 'badge-info', icon: FiTruck }
+  }
+  if (order.orderStatus === 'ACCEPTED' || order.acceptedAt) {
+    return { label: 'Confirmed', cls: 'badge-info', icon: FiCheck }
+  }
   return { label: 'Pending Acceptance', cls: 'badge-warning', icon: FiClock }
 }
 
@@ -342,6 +361,7 @@ const ReturnModal = ({ order, onClose, onConfirm, loading }) => {
 
 const Orders = () => {
   const { user } = useAuth()
+  const openSupport = useSupportStore(state => state.openSupport)
   const [searchParams] = useSearchParams()
   const highlightId = searchParams.get('highlight')
   const { socket } = useSocket()
@@ -360,6 +380,7 @@ const Orders = () => {
   const [returnLoading, setReturnLoading] = useState(false)
   const [reviewModal,   setReviewModal]   = useState(null)
   const [reviewedIds,   setReviewedIds]   = useState(new Set())
+  const [supportDrawerOrder, setSupportDrawerOrder] = useState(null)
 
   useEffect(() => { if (user) fetchOrders() }, [user])
 
@@ -382,8 +403,12 @@ const Orders = () => {
     })
 
     const handleStatusUpdate = (updatedOrder) => {
-      setOrders(prev => prev.map(o => o._id === updatedOrder._id ? updatedOrder : o))
-      toast.success(`Order #${updatedformatOrderId(order)} status updated!`)
+      if (updatedOrder?._id) {
+        setOrders(prev => prev.map(o => o._id === updatedOrder._id ? { ...o, ...updatedOrder } : o))
+        toast.info(`Order #${formatOrderId(updatedOrder)} status updated!`)
+      } else {
+        fetchOrders()
+      }
     }
 
     socket.on('orderStatusUpdated', handleStatusUpdate)
@@ -754,12 +779,12 @@ const Orders = () => {
                                 {reordering === o._id ? 'Adding...' : 'Reorder'}
                               </button>
                             )}
-                            <Link
-                              to={`/support?orderId=${o._id}`}
-                              className="px-6 py-3 bg-white text-brand-primary border border-brand-primary/20 hover:bg-brand-primary/5 font-bold rounded-full text-sm transition-all flex items-center gap-2"
+                            <button
+                              onClick={() => openSupport(o)}
+                              className="px-6 py-3 bg-white text-brand-primary border border-brand-primary/20 hover:bg-brand-primary/5 font-bold rounded-full text-sm transition-all flex items-center gap-2 cursor-pointer shadow-xs"
                             >
                               <FiHelpCircle size={16} /> Need Help?
-                            </Link>
+                            </button>
                             {(!['PENDING', 'CANCELLED', 'FAILED'].includes(o.paymentStatus)) && (
                               <button
                                 onClick={() => printInvoice(o)}

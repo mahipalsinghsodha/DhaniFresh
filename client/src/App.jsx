@@ -1,4 +1,4 @@
-import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom'
+import { BrowserRouter as Router, Routes, Route, Navigate, useLocation, useSearchParams } from 'react-router-dom'
 import { lazy, Suspense, useEffect, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { HelmetProvider } from 'react-helmet-async'
@@ -15,9 +15,10 @@ import 'react-toastify/dist/ReactToastify.css'
 import WhatsAppButton from './components/WhatsAppButton'
 import { useThemeStore } from './store/theme'
 import NotificationDrawer from './components/NotificationDrawer'
-import SupportWidget from './components/SupportWidget'
 import api from './api/axios'
 import { ConfirmProvider } from './context/ConfirmContext'
+import SupportPopup from './components/chat/SupportPopup'
+import { useSupportStore } from './store/support'
 
 
 // ─── Lazy Imports ─────────────────────────────────────────────────────────────
@@ -39,7 +40,6 @@ const Profile         = lazy(() => import('./pages/Profile'))
 const Addresses       = lazy(() => import('./pages/Addresses')) // ✅ P1: Address Book page
 const Orders          = lazy(() => import('./pages/Orders'))
 const Checkout        = lazy(() => import('./pages/Checkout'))
-const Support         = lazy(() => import('./pages/Support'))
 const OrderDetail     = lazy(() => import('./pages/OrderDetail'))
 const ReturnRequest   = lazy(() => import('./pages/ReturnRequest')) // ✅ P1: Return Request page
 const Wishlist        = lazy(() => import('./pages/Wishlist'))  // ✅ P1: Wishlist page
@@ -193,6 +193,16 @@ function PageLoader() {
   )
 }
 
+function SupportRedirect() {
+  const openSupport = useSupportStore(state => state.openSupport)
+  const [searchParams] = useSearchParams()
+  const orderId = searchParams.get('orderId')
+  useEffect(() => {
+    openSupport(orderId ? { _id: orderId } : null)
+  }, [openSupport, orderId])
+  return <Navigate to="/orders" replace />
+}
+
 // ─── Animated page transitions ────────────────────────────────────────────────
 function AnimatedRoutes() {
   const location = useLocation()
@@ -251,7 +261,7 @@ function AnimatedRoutes() {
             <Route path="/change-password" element={<ProtectedRoute><ChangePassword /></ProtectedRoute>} /> {/* ✅ P1 */}
             <Route path="/checkout" element={<Checkout />} />
             <Route path="/wishlist" element={<ProtectedRoute><Wishlist /></ProtectedRoute>} /> {/* ✅ P1 */}
-            <Route path="/support"  element={<ProtectedRoute><Support /></ProtectedRoute>} />
+            <Route path="/support"  element={<ProtectedRoute><SupportRedirect /></ProtectedRoute>} />
 
             {/* ── Admin ── */}
             <Route path="/admin"                  element={<ProtectedRoute adminOnly><AdminDashboard /></ProtectedRoute>} />
@@ -340,7 +350,7 @@ function App() {
                     <Footer />
                     <WhatsAppButton />
                     <NotificationDrawer />
-                    <SupportWidget />
+                    <SupportPopup />
                   </SiteStatusWrapper>
                 </div>
               </Router>

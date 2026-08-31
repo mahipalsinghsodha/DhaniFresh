@@ -1,11 +1,16 @@
-import { motion } from 'framer-motion'
+import { motion, AnimatePresence } from 'framer-motion'
 import { FaWhatsapp } from 'react-icons/fa'
+import { useSupportStore } from '../store/support'
 
 // You can configure this to your actual support number
 const WHATSAPP_NUMBER = '7665306403' // Replace with actual number
 const MESSAGE = encodeURIComponent('Hi Daatasa, I need some help!')
 
 const WhatsAppButton = () => {
+  const isSupportOpen = useSupportStore(state => state.isOpen)
+
+  if (isSupportOpen) return null
+
   return (
     <motion.a
       href={`https://wa.me/${WHATSAPP_NUMBER}?text=${MESSAGE}`}
