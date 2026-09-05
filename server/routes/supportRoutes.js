@@ -271,12 +271,38 @@ router.patch("/orders/:id/status", auth, auth.support, async (req, res) => {
     const order = await Order.findById(req.params.id);
     if (!order) return res.status(404).json({ message: 'Order not found' });
 
-    order.paymentStatus = status;
-    if (status === 'PAID') {
-      order.isPaid = true;
-      order.paidAt = new Date();
-    } else if (status === 'CANCELLED' || status === 'FAILED') {
+    if (status === 'CANCELLED') {
+      if (order.isDelivered) return res.status(400).json({ message: 'Cannot cancel a delivered order' });
+      if (['CANCELLED', 'FAILED'].includes(order.paymentStatus)) {
+        return res.status(400).json({ message: 'Order is already cancelled' });
+      }
+
+      const { restoreOrderResources } = require('../utils/orderResourceHelper');
+      const restoreResult = await restoreOrderResources(order, 'Cancelled by Support');
+
+      order.paymentStatus = 'CANCELLED';
+      order.orderStatus = 'CANCELLED';
       order.isPaid = false;
+      order.cancelReason = 'Cancelled via Support Panel';
+      order.cancelledAt = new Date();
+      order.cancelledBy = 'admin';
+
+      if (restoreResult.razorpayRefund || restoreResult.walletRefunded > 0) {
+        order.refundInfo = restoreResult.razorpayRefund || {
+          status: 'PROCESSED',
+          amount: restoreResult.walletRefunded,
+          initiatedAt: new Date(),
+          note: 'Refunded to Daatasa Wallet'
+        };
+      }
+    } else {
+      order.paymentStatus = status;
+      if (status === 'PAID') {
+        order.isPaid = true;
+        order.paidAt = new Date();
+      } else if (status === 'FAILED') {
+        order.isPaid = false;
+      }
     }
     
     await order.save();

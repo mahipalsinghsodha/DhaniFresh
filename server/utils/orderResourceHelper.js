@@ -56,7 +56,7 @@ async function restoreOrderResources(order, reason = 'Order cancelled or payment
     try {
       for (const item of order.orderItems) {
         const pId = item.product?._id || item.product;
-        const vId = item.variant?._id || item.variant;
+        const vId = item.variant?._id || item.variant || item.variantId?._id || item.variantId;
         const qty = Number(item.quantity || 1);
 
         if (!pId || qty <= 0) continue;
