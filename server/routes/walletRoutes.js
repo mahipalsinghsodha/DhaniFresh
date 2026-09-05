@@ -62,8 +62,13 @@ router.post('/topup', auth, async (req, res) => {
 // @access  Private
 router.post('/topup/verify', auth, async (req, res) => {
   try {
-    const { razorpay_order_id, razorpay_payment_id, razorpay_signature, amount } = req.body;
+    const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = req.body;
 
+    if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
+      return res.status(400).json({ message: 'Missing payment details' });
+    }
+
+    // 1️⃣ Verify HMAC SHA-256 signature
     const body = razorpay_order_id + "|" + razorpay_payment_id;
     const expectedSignature = crypto
       .createHmac('sha256', process.env.RAZORPAY_KEY_SECRET)
@@ -71,20 +76,50 @@ router.post('/topup/verify', auth, async (req, res) => {
       .digest('hex');
 
     if (expectedSignature !== razorpay_signature) {
-      return res.status(400).json({ message: 'Invalid signature' });
+      return res.status(400).json({ message: 'Invalid payment signature' });
+    }
+
+    // 2️⃣ Replay Attack Protection: Ensure payment ID hasn't been credited already
+    const existingTx = await WalletTransaction.findOne({ paymentId: razorpay_payment_id });
+    if (existingTx) {
+      return res.status(400).json({ message: 'This payment has already been credited to wallet' });
+    }
+
+    // 3️⃣ Verify payment status and actual captured amount directly from Razorpay
+    let payment;
+    try {
+      payment = await razorpay.payments.fetch(razorpay_payment_id);
+    } catch (fetchErr) {
+      console.error('Razorpay payment fetch error:', fetchErr);
+      return res.status(400).json({ message: 'Failed to verify payment with gateway' });
+    }
+
+    if (!payment || (payment.status !== 'captured' && payment.status !== 'authorized')) {
+      return res.status(400).json({ message: 'Payment is not captured or authorized' });
+    }
+
+    // Verified amount in Rupees from Razorpay (paise / 100)
+    const verifiedAmount = Math.round(payment.amount) / 100;
+    if (verifiedAmount <= 0) {
+      return res.status(400).json({ message: 'Invalid payment amount' });
     }
 
     const user = await User.findById(req.user._id);
-    user.walletBalance += amount;
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    user.walletBalance = Math.round(((user.walletBalance || 0) + verifiedAmount) * 100) / 100;
     await user.save();
 
     const transaction = await WalletTransaction.create({
       user: req.user._id,
       type: 'CREDIT',
-      amount,
+      amount: verifiedAmount,
       balanceAfter: user.walletBalance,
-      description: 'Wallet Top-up',
-      transactionType: 'TOPUP'
+      description: `Wallet Top-up via Razorpay (${razorpay_payment_id})`,
+      transactionType: 'TOPUP',
+      paymentId: razorpay_payment_id
     });
 
     res.json({ message: 'Top-up successful', walletBalance: user.walletBalance, transaction });

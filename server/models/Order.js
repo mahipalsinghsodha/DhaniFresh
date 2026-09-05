@@ -153,6 +153,27 @@ refundInfo: {
     default: 0
   },
 
+  // Net amount to collect/charge after wallet and gift card deductions
+  payableAmount: {
+    type: Number,
+    default: 0
+  },
+
+  walletRefunded: {
+    type: Boolean,
+    default: false
+  },
+
+  giftCardRefunded: {
+    type: Boolean,
+    default: false
+  },
+
+  couponRestored: {
+    type: Boolean,
+    default: false
+  },
+
   rewardPointsAwarded: {
     type: Boolean,
     default: false

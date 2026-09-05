@@ -130,15 +130,15 @@ const AdminSettings = () => {
 
   const applySave = async (otp = null) => {
     setSaving(true)
-    
+
     // Process pincodes
     const parsedPincodes = pincodeInput.split(',')
       .map(p => p.trim())
       .filter(p => p.length > 0)
-      
+
     try {
-      const payload = { 
-        ...settings, 
+      const payload = {
+        ...settings,
         serviceablePincodes: parsedPincodes,
         comingSoonLaunchDate: settings.isComingSoon && settings.comingSoonLaunchDate ? new Date(settings.comingSoonLaunchDate).toISOString() : null,
         ...(otp && { otp })
@@ -193,8 +193,8 @@ const AdminSettings = () => {
     handleScheduleChange('workDays', updatedDays)
   }
 
-  if (!['superadmin', 'admin', 'support'].includes(user?.role)) {
-    return <RestrictedAccess title="Staff Access Required" message="Only authorized staff members can modify platform settings." />
+  if (user?.role !== 'superadmin') {
+    return <RestrictedAccess title="Root Authority Required" message="Only Super Administrators can modify platform settings." />
   }
 
   if (loading) return (
@@ -236,7 +236,7 @@ const AdminSettings = () => {
 
       <div className="max-w-[1280px] mx-auto px-4 sm:px-6 lg:px-8 py-8 flex flex-col lg:flex-row gap-8">
         <div className="flex-1 space-y-5">
-          
+
           {/* ── 2FA Security Status (Read-Only & Masked) ── */}
           {isServer2FAActive && (
             <div style={{
@@ -314,7 +314,7 @@ const AdminSettings = () => {
               <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>Manage maintenance and coming soon modes</p>
             </div>
             <div style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 20 }}>
-              
+
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingBottom: 16, borderBottom: '1px solid var(--border-color)' }}>
                 <div>
                   <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>Maintenance Mode</p>
@@ -346,8 +346,8 @@ const AdminSettings = () => {
                 {settings.isComingSoon && (
                   <div style={{ marginTop: 16, padding: 16, background: 'var(--bg-alt)', borderRadius: 8, border: '1px solid var(--border-color)' }}>
                     <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 8, textTransform: 'uppercase' }}>Launch Date & Time</label>
-                    <input 
-                      type="datetime-local" 
+                    <input
+                      type="datetime-local"
                       value={settings.comingSoonLaunchDate}
                       onChange={e => handleFieldChange('comingSoonLaunchDate', e.target.value)}
                       style={{ width: '100%', padding: '10px 12px', borderRadius: 8, border: '1.5px solid var(--border-color)', outline: 'none', fontSize: 14 }}
@@ -474,11 +474,10 @@ const AdminSettings = () => {
                         key={day}
                         type="button"
                         onClick={() => toggleWorkDay(day)}
-                        className={`px-3 py-2 rounded-xl text-xs font-bold border transition-all flex items-center justify-center gap-1.5 ${
-                          isSelected
+                        className={`px-3 py-2 rounded-xl text-xs font-bold border transition-all flex items-center justify-center gap-1.5 ${isSelected
                             ? 'bg-amber-500 text-white border-amber-500 shadow-sm'
                             : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
-                        }`}
+                          }`}
                       >
                         {isSelected ? <FiCheckSquare size={13} /> : <FiSquare size={13} />}
                         <span>{label.slice(0, 3)}</span>
@@ -614,7 +613,7 @@ const AdminSettings = () => {
             </div>
           </div>
         </div>
-        
+
         {/* Right Sidebar */}
         <div className="w-full lg:w-80 space-y-5">
           {/* ── Live Preview ── */}

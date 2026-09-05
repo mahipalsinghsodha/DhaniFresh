@@ -285,40 +285,17 @@ async function generateOrderResponse(order, queryText, subIssue = null, language
       // Pending, Confirmed, Processing
       if (textLower.includes('पुष्टि') || textLower.includes('confirm order cancellation') || textLower.includes('confirm cancel')) {
         try {
-          // 1. Restore stock for cancelled items
-          for (const item of (order.orderItems || [])) {
-            const pId = item.product?._id || item.product;
-            if (pId) {
-              await Product.findByIdAndUpdate(pId, { $inc: { stock: item.quantity || 1 } });
-            }
-          }
+          // 1. Restore all resources (variant stock, wallet, gift card, coupon count, net Razorpay refund)
+          const { restoreOrderResources } = require('../utils/orderResourceHelper');
+          const restoreResult = await restoreOrderResources(order, 'Cancelled via Self-Service Support Assistant');
+          const refundInfo = restoreResult.razorpayRefund || (restoreResult.walletRefunded > 0 ? {
+            status: 'PROCESSED',
+            amount: restoreResult.walletRefunded,
+            initiatedAt: new Date(),
+            note: 'Refunded to Daatasa Wallet'
+          } : null);
 
-          // 2. Razorpay refund (if paid online)
-          let refundInfo = null;
-          const isOnlinePaid =
-            order.paymentStatus === 'PAID' &&
-            order.paymentMethod === 'Online' &&
-            order.paymentInfo?.razorpay_payment_id;
-
-          if (isOnlinePaid) {
-            try {
-              const razorpay = require('../config/razorpay');
-              const refund = await razorpay.payments.refund(
-                order.paymentInfo.razorpay_payment_id,
-                { amount: Math.round(order.totalPrice * 100) }
-              );
-              refundInfo = {
-                refund_id: refund.id,
-                status: refund.status,
-                amount: order.totalPrice,
-                initiatedAt: new Date(),
-              };
-            } catch (refundErr) {
-              console.error('[Bot] Razorpay refund error:', refundErr.message);
-            }
-          }
-
-          // 3. Update database record with correct schema fields
+          // 2. Update database record with correct schema fields
           const updatePayload = {
             orderStatus: 'CANCELLED',
             paymentStatus: 'CANCELLED',
@@ -328,7 +305,7 @@ async function generateOrderResponse(order, queryText, subIssue = null, language
             $push: {
               statusHistory: {
                 status: 'CANCELLED',
-                note: 'Order cancelled via Self-Service Support Assistant',
+                note: `Order cancelled via Self-Service Support Assistant.${restoreResult.walletRefunded > 0 ? ` Wallet refunded: ₹${restoreResult.walletRefunded}.` : ''}`,
                 updatedAt: new Date(),
               },
             },
@@ -382,15 +359,23 @@ async function generateOrderResponse(order, queryText, subIssue = null, language
             console.error('[Bot] Socket broadcast error:', socketErr.message);
           }
 
+          const refundDetailsMsg = (restoreResult.walletRefunded > 0 && restoreResult.razorpayRefund)
+            ? (isHindi
+                ? `• **वॉलेट रिफंड**: ₹${restoreResult.walletRefunded} (तुरंत आपके दातसा वॉलेट में)\n• **ऑनलाइन रिफंड**: ₹${restoreResult.razorpayRefund.amount} (मूल बैंक खाते में 5–7 दिन)`
+                : `• **Wallet Refund**: ₹${restoreResult.walletRefunded} (Credited instantly to your Daatasa Wallet)\n• **Online Refund**: ₹${restoreResult.razorpayRefund.amount} (Credited to original source in 5–7 days)`)
+            : (restoreResult.walletRefunded > 0
+                ? (isHindi ? `• **वॉलेट रिफंड**: ₹${restoreResult.walletRefunded} (तुरंत दातसा वॉलेट में क्रेडिट)` : `• **Wallet Refund**: ₹${restoreResult.walletRefunded} (Credited instantly to your Daatasa Wallet)`)
+                : (isHindi ? `• **रिफंड राशि**: ₹${restoreResult.razorpayRefund?.amount || totalPrice}` : `• **Refund Amount**: ₹${restoreResult.razorpayRefund?.amount || totalPrice}`));
+
           cancelMsg = isHindi
             ? `✅ **ऑर्डर #${orderShortId} सफलतापूर्वक रद्द (Cancelled) कर दिया गया है!**\n\n` +
-              `• **रिफंड राशि**: ₹${totalPrice}\n` +
-              `• **रिफंड समयावधि**: 5–7 कार्य दिवस (सीधे आपके मूल भुगतान स्रोत / बैंक खाते में)\n\n` +
-              `पुष्टिकरण SMS/ईमेल भी भेज दिया गया है। यदि आपको कोई अन्य सहायता चाहिए, तो नीचे चुनें:`
+              `${refundDetailsMsg}\n` +
+              `• **रिफंड समयावधि**: 5–7 कार्य दिवस (ऑनलाइन भुगतान हेतु)\n\n` +
+              `पुष्टिकरण सूचना भेज दी गई है। यदि आपको कोई अन्य सहायता चाहिए, तो नीचे चुनें:`
             : `✅ **Order #${orderShortId} has been Successfully Cancelled!**\n\n` +
-              `• **Refund Amount**: ₹${totalPrice}\n` +
-              `• **Refund Timeline**: 5–7 business days (Credited back to your original payment method)\n\n` +
-              `A confirmation notification has been sent. Feel free to explore our other products or connect with an agent:`;
+              `${refundDetailsMsg}\n` +
+              `• **Refund Timeline**: 5–7 business days (for online gateway refunds)\n\n` +
+              `A confirmation notification has been sent. Feel free to explore our products or talk to an agent:`;
           cancelOptions = isHindi
             ? ['🫙 शुद्ध घी उत्पाद देखें', '💬 एजेंट से बात करें']
             : ['🫙 View Ghee Products', '💬 Talk to a human agent'];

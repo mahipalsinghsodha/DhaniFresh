@@ -26,27 +26,20 @@ const startOrderCleanup = () => {
 
       if (isDev) console.log(`[OrderCleanup] Expiring ${expiredOrders.length} orders...`);
 
-      // ── 1. Bulk-restore stock ─────────────────────────────────────────────
-      const bulkOps = [];
+      // ── 1. Restore resources (variant stock, wallet balance, gift card) ──
+      const { restoreOrderResources } = require('../utils/orderResourceHelper');
       for (const order of expiredOrders) {
-        for (const item of order.orderItems) {
-          const qtyToRestore = item.quantity || item.qty || 0;
-          if (qtyToRestore > 0) {
-            bulkOps.push({
-              updateOne: {
-                filter: { _id: item.product },
-                update: { $inc: { stock: qtyToRestore } }
-              }
-            });
-          }
+        try {
+          await restoreOrderResources(order, 'Expired after 72 hours');
+        } catch (rErr) {
+          console.error(`[OrderCleanup] Resource restore failed for order ${order._id}:`, rErr.message);
         }
       }
-      if (bulkOps.length > 0) await Product.bulkWrite(bulkOps);
 
       // ── 2. Mark orders EXPIRED ────────────────────────────────────────────
       await Order.updateMany(
         { _id: { $in: expiredOrders.map(o => o._id) } },
-        { $set: { paymentStatus: 'EXPIRED' } }
+        { $set: { paymentStatus: 'EXPIRED', orderStatus: 'CANCELLED' } }
       );
 
       // ── 3. Send expiry notification emails (non-fatal) ────────────────────

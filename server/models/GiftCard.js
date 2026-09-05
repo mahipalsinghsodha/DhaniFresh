@@ -46,6 +46,10 @@ const giftCardSchema = new mongoose.Schema({
   validUntil: {
     type: Date,
     required: true
+  },
+  razorpayPaymentId: {
+    type: String,
+    sparse: true
   }
 }, {
   timestamps: true

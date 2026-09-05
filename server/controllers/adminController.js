@@ -277,42 +277,21 @@ exports.approveReturnRequest = async (req, res) => {
     order.returnRequest.status = status;
 
     if (status === 'APPROVED') {
-      // Trigger Razorpay refund if paid online
-      let refundInfo = null;
-      const isOnlinePaid =
-        order.paymentStatus === 'PAID' &&
-        order.paymentMethod === 'Online' &&
-        order.paymentInfo?.razorpay_payment_id;
-
-      if (isOnlinePaid) {
-        try {
-          const razorpay = require('../config/razorpay');
-          const refund = await razorpay.payments.refund(
-            order.paymentInfo.razorpay_payment_id,
-            { amount: Math.round(order.totalPrice * 100) }
-          );
-          refundInfo = {
-            refund_id: refund.id,
-            status: refund.status,
-            amount: order.totalPrice,
-            initiatedAt: new Date(),
-          };
-        } catch (refundErr) {
-          console.error('RAZORPAY REFUND ERROR:', refundErr);
-          const errorMessage = refundErr.error ? refundErr.error.description : refundErr.message;
-          return res.status(500).json({
-            message: `Refund initiation failed: ${errorMessage || 'Please contact support.'}`,
-          });
-        }
-      }
-
-      // Restore stock
-      for (const item of order.orderItems) {
-        await Product.findByIdAndUpdate(item.product, { $inc: { stock: item.quantity } });
-      }
+      // Atomically restore all resources (variant stock, wallet refund, gift card, coupon count, net Razorpay refund)
+      const { restoreOrderResources } = require('../utils/orderResourceHelper');
+      const restoreResult = await restoreOrderResources(order, 'Return approved by admin');
 
       order.paymentStatus = 'RETURN_APPROVED';
-      if (refundInfo) order.refundInfo = refundInfo;
+      if (restoreResult.razorpayRefund) {
+        order.refundInfo = restoreResult.razorpayRefund;
+      } else if (restoreResult.walletRefunded > 0) {
+        order.refundInfo = {
+          status: 'PROCESSED',
+          amount: restoreResult.walletRefunded,
+          initiatedAt: new Date(),
+          note: 'Refunded to Daatasa Wallet'
+        };
+      }
 
       order.statusHistory.push({
         status: 'RETURN_APPROVED',

@@ -37,9 +37,13 @@ exports.createRazorpayOrder = async (req, res) => {
       return res.status(400).json({ message: 'Order already processed' });
     }
 
-    // Create Razorpay order with BACKEND-calculated amount
+    // Create Razorpay order with BACKEND-calculated amount (net of wallet/gift card)
+    const { getNetPayableAmount } = require('../utils/orderResourceHelper');
+    const netPayable = (order.payableAmount !== undefined && order.payableAmount !== null) ? order.payableAmount : getNetPayableAmount(order);
+    const amountInPaise = Math.round(netPayable * 100);
+
     const razorpayOrder = await razorpay.orders.create({
-      amount: Math.round(order.totalPrice * 100), // Convert to paise
+      amount: amountInPaise, // Convert to paise
       currency: 'INR',
       receipt: `receipt_${order._id}`,
       notes: {
@@ -112,8 +116,10 @@ exports.verifyPayment = async (req, res) => {
     try {
       payment = await razorpay.payments.fetch(razorpay_payment_id);
       
-      // Security: Verify amount matches
-      const expectedAmount = Math.round(order.totalPrice * 100);
+      // Security: Verify amount matches net payable amount
+      const { getNetPayableAmount } = require('../utils/orderResourceHelper');
+      const netPayable = (order.payableAmount !== undefined && order.payableAmount !== null) ? order.payableAmount : getNetPayableAmount(order);
+      const expectedAmount = Math.round(netPayable * 100);
       if (payment.amount !== expectedAmount) {
         console.error('AMOUNT MISMATCH:', {
           expected: expectedAmount,

@@ -32,6 +32,10 @@ const walletTransactionSchema = new mongoose.Schema({
     type: String,
     enum: ['TOPUP', 'PURCHASE', 'REFUND', 'REWARD_CONVERSION'],
     required: true
+  },
+  paymentId: {
+    type: String,
+    sparse: true
   }
 }, {
   timestamps: true

@@ -267,11 +267,12 @@ router.post('/', auth.optional, async (req, res) => {
           return res.status(400).json({ message: 'Coupon usage limit exceeded' });
         }
 
-        // Check user-specific usage
+        // Check user-specific usage (ignore failed/cancelled/expired orders)
         if (coupon.usagePerUser && req.user) {
           const userUsage = await Order.countDocuments({
             user: req.user._id,
-            'coupon.code': couponCode.toUpperCase()
+            'coupon.code': couponCode.toUpperCase(),
+            paymentStatus: { $nin: ['FAILED', 'CANCELLED', 'EXPIRED'] }
           });
           if (userUsage >= coupon.usagePerUser) {
             return res.status(400).json({ message: 'You have already used this coupon' });
@@ -366,6 +367,8 @@ router.post('/', auth.optional, async (req, res) => {
     }
 
     // 5️⃣ CREATE ORDER DATA
+    const payableAmount = Math.max(0, Math.round(finalTotalPrice * 100) / 100);
+
     const orderData = {
       user: req.user ? req.user._id : null,
       guestEmail: guestEmail || null,
@@ -377,6 +380,7 @@ router.post('/', auth.optional, async (req, res) => {
       shippingPrice,
       totalPrice, // original total
       walletUsed, // amount deducted from wallet
+      payableAmount, // net amount to pay via online gateway or COD
       discount,
       coupon: appliedCoupon,
       giftCard: appliedGiftCard,
@@ -552,8 +556,10 @@ router.post('/', auth.optional, async (req, res) => {
 
     if (paymentMethod === 'Online') {
       const razorpay = require('../config/razorpay');
+      const amountToChargePaise = Math.round((order.payableAmount ?? order.totalPrice) * 100);
+
       const razorpayOrder = await razorpay.orders.create({
-        amount: Math.round(order.totalPrice * 100),
+        amount: amountToChargePaise,
         currency: 'INR',
         receipt: `receipt_${order._id}`,
         notes: {
@@ -644,9 +650,9 @@ router.post('/price-preview', auth.optional, async (req, res) => {
 });
 
 // ========================================================================
-// PAYMENT FAILED / CANCELLED
+// PAYMENT FAILED / CANCELLED (RETORES WALLET, GIFTCARD, & VARIANT STOCK)
 // ========================================================================
-router.post('/fail', auth, async (req, res) => {
+router.post('/fail', auth.optional, async (req, res) => {
   try {
     const { razorpay_order_id } = req.body;
 
@@ -654,48 +660,62 @@ router.post('/fail', auth, async (req, res) => {
       return res.status(400).json({ message: 'razorpay_order_id required' });
     }
 
-    const order = await Order.findOne({
-      user: req.user._id, // Security: Only user's own orders
+    const query = {
       paymentStatus: 'PENDING',
       'paymentInfo.razorpay_order_id': razorpay_order_id
-    });
+    };
+    if (req.user) {
+      query.user = req.user._id;
+    }
+
+    const order = await Order.findOne(query);
 
     if (!order) {
       return res.status(404).json({
-        message: 'Pending order not found'
+        message: 'Pending order not found or already processed'
       });
     }
 
-    // ── 1. Send Failure Email ──────────────────────────────────────────────
+    // ── 1. Send Failure Email (non-fatal) ──────────────────────────────────
     try {
       const { sendOrderFailureEmail } = require('../services/emailService');
       const populatedOrder = await order.populate('user', 'name email');
-      await sendOrderFailureEmail({
-        to: populatedOrder.user.email,
-        userName: populatedOrder.user.name,
-        orderId: order._id.toString(),
-        totalPrice: order.totalPrice,
-        reason: 'Payment was cancelled or failed.'
-      });
+      const toEmail = populatedOrder.user?.email || order.guestEmail;
+      const userName = populatedOrder.user?.name || order.shippingAddress?.name || 'Customer';
+      if (toEmail) {
+        await sendOrderFailureEmail({
+          to: toEmail,
+          userName,
+          orderId: order._id.toString(),
+          totalPrice: order.totalPrice,
+          reason: 'Payment was cancelled or failed.'
+        });
+      }
     } catch (emailErr) {
       console.error('FAILURE EMAIL ERROR:', emailErr);
     }
 
-    // 🔁 RESTORE STOCK
-    for (const item of order.orderItems) {
-      await Product.findByIdAndUpdate(
-        item.product,
-        { $inc: { stock: item.quantity } },
-        { new: true }
-      );
-    }
+    // 🔁 RESTORE ALL RESOURCES (VARIANT-AWARE STOCK, WALLET BALANCE, GIFT CARD)
+    const { restoreOrderResources } = require('../utils/orderResourceHelper');
+    const restoreResult = await restoreOrderResources(order, 'Payment cancelled or failed');
 
-    // ❌ DELETE ORDER
-    await order.deleteOne();
+    // Update order status so user and audit trail are preserved
+    order.paymentStatus = 'FAILED';
+    order.orderStatus = 'CANCELLED';
+    order.cancelReason = 'Payment cancelled or failed';
+    order.cancelledAt = new Date();
+    order.statusHistory.push({
+      status: 'FAILED',
+      note: `Payment cancelled/failed. Restored: ${restoreResult.walletRefunded > 0 ? `Wallet ₹${restoreResult.walletRefunded}, ` : ''}Stock restored.`,
+      updatedAt: new Date()
+    });
+    await order.save();
 
     res.json({
       success: true,
-      message: 'Payment cancelled. Stock restored and failure email sent.'
+      message: 'Payment cancelled. Any deducted wallet balance and product stock have been restored.',
+      walletRefunded: restoreResult.walletRefunded,
+      giftCardRefunded: restoreResult.giftCardRefunded
     });
 
   } catch (error) {
@@ -773,7 +793,8 @@ router.post('/verify-coupon', auth.optional, async (req, res) => {
     if (coupon.usagePerUser && req.user) {
       const userUsage = await Order.countDocuments({
         user: req.user._id,
-        'coupon.code': couponCode.toUpperCase()
+        'coupon.code': couponCode.toUpperCase(),
+        paymentStatus: { $nin: ['FAILED', 'CANCELLED', 'EXPIRED'] }
       });
       if (userUsage >= coupon.usagePerUser) {
         return res.status(400).json({ message: 'You have already used this coupon' });
@@ -1387,46 +1408,25 @@ router.post('/:id/cancel', auth, async (req, res) => {
       return res.status(400).json({ message: 'Order is already cancelled' });
     }
 
-    // ── 1. Restore stock ──────────────────────────────────────────────────
-    for (const item of order.orderItems) {
-      await Product.findByIdAndUpdate(item.product, { $inc: { stock: item.quantity } });
-    }
+    // ── 1. Restore all order resources (variant stock, wallet balance, gift card, coupon count, Razorpay refund) ──
+    const { restoreOrderResources } = require('../utils/orderResourceHelper');
+    const restoreResult = await restoreOrderResources(order, reason || 'Order cancelled');
 
-    // ── 2. Razorpay refund (only for paid online orders) ──────────────────
-    let refundInfo = null;
-    const isOnlinePaid =
-      order.paymentStatus === 'PAID' &&
-      order.paymentMethod === 'Online' &&
-      order.paymentInfo?.razorpay_payment_id;
+    const refundInfo = restoreResult.razorpayRefund || (restoreResult.walletRefunded > 0 ? {
+      status: 'PROCESSED',
+      amount: restoreResult.walletRefunded,
+      initiatedAt: new Date(),
+      note: 'Refunded to Daatasa Wallet'
+    } : null);
 
-    if (isOnlinePaid) {
-      try {
-        const razorpay = require('../config/razorpay');
-        const refund = await razorpay.payments.refund(
-          order.paymentInfo.razorpay_payment_id,
-          { amount: Math.round(order.totalPrice * 100) }
-        );
-        refundInfo = {
-          refund_id: refund.id,
-          status: refund.status,
-          amount: order.totalPrice,
-          initiatedAt: new Date(),
-        };
-      } catch (refundErr) {
-        console.error('RAZORPAY REFUND ERROR:', refundErr);
-        const errorMessage = refundErr.error ? refundErr.error.description : refundErr.message;
-        return res.status(500).json({
-          message: `Refund initiation failed: ${errorMessage || 'Please contact support.'}`,
-        });
-      }
-    }
-
-    // ── 3. Update order ───────────────────────────────────────────────────
+    // ── 2. Update order ───────────────────────────────────────────────────
     order.paymentStatus = 'CANCELLED';
+    order.orderStatus = 'CANCELLED';
     order.cancelReason = reason || '';
     order.cancelledAt = new Date();
     order.cancelledBy = (req.user.role === 'admin' || req.user.role === 'superadmin') ? 'admin' : 'user';
     if (refundInfo) order.refundInfo = refundInfo;
+
     await pushStatusAndNotify(order, 'CANCELLED', `Cancelled. Reason: ${reason || 'None'}`, req.user._id, {
       type: 'ORDER_CANCELLED',
       title: 'Order Cancelled',
@@ -1439,17 +1439,17 @@ router.post('/:id/cancel', auth, async (req, res) => {
       await logAction(req, 'CANCEL_ORDER', 'ORDER', order._id, { reason });
     }
 
-    // ── 4. Emails (non-fatal) ─────────────────────────────────────────────
+    // ── 3. Emails (non-fatal) ─────────────────────────────────────────────
     try {
       const { sendCancelEmail } = require('../services/emailService');
       await sendCancelEmail({
-        to: order.user.email,
-        userName: order.user.name,
+        to: order.user?.email || order.guestEmail,
+        userName: order.user?.name || order.shippingAddress?.name || 'Customer',
         orderId: order._id.toString(),
         totalPrice: order.totalPrice,
         reason,
-        isRefund: !!refundInfo,
-        refundId: refundInfo?.refund_id,
+        isRefund: Boolean(restoreResult.razorpayRefund || restoreResult.walletRefunded > 0),
+        refundId: refundInfo?.refund_id || (restoreResult.walletRefunded > 0 ? 'WALLET_REFUND' : null),
       });
     } catch (emailErr) {
       console.error('EMAIL ERROR (non-fatal):', emailErr);
@@ -1457,8 +1457,12 @@ router.post('/:id/cancel', auth, async (req, res) => {
 
     res.json({
       success: true,
-      message: isOnlinePaid ? 'Order cancelled. Refund initiated.' : 'Order cancelled successfully.',
+      message: (restoreResult.razorpayRefund || restoreResult.walletRefunded > 0)
+        ? `Order cancelled. Refund processed (Wallet: ₹${restoreResult.walletRefunded}, Online: ₹${restoreResult.razorpayRefund?.amount || 0}).`
+        : 'Order cancelled successfully.',
       refund: refundInfo,
+      walletRefunded: restoreResult.walletRefunded,
+      onlineRefunded: restoreResult.razorpayRefund?.amount || 0
     });
 
   } catch (error) {
@@ -1530,15 +1534,14 @@ router.put('/:id/return-status', auth, auth.admin, auth.hasPermission('orders'),
     if (status === 'APPROVED') {
       order.paymentStatus = 'REFUNDED';
       
-      // Restore stock for returned items
-      for (const item of order.orderItems) {
-        await mongoose.model('Product').findByIdAndUpdate(item.product, { $inc: { stock: item.quantity } });
-      }
+      // Restore all order resources (variant stock, wallet refund, gift card, coupon count, Razorpay refund)
+      const { restoreOrderResources } = require('../utils/orderResourceHelper');
+      await restoreOrderResources(order, adminNote || 'Return approved by admin');
 
       await pushStatusAndNotify(order, 'RETURN_APPROVED', `Return Approved. Note: ${adminNote || 'None'}`, req.user._id, {
         type: 'SYSTEM',
         title: 'Return Approved',
-        message: `Your return request has been approved.`,
+        message: `Your return request has been approved and refund processed.`,
         link: `/orders/${order._id}`
       });
     } else {
