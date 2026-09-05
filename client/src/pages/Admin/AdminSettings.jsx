@@ -193,8 +193,8 @@ const AdminSettings = () => {
     handleScheduleChange('workDays', updatedDays)
   }
 
-  if (user?.role !== 'superadmin') {
-    return <RestrictedAccess title="Root Authority Required" message="Only Super Administrators can modify platform settings." />
+  if (!['superadmin', 'admin', 'support'].includes(user?.role)) {
+    return <RestrictedAccess title="Staff Access Required" message="Only authorized staff members can modify platform settings." />
   }
 
   if (loading) return (

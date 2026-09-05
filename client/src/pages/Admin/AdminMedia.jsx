@@ -86,7 +86,7 @@ const AdminMedia = () => {
   }
 
   if (authLoading) return null
-  if (user?.role !== 'admin' && user?.role !== 'superadmin' && !hasPermission('products')) {
+  if (!['admin', 'superadmin', 'support'].includes(user?.role) && !hasPermission('products')) {
     return <RestrictedAccess />
   }
 

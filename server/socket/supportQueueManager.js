@@ -35,6 +35,8 @@ function registerAgentPresence(user, socketId, io) {
       socketIds: new Set([socketId]),
       isLive,
       readyStartedAt: isLive ? now : null,
+      connectedAt: now,
+      loginTime: user.lastLogin || now,
       user: {
         _id: user._id,
         name: user.name,
@@ -46,6 +48,8 @@ function registerAgentPresence(user, socketId, io) {
   } else {
     const data = agentPresenceMap.get(uId);
     data.socketIds.add(socketId);
+    if (!data.connectedAt) data.connectedAt = now;
+    if (!data.loginTime) data.loginTime = user.lastLogin || now;
     if (isLive && !data.readyStartedAt) {
       data.readyStartedAt = now;
     }
@@ -185,6 +189,8 @@ function getOnlineAgents() {
         ...val.user,
         isLive: val.isLive,
         readyStartedAt: val.readyStartedAt,
+        connectedAt: val.connectedAt || val.readyStartedAt,
+        loginTime: val.loginTime || val.readyStartedAt || val.connectedAt,
         currentSessionSec,
         socketCount: val.socketIds.size,
       });

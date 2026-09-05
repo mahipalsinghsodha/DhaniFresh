@@ -53,7 +53,7 @@ const AdminManagement = () => {
   ];
 
   useEffect(() => {
-    if (user?.role === 'superadmin') fetchAdmins();
+    if (['superadmin', 'admin', 'support'].includes(user?.role)) fetchAdmins();
   }, [user]);
 
   const fetchAdmins = async () => {
@@ -121,8 +121,8 @@ const AdminManagement = () => {
     }));
   };
 
-  if (user?.role !== 'superadmin') {
-    return <RestrictedAccess title="Root Authority Required" message="Only Super Administrators can manage administrative personnel and access control levels." />;
+  if (!['superadmin', 'admin', 'support'].includes(user?.role)) {
+    return <RestrictedAccess title="Staff Access Required" message="Only authorized staff members can manage administrative personnel and access control levels." />;
   }
 
   if (loading) return (

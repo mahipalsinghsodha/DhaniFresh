@@ -149,7 +149,7 @@ const AdminDashboard = () => {
   const [error, setError] = useState('')
 
   useEffect(() => {
-    if (user?.role === 'admin' || user?.role === 'superadmin') fetchStats()
+    if (['admin', 'superadmin', 'support'].includes(user?.role)) fetchStats()
     else setLoading(false)
   }, [user])
 
@@ -183,7 +183,7 @@ const AdminDashboard = () => {
   }
 
   if (!user) return <Navigate to="/login" />
-  if (user.role !== 'admin' && user.role !== 'superadmin') return (
+  if (!['admin', 'superadmin', 'support'].includes(user?.role)) return (
     <div className="min-h-[60vh] flex items-center justify-center p-4">
       <div className="p-8 rounded-2xl max-w-md w-full text-center"
         style={{ background: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.18)' }}>

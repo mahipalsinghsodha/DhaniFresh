@@ -250,7 +250,7 @@ const AddProduct = () => {
     </div>
   )
 
-  if (user.role !== 'admin' && user.role !== 'superadmin') return (
+  if (!['admin', 'superadmin', 'support'].includes(user?.role)) return (
     <div style={{ minHeight: '100vh', background: 'var(--bg-base)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
       <div style={{
         background: 'var(--bg-card)', border: '1px solid var(--border-color)',

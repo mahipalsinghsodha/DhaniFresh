@@ -110,6 +110,8 @@ exports.getSupportAgents = async (req, res) => {
           acceptanceRate,
           todayWorkSeconds,
           totalWorkSeconds,
+          loginTime: onlineInfo?.loginTime || onlineInfo?.readyStartedAt || onlineInfo?.connectedAt || agent.lastLogin || agent.supportStats?.lastActiveAt || agent.updatedAt,
+          lastLogin: agent.lastLogin || agent.supportStats?.lastActiveAt || null,
           avgRating,
           ratingCount,
           recentReviews,

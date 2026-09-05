@@ -70,6 +70,7 @@ const safeUser = (u) => ({
   language:    u.language   || 'en',
   isBlocked:   u.isBlocked  || false,
   referralCode:u.referralCode|| null,
+  lastLogin:   u.lastLogin   || null,
 });
 
 /* ── Device fingerprint helper ──────────────────────────────────────────────── */
@@ -235,6 +236,11 @@ router.post('/login', authLimiter, dbCheck, [
       deviceInfo: (req.headers['user-agent'] || '').substring(0, 100),
     });
     user.refreshTokens = activeTokens;
+    user.lastLogin = new Date();
+    if (user.role === 'support' || user.role === 'admin' || user.role === 'superadmin') {
+      if (!user.supportStats) user.supportStats = {};
+      user.supportStats.lastActiveAt = new Date();
+    }
     await user.save({ validateBeforeSave: false });
 
     // Log LOGIN activity
@@ -344,6 +350,11 @@ router.post('/login-otp', authLimiter, dbCheck, [
       deviceInfo: (req.headers['user-agent'] || '').substring(0, 100),
     });
     user.refreshTokens = activeTokens;
+    user.lastLogin = new Date();
+    if (user.role === 'support' || user.role === 'admin' || user.role === 'superadmin') {
+      if (!user.supportStats) user.supportStats = {};
+      user.supportStats.lastActiveAt = new Date();
+    }
     await user.save({ validateBeforeSave: false });
 
     // Log LOGIN activity

@@ -140,7 +140,7 @@ function SiteStatusWrapper({ children }) {
 
   if (loading || authLoading) return <PageLoader />
 
-  const isAdmin = user?.role === 'admin' || user?.role === 'superadmin'
+  const isAdmin = ['admin', 'superadmin', 'support'].includes(user?.role)
 
   if (!isAdmin && settings) {
     if (settings.isMaintenanceMode || settings.isComingSoon) {

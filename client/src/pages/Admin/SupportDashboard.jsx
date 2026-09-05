@@ -5,7 +5,7 @@ import {
   FiCheckCircle, FiLifeBuoy, FiX, FiCopy, FiCalendar,
   FiMapPin, FiTruck, FiFileText, FiCreditCard,
   FiChevronRight, FiRefreshCw, FiAlertCircle, FiShield,
-  FiLayers, FiShoppingBag, FiArrowRight, FiExternalLink, FiMinimize2
+  FiLayers, FiShoppingBag, FiArrowRight, FiExternalLink, FiMinimize2, FiClock
 } from 'react-icons/fi';
 import api from '../../api/axios';
 import { toast } from 'react-toastify';
@@ -241,8 +241,17 @@ export default function SupportDashboard() {
         {/* Header */}
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
           <div>
-            <div className="flex items-center gap-3">
+            <div className="flex flex-wrap items-center gap-3">
               <h1 className="text-2xl font-bold tracking-tight" style={{ color: 'var(--brand-primary)' }}>Support Dashboard</h1>
+              {user && (
+                <div className="flex items-center gap-2 px-3 py-1 bg-emerald-50 border border-emerald-200 rounded-xl text-xs font-semibold text-emerald-800">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                  <span>{user.name || 'Support Agent'}</span>
+                  <span className="text-slate-300">|</span>
+                  <FiClock size={11} className="text-emerald-600 shrink-0" />
+                  <span>Login: {user.lastLogin ? new Date(user.lastLogin).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Online Now'}</span>
+                </div>
+              )}
               {floatingSession && (
                 <div className="hidden sm:flex items-center gap-2 px-3 py-1 bg-brand-secondary/10 border border-brand-secondary/30 rounded-xl text-xs font-bold text-slate-800">
                   <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />

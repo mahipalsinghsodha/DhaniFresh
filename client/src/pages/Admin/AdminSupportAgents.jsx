@@ -19,6 +19,15 @@ const formatWorkTime = (sec = 0) => {
   return `${h}h ${m % 60}m`;
 };
 
+const formatLoginTime = (dateStr) => {
+  if (!dateStr) return null;
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return null;
+  const isToday = new Date().toDateString() === d.toDateString();
+  const timeStr = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  return isToday ? `Today at ${timeStr}` : `${d.toLocaleDateString([], { month: 'short', day: 'numeric' })} at ${timeStr}`;
+};
+
 const AdminSupportAgents = () => {
   const { user } = useAuth()
   const { connect, on, off } = useSocket()
@@ -36,7 +45,7 @@ const AdminSupportAgents = () => {
   const [loadingHistory, setLoadingHistory] = useState(false)
 
   useEffect(() => {
-    if (user?.role === 'superadmin') {
+    if (['superadmin', 'admin', 'support'].includes(user?.role)) {
       fetchAgents()
       connect()
 
@@ -137,8 +146,8 @@ const AdminSupportAgents = () => {
     }
   }
 
-  if (user?.role !== 'superadmin') return (
-    <RestrictedAccess title="Superadmin Required" message="Only Super Administrators can manage support agents and call center analytics." />
+  if (!['superadmin', 'admin', 'support'].includes(user?.role)) return (
+    <RestrictedAccess title="Staff Access Required" message="Only authorized staff members can manage support agents and call center analytics." />
   )
 
   const safeAgents = Array.isArray(agents) ? agents : []
@@ -332,6 +341,17 @@ const AdminSupportAgents = () => {
                             <span className="w-2 h-2 rounded-full bg-slate-400" /> Offline
                           </span>
                         )}
+                        {agent.loginTime ? (
+                          <p className="text-[10px] text-slate-600 flex items-center gap-1 mt-1 font-semibold" title={`Session Login: ${new Date(agent.loginTime).toLocaleString()}`}>
+                            <FiClock size={10} className="text-slate-400 shrink-0" />
+                            <span>Login: {formatLoginTime(agent.loginTime)}</span>
+                          </p>
+                        ) : agent.lastLogin ? (
+                          <p className="text-[10px] text-slate-400 flex items-center gap-1 mt-1 font-medium" title={`Last Login: ${new Date(agent.lastLogin).toLocaleString()}`}>
+                            <FiClock size={10} className="text-slate-400 shrink-0" />
+                            <span>Last login: {formatLoginTime(agent.lastLogin)}</span>
+                          </p>
+                        ) : null}
                       </td>
 
                       {/* 3. Work Time (Today) */}

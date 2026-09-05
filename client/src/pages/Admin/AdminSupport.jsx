@@ -414,9 +414,10 @@ export default function AdminSupport({ onPopOutSession, suppressIncomingModal = 
                 </span>
               </div>
               <div style={{ display: 'flex', flexDirection: 'column' }}>
-                <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Rating ⭐</span>
-                <span style={{ fontSize: 12, fontWeight: 800, color: '#f59e0b' }}>
-                  {agentStats?.avgRating || 5} <span style={{ fontSize: 9, color: 'var(--text-muted)', fontWeight: 600 }}>({agentStats?.ratingCount || 0})</span>
+                <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Login Time</span>
+                <span style={{ fontSize: 12, fontWeight: 800, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 4 }} title="Today's Session Login Timestamp">
+                  <FiClock size={11} className="text-emerald-500" />
+                  {user?.lastLogin ? new Date(user.lastLogin).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Active Now'}
                 </span>
               </div>
               <div style={{ display: 'flex', flexDirection: 'column' }}>
@@ -426,9 +427,9 @@ export default function AdminSupport({ onPopOutSession, suppressIncomingModal = 
                 </span>
               </div>
               <div style={{ display: 'flex', flexDirection: 'column' }}>
-                <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Today Rejected</span>
-                <span style={{ fontSize: 12, fontWeight: 800, color: ((agentStats?.dailyStats?.rejected || 0) + (agentStats?.dailyStats?.missed || 0)) >= 1 ? '#ef4444' : 'var(--text-primary)' }}>
-                  {(agentStats?.dailyStats?.rejected || 0) + (agentStats?.dailyStats?.missed || 0)} / 1 max
+                <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Rating ⭐</span>
+                <span style={{ fontSize: 12, fontWeight: 800, color: '#f59e0b' }}>
+                  {agentStats?.avgRating || 5} <span style={{ fontSize: 9, color: 'var(--text-muted)', fontWeight: 600 }}>({agentStats?.ratingCount || 0})</span>
                 </span>
               </div>
             </div>

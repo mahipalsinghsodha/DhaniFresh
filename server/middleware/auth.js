@@ -62,9 +62,9 @@ auth.support = (req, res, next) => {
   }
 };
 
-// ✅ Super Admin only middleware (allows superadmin and admin)
+// ✅ Super Admin only middleware (allows superadmin, admin, and support staff)
 auth.superadmin = (req, res, next) => {
-  if (req.user && (req.user.role === 'superadmin' || req.user.role === 'admin')) {
+  if (req.user && (req.user.role === 'superadmin' || req.user.role === 'admin' || req.user.role === 'support')) {
     next();
   } else {
     res.status(403).json({ message: 'Super Admin access only' });

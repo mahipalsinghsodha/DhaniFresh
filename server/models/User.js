@@ -55,6 +55,8 @@ const userSchema = new mongoose.Schema({
     lastActiveAt:    { type: Date, default: Date.now },
   },
 
+  lastLogin: { type: Date, default: Date.now },
+
   // ── Loyalty & Wallet System ───────────────────────────────────────────────
   walletBalance: { type: Number, default: 0 },
   rewardPoints: { type: Number, default: 0 },
