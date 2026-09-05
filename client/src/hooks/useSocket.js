@@ -14,11 +14,40 @@ const SOCKET_URL = import.meta.env.DEV
   : (import.meta.env.VITE_API_URL ? import.meta.env.VITE_API_URL.replace(/\/+$/, '') : '')
 
 let globalSocket = null // Singleton socket instance
+const connectionListeners = new Set()
+
+function notifyConnectionChange(connected, error = null) {
+  connectionListeners.forEach(listener => {
+    try {
+      listener(connected, error)
+    } catch (e) {
+      console.error('[Socket] Error in connection listener:', e)
+    }
+  })
+}
 
 export function useSocket() {
   const [isConnected, setIsConnected] = useState(!!globalSocket?.connected)
   const [connectionError, setConnectionError] = useState(null)
   const listenersRef = useRef({})
+
+  // Subscribe this hook instance to global socket connection changes
+  useEffect(() => {
+    const listener = (connected, err) => {
+      setIsConnected(connected)
+      if (err !== undefined) setConnectionError(err)
+    }
+    connectionListeners.add(listener)
+
+    // Immediate sync
+    if (globalSocket) {
+      setIsConnected(!!globalSocket.connected)
+    }
+
+    return () => {
+      connectionListeners.delete(listener)
+    }
+  }, [])
 
   // ── Connect ──────────────────────────────────────────────────────────────────
   const connect = useCallback(() => {
@@ -30,6 +59,7 @@ export function useSocket() {
         globalSocket.disconnect().connect()
       }
       setIsConnected(true)
+      notifyConnectionChange(true)
       return globalSocket
     }
 
@@ -54,25 +84,22 @@ export function useSocket() {
 
     globalSocket.on('connect', () => {
       console.log('[Socket] Connected:', globalSocket.id)
-      setIsConnected(true)
-      setConnectionError(null)
+      notifyConnectionChange(true, null)
     })
 
     globalSocket.on('disconnect', (reason) => {
       console.log('[Socket] Disconnected:', reason)
-      setIsConnected(false)
+      notifyConnectionChange(false, null)
     })
 
     globalSocket.on('connect_error', (err) => {
       console.error('[Socket] Connection error:', err.message)
-      setConnectionError(err.message)
-      setIsConnected(false)
+      notifyConnectionChange(false, err.message)
     })
 
     globalSocket.on('reconnect', (attemptNumber) => {
       console.log('[Socket] Reconnected after', attemptNumber, 'attempts')
-      setIsConnected(true)
-      setConnectionError(null)
+      notifyConnectionChange(true, null)
     })
 
     globalSocket.on('auth:force_logout', (data) => {

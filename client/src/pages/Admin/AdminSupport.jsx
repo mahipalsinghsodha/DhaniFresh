@@ -56,7 +56,8 @@ const formatWorkTime = (sec = 0) => {
 
 export default function AdminSupport({ onPopOutSession, suppressIncomingModal = false }) {
   const { user, hasPermission } = useAuth();
-  const { isConnected, connect, emit, on, off } = useSocket();
+  const { isConnected, socket, connect, emit, on, off } = useSocket();
+  const online = isConnected || !!socket?.connected;
   const [sessions, setSessions] = useState([]);
   const [selected, setSelected] = useState(null);
   const [messages, setMessages] = useState([]);
@@ -380,7 +381,7 @@ export default function AdminSupport({ onPopOutSession, suppressIncomingModal = 
 
               {/* Agent Live Toggle */}
               <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                {!isConnected && (
+                {!online && (
                   <span style={{ fontSize: 10, color: '#f59e0b', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4 }} title="Connecting to live dispatch server">
                     <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping" />
                     Connecting...
@@ -388,19 +389,19 @@ export default function AdminSupport({ onPopOutSession, suppressIncomingModal = 
                 )}
                 <button
                   onClick={toggleLiveStatus}
-                  disabled={!isConnected}
-                  title={!isConnected ? "Connecting to dispatch server..." : (isAgentLive ? "Click to set status to Offline" : "Click to set status to Online")}
+                  disabled={!online}
+                  title={!online ? "Connecting to dispatch server..." : (isAgentLive ? "Click to set status to Offline" : "Click to set status to Online")}
                   style={{
                     display: 'flex', alignItems: 'center', gap: 6, padding: '5px 10px',
-                    borderRadius: 99, fontSize: 11, fontWeight: 800, cursor: isConnected ? 'pointer' : 'not-allowed', border: '1px solid',
-                    background: (isConnected && isAgentLive) ? 'rgba(16,185,129,0.12)' : 'rgba(100,116,139,0.12)',
-                    borderColor: (isConnected && isAgentLive) ? 'rgba(16,185,129,0.3)' : 'rgba(100,116,139,0.3)',
-                    color: (isConnected && isAgentLive) ? '#10b981' : '#64748b',
-                    opacity: isConnected ? 1 : 0.75
+                    borderRadius: 99, fontSize: 11, fontWeight: 800, cursor: online ? 'pointer' : 'not-allowed', border: '1px solid',
+                    background: (online && isAgentLive) ? 'rgba(16,185,129,0.12)' : 'rgba(100,116,139,0.12)',
+                    borderColor: (online && isAgentLive) ? 'rgba(16,185,129,0.3)' : 'rgba(100,116,139,0.3)',
+                    color: (online && isAgentLive) ? '#10b981' : '#64748b',
+                    opacity: online ? 1 : 0.75
                   }}
                 >
-                  <span style={{ width: 7, height: 7, borderRadius: '50%', background: (isConnected && isAgentLive) ? '#10b981' : '#94a3b8' }} className={(isConnected && isAgentLive) ? 'animate-pulse' : ''} />
-                  {(isConnected && isAgentLive) ? 'Online' : 'Offline'}
+                  <span style={{ width: 7, height: 7, borderRadius: '50%', background: (online && isAgentLive) ? '#10b981' : '#94a3b8' }} className={(online && isAgentLive) ? 'animate-pulse' : ''} />
+                  {(online && isAgentLive) ? 'Online' : 'Offline'}
                 </button>
               </div>
             </div>
