@@ -57,7 +57,7 @@ const formatWorkTime = (sec = 0) => {
 
 export default function AdminSupport({ onPopOutSession }) {
   const { user, hasPermission } = useAuth();
-  const { connect, emit, on, off } = useSocket();
+  const { isConnected, connect, emit, on, off } = useSocket();
   const [sessions, setSessions] = useState([]);
   const [selected, setSelected] = useState(null);
   const [messages, setMessages] = useState([]);
@@ -351,20 +351,30 @@ export default function AdminSupport({ onPopOutSession }) {
               </div>
 
               {/* Agent Live Toggle */}
-              <button
-                onClick={toggleLiveStatus}
-                title={isAgentLive ? "Click to set status to Offline" : "Click to set status to Online"}
-                style={{
-                  display: 'flex', alignItems: 'center', gap: 6, padding: '5px 10px',
-                  borderRadius: 99, fontSize: 11, fontWeight: 800, cursor: 'pointer', border: '1px solid',
-                  background: isAgentLive ? 'rgba(16,185,129,0.12)' : 'rgba(100,116,139,0.12)',
-                  borderColor: isAgentLive ? 'rgba(16,185,129,0.3)' : 'rgba(100,116,139,0.3)',
-                  color: isAgentLive ? '#10b981' : '#64748b'
-                }}
-              >
-                <span style={{ width: 7, height: 7, borderRadius: '50%', background: isAgentLive ? '#10b981' : '#94a3b8' }} className={isAgentLive ? 'animate-pulse' : ''} />
-                {isAgentLive ? 'Online' : 'Offline'}
-              </button>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                {!isConnected && (
+                  <span style={{ fontSize: 10, color: '#f59e0b', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4 }} title="Connecting to live dispatch server">
+                    <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping" />
+                    Connecting...
+                  </span>
+                )}
+                <button
+                  onClick={toggleLiveStatus}
+                  disabled={!isConnected}
+                  title={!isConnected ? "Connecting to dispatch server..." : (isAgentLive ? "Click to set status to Offline" : "Click to set status to Online")}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 6, padding: '5px 10px',
+                    borderRadius: 99, fontSize: 11, fontWeight: 800, cursor: isConnected ? 'pointer' : 'not-allowed', border: '1px solid',
+                    background: (isConnected && isAgentLive) ? 'rgba(16,185,129,0.12)' : 'rgba(100,116,139,0.12)',
+                    borderColor: (isConnected && isAgentLive) ? 'rgba(16,185,129,0.3)' : 'rgba(100,116,139,0.3)',
+                    color: (isConnected && isAgentLive) ? '#10b981' : '#64748b',
+                    opacity: isConnected ? 1 : 0.75
+                  }}
+                >
+                  <span style={{ width: 7, height: 7, borderRadius: '50%', background: (isConnected && isAgentLive) ? '#10b981' : '#94a3b8' }} className={(isConnected && isAgentLive) ? 'animate-pulse' : ''} />
+                  {(isConnected && isAgentLive) ? 'Online' : 'Offline'}
+                </button>
+              </div>
             </div>
 
             {/* Agent Live Performance Metrics */}

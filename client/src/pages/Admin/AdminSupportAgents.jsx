@@ -7,11 +7,13 @@ import {
 import { toast } from 'react-toastify'
 import api from '../../api/axios'
 import { useAuth } from '../../context/AuthContext'
+import { useSocket } from '../../hooks/useSocket'
 import RestrictedAccess from '../../components/RestrictedAccess'
 import { useConfirm } from '../../context/ConfirmContext'
 
 const AdminSupportAgents = () => {
   const { user } = useAuth()
+  const { connect, on, off } = useSocket()
   const confirm = useConfirm()
   const [agents, setAgents] = useState([])
   const [loading, setLoading] = useState(true)
@@ -26,18 +28,48 @@ const AdminSupportAgents = () => {
   const [loadingHistory, setLoadingHistory] = useState(false)
 
   useEffect(() => {
-    if (user?.role === 'superadmin') fetchAgents()
-  }, [user])
+    if (user?.role === 'superadmin') {
+      fetchAgents()
+      connect()
 
-  const fetchAgents = async () => {
+      const handlePresenceChange = ({ agentId, isLive, isOnline }) => {
+        setAgents(prev => prev.map(a => {
+          if (String(a._id) === String(agentId)) {
+            return { ...a, isOnline, isLive }
+          }
+          return a
+        }))
+      }
+
+      const handleStatsUpdate = () => {
+        fetchAgents(true)
+      }
+
+      on('admin:agent_presence_change', handlePresenceChange)
+      on('agent:stats_updated', handleStatsUpdate)
+
+      // Fallback background sync every 15s
+      const interval = setInterval(() => {
+        fetchAgents(true)
+      }, 15000)
+
+      return () => {
+        off('admin:agent_presence_change', handlePresenceChange)
+        off('agent:stats_updated', handleStatsUpdate)
+        clearInterval(interval)
+      }
+    }
+  }, [user, connect, on, off])
+
+  const fetchAgents = async (silent = false) => {
     try {
-      setLoading(true)
+      if (!silent) setLoading(true)
       const res = await api.get('/api/admin/support-agents')
       setAgents(res.data || [])
     } catch {
-      toast.error('Failed to load support agents')
+      if (!silent) toast.error('Failed to load support agents')
     } finally {
-      setLoading(false)
+      if (!silent) setLoading(false)
     }
   }
 

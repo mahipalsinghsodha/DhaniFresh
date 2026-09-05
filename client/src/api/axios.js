@@ -32,6 +32,9 @@ export const setAccessToken = (token) => {
     localStorage.removeItem('accessToken');
     delete api.defaults.headers.common['Authorization'];
   }
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('auth:token_updated', { detail: { token: _accessToken } }));
+  }
 };
 
 export const setRefreshToken = (token) => {

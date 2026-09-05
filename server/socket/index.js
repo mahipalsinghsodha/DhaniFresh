@@ -16,6 +16,16 @@ function initSocketServer(httpServer) {
     ? process.env.ALLOWED_ORIGINS.split(',').map(o => o.trim())
     : ['http://localhost:3000', 'http://localhost:5173'];
 
+  if (process.env.CLIENT_URL && !allowedOrigins.includes(process.env.CLIENT_URL.trim())) {
+    allowedOrigins.push(process.env.CLIENT_URL.trim());
+  }
+
+  // Ensure production Netlify and custom domains are always accepted
+  const defaultAllowed = ['https://daatasa.netlify.app', 'https://daatasa.in', 'https://www.daatasa.in'];
+  defaultAllowed.forEach(d => {
+    if (!allowedOrigins.includes(d)) allowedOrigins.push(d);
+  });
+
   io = new Server(httpServer, {
     cors: {
       origin: allowedOrigins,
@@ -40,7 +50,7 @@ function initSocketServer(httpServer) {
 
     try {
       const decoded = jwt.verify(token, process.env.JWT_SECRET);
-      const user = await User.findById(decoded.id).select('name email role avatar isBlocked tokenVersion');
+      const user = await User.findById(decoded.id).select('name email role permissions supportStats avatar isBlocked tokenVersion');
 
       if (!user || user.isBlocked || decoded.version !== user.tokenVersion) {
         return next(new Error('Authentication failed'));

@@ -22,20 +22,27 @@ export function useSocket() {
 
   // ── Connect ──────────────────────────────────────────────────────────────────
   const connect = useCallback(() => {
+    const token = getAccessToken()
+
     if (globalSocket?.connected) {
+      if (globalSocket.auth?.token !== token) {
+        globalSocket.auth = { token }
+        globalSocket.disconnect().connect()
+      }
       setIsConnected(true)
       return globalSocket
     }
 
     if (globalSocket && !globalSocket.connected) {
+      globalSocket.auth = { token }
       globalSocket.connect()
       return globalSocket
     }
 
-    const token = getAccessToken()
-
     globalSocket = io(SOCKET_URL, {
-      auth:              { token },
+      auth: (cb) => {
+        cb({ token: getAccessToken() })
+      },
       withCredentials:   true,
       transports:        ['polling', 'websocket'],
       reconnection:      true,
@@ -43,6 +50,7 @@ export function useSocket() {
       reconnectionDelayMax: 5000,
       reconnectionAttempts: 10,
     })
+    globalSocket.auth = { token }
 
     globalSocket.on('connect', () => {
       console.log('[Socket] Connected:', globalSocket.id)
@@ -73,6 +81,23 @@ export function useSocket() {
     })
 
     return globalSocket
+  }, [])
+
+  // Auto-reconnect when auth token updates (login/refresh/logout)
+  useEffect(() => {
+    const handleTokenChange = () => {
+      if (globalSocket) {
+        const token = getAccessToken()
+        globalSocket.auth = { token }
+        if (token) {
+          globalSocket.disconnect().connect()
+        } else {
+          globalSocket.disconnect()
+        }
+      }
+    }
+    window.addEventListener('auth:token_updated', handleTokenChange)
+    return () => window.removeEventListener('auth:token_updated', handleTokenChange)
   }, [])
 
   // ── Disconnect ───────────────────────────────────────────────────────────────
