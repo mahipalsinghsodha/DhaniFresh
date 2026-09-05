@@ -54,6 +54,14 @@ const formatWorkTime = (sec = 0) => {
   return `${h}h ${m % 60}m`;
 };
 
+const getShortOrderId = (orderRef) => {
+  if (!orderRef) return '';
+  if (typeof orderRef === 'object') {
+    return orderRef.orderIdString || String(orderRef._id || '').slice(-6).toUpperCase();
+  }
+  return String(orderRef).replace(/^#/, '').slice(-6).toUpperCase();
+};
+
 export default function AdminSupport({ onPopOutSession, suppressIncomingModal = false }) {
   const { user, hasPermission } = useAuth();
   const { isConnected, socket, connect, emit, on, off } = useSocket();
@@ -612,13 +620,13 @@ export default function AdminSupport({ onPopOutSession, suppressIncomingModal = 
                           )}
                           {isSuperAdmin && selected.agentId && (
                             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 8px', borderRadius: 6, background: 'rgba(99,102,241,0.1)', color: '#4f46e5', fontSize: 10, fontWeight: 700 }}>
-                              <FiEye size={11} /> Handled by: {selected.agentId.name || 'Agent'}
+                              <FiEye size={11} /> Handled by: {selected.agentId?.name || (typeof selected.agentId === 'string' ? 'Agent' : 'Agent')}
                             </span>
                           )}
                         </div>
                         <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
                           {selected.userId?.email || selected.guestEmail} · {selected.category}
-                          {selected.orderId && ` · Order #${selected.orderId.slice(-6).toUpperCase()}`}
+                          {selected.orderId && ` · Order #${getShortOrderId(selected.orderId)}`}
                           {selected.currentPage && (
                             <span style={{ marginLeft: 6, color: '#4f46e5', fontFamily: 'monospace', fontWeight: 700 }}>
                               [{selected.currentPage}]
@@ -813,7 +821,7 @@ export default function AdminSupport({ onPopOutSession, suppressIncomingModal = 
             Order History & Database
           </div>
           <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-            <SupportOrderPanel initialSearchQuery={selected.orderId || selected.userId?.email || selected.guestEmail} />
+            <SupportOrderPanel initialSearchQuery={typeof selected.orderId === 'object' ? (selected.orderId?.orderIdString || String(selected.orderId?._id || '')) : (selected.orderId || selected.userId?.email || selected.guestEmail)} />
           </div>
         </div>
       )}
