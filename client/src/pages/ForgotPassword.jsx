@@ -99,12 +99,8 @@ const ForgotPassword = () => {
       }
       setLoading(true)
       try {
-        const res = await api.post('/api/auth/forgot-password-otp', { phone: cleanedPhone })
-        if (res.data?.otp) {
-          toast.info(`Reset code: ${res.data.otp}`)
-        } else {
-          toast.success(`OTP sent to +91 ${cleanedPhone}`)
-        }
+        await api.post('/api/auth/forgot-password-otp', { phone: cleanedPhone })
+        toast.success(`OTP sent to +91 ${cleanedPhone}`)
         setIdentifier(cleanedPhone)
         setStep('OTP_RESET')
         setCooldown(60)
@@ -164,12 +160,8 @@ const ForgotPassword = () => {
     if (cooldown > 0) return
     setLoading(true)
     try {
-      const res = await api.post('/api/auth/forgot-password-otp', { phone: identifier.trim() })
-      if (res.data?.otp) {
-        toast.info(`New reset code: ${res.data.otp}`)
-      } else {
-        toast.success('New OTP sent to your phone')
-      }
+      await api.post('/api/auth/forgot-password-otp', { phone: identifier.trim() })
+      toast.success('New OTP sent to your phone')
       setCooldown(60)
     } catch (err) {
       toast.error(err.response?.data?.message || 'Failed to resend OTP')

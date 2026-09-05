@@ -299,23 +299,17 @@ router.post('/login-otp', authLimiter, dbCheck, [
     }
 
     const OTP = require('../models/OTP');
-    const isMasterOtp = otpCode === '123456';
+    const otpRecord = await OTP.findOne({ phone });
     
-    if (!isMasterOtp) {
-      const otpRecord = await OTP.findOne({ phone });
-      
-      if (!otpRecord) return res.status(400).json({ message: 'OTP expired or not found' });
-      if (otpRecord.otpCode !== otpCode) return res.status(400).json({ message: 'Invalid OTP' });
-      if (new Date() > otpRecord.expiresAt) {
-        await OTP.deleteOne({ phone });
-        return res.status(400).json({ message: 'OTP has expired' });
-      }
-      
-      // Valid OTP - clean it up
+    if (!otpRecord) return res.status(400).json({ message: 'OTP expired or not found' });
+    if (otpRecord.otpCode !== otpCode) return res.status(400).json({ message: 'Invalid OTP' });
+    if (new Date() > otpRecord.expiresAt) {
       await OTP.deleteOne({ phone });
-    } else {
-      await OTP.deleteOne({ phone }).catch(() => {});
+      return res.status(400).json({ message: 'OTP has expired' });
     }
+    
+    // Valid OTP - clean it up
+    await OTP.deleteOne({ phone });
 
     // Check if user exists by phone
     let user = await User.findOne({ phone }).select('+refreshTokens');
@@ -730,12 +724,8 @@ const handleForgotPasswordRequest = async (req, res) => {
 
       const { sendSMS } = require('../services/smsService');
       const msg = `Your Daatasa password reset code is: ${resetToken}. It is valid for 5 minutes.`;
-      try {
-        await sendSMS(user.phone, msg);
-      } catch (smsErr) {
-        console.warn('[OTP] SMS provider dispatch failed on password reset:', smsErr.message);
-      }
-      res.json({ success: true, message: 'Reset code sent to your mobile via SMS.', isOtp: true, otp: resetToken });
+      await sendSMS(user.phone, msg);
+      res.json({ success: true, message: 'Reset code sent to your mobile via SMS.', isOtp: true });
     }
   } catch (error) {
     console.error('Forgot password error:', error);
@@ -766,13 +756,9 @@ router.post('/forgot-password-otp', authLimiter, dbCheck, async (req, res) => {
 
     const { sendSMS } = require('../services/smsService');
     const msg = `Your Daatasa password reset code is: ${otpCode}. It is valid for 5 minutes.`;
-    try {
-      await sendSMS(phone, msg);
-    } catch (smsErr) {
-      console.warn('[OTP] SMS provider dispatch failed on password reset:', smsErr.message);
-    }
+    await sendSMS(phone, msg);
 
-    res.json({ success: true, message: 'OTP sent to your phone', otp: otpCode });
+    res.json({ success: true, message: 'OTP sent to your phone' });
   } catch (err) {
     console.error('forgot-password-otp error:', err);
     res.status(500).json({ message: 'Failed to send OTP' });
@@ -791,21 +777,15 @@ router.post('/reset-password-otp', dbCheck, async (req, res) => {
     }
     if (!phone.startsWith('+')) phone = '+91' + phone;
 
-    const isMasterOtp = otp === '123456';
     const OTP = require('../models/OTP');
-
-    if (!isMasterOtp) {
-      const record = await OTP.findOne({ phone });
-      if (!record) return res.status(400).json({ message: 'OTP expired or not found' });
-      if (record.otpCode !== otp) return res.status(400).json({ message: 'Invalid OTP code' });
-      if (new Date() > record.expiresAt) {
-        await OTP.deleteOne({ phone });
-        return res.status(400).json({ message: 'OTP has expired' });
-      }
+    const record = await OTP.findOne({ phone });
+    if (!record) return res.status(400).json({ message: 'OTP expired or not found' });
+    if (record.otpCode !== otp) return res.status(400).json({ message: 'Invalid OTP code' });
+    if (new Date() > record.expiresAt) {
       await OTP.deleteOne({ phone });
-    } else {
-      await OTP.deleteOne({ phone }).catch(() => {});
+      return res.status(400).json({ message: 'OTP has expired' });
     }
+    await OTP.deleteOne({ phone });
 
     const user = await User.findOne({ phone }).select('+password');
     if (!user) {

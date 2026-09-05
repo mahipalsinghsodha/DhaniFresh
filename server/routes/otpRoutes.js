@@ -36,22 +36,15 @@ router.post('/send', async (req, res) => {
 
     const messageBody = `Your Daatasa verification code is: ${otpCode}. It is valid for 5 minutes. Please do not share this code with anyone.`;
     
-    let smsDelivered = false;
-    try {
-      await sendSMS(phone, messageBody);
-      smsDelivered = true;
-    } catch (smsError) {
-      console.warn('[OTP] SMS provider dispatch failed (trial/carrier restriction):', smsError.message);
-    }
+    await sendSMS(phone, messageBody);
 
     res.json({
       success: true,
-      message: smsDelivered ? 'OTP sent successfully' : 'OTP generated successfully',
-      otp: otpCode // Fallback so customers/QA can always complete login even if carrier limits apply
+      message: 'OTP sent successfully'
     });
   } catch (error) {
     console.error('Error sending OTP:', error);
-    res.status(500).json({ message: 'Failed to send OTP' });
+    res.status(500).json({ message: error.message || 'Failed to send OTP' });
   }
 });
 
@@ -70,28 +63,23 @@ router.post('/verify', async (req, res) => {
       phone = '+91' + phone;
     }
 
-    const isMasterOtp = otpCode === '123456';
-    if (!isMasterOtp) {
-      const otpRecord = await OTP.findOne({ phone });
+    const otpRecord = await OTP.findOne({ phone });
 
-      if (!otpRecord) {
-        return res.status(400).json({ message: 'OTP expired or not found' });
-      }
-
-      if (otpRecord.otpCode !== otpCode) {
-        return res.status(400).json({ message: 'Invalid OTP' });
-      }
-
-      if (new Date() > otpRecord.expiresAt) {
-        await OTP.deleteOne({ phone });
-        return res.status(400).json({ message: 'OTP has expired' });
-      }
-
-      // OTP is valid - delete after successful verification to prevent reuse
-      await OTP.deleteOne({ phone });
-    } else {
-      await OTP.deleteOne({ phone }).catch(() => {});
+    if (!otpRecord) {
+      return res.status(400).json({ message: 'OTP expired or not found' });
     }
+
+    if (otpRecord.otpCode !== otpCode) {
+      return res.status(400).json({ message: 'Invalid OTP' });
+    }
+
+    if (new Date() > otpRecord.expiresAt) {
+      await OTP.deleteOne({ phone });
+      return res.status(400).json({ message: 'OTP has expired' });
+    }
+
+    // OTP is valid - delete after successful verification to prevent reuse
+    await OTP.deleteOne({ phone });
 
     res.json({ success: true, message: 'Phone number verified successfully' });
   } catch (error) {
