@@ -843,6 +843,44 @@ function startInactivityCleanupCron(io) {
   }, 60 * 1000); // Check every 60 seconds
 }
 
+/* ═══════════════════════════════════════════════════════════════════════════ */
+/*  8. 15-DAY CHAT RETENTION & AUTO-PURGE POLICY                              */
+/* ═══════════════════════════════════════════════════════════════════════════ */
+async function purgeExpiredChatsOlderThan15Days() {
+  try {
+    const FIFTEEN_DAYS_MS = 15 * 24 * 60 * 60 * 1000;
+    const cutoffDate = new Date(Date.now() - FIFTEEN_DAYS_MS);
+
+    // Find all sessions created more than 15 days ago
+    const oldSessions = await ChatSession.find({ createdAt: { $lt: cutoffDate } }).select('sessionId').lean();
+    if (oldSessions.length > 0) {
+      const oldSessionIds = oldSessions.map(s => s.sessionId);
+
+      // Remove chat messages associated with these sessions
+      const msgResult = await ChatMessage.deleteMany({
+        $or: [
+          { sessionId: { $in: oldSessionIds } },
+          { createdAt: { $lt: cutoffDate } }
+        ]
+      });
+
+      // Remove the expired chat sessions
+      const sessionResult = await ChatSession.deleteMany({ sessionId: { $in: oldSessionIds } });
+
+      console.log(`[ChatRetention] Auto-purged ${sessionResult.deletedCount} chat sessions and ${msgResult.deletedCount} messages older than 15 days.`);
+    }
+  } catch (err) {
+    console.error('[ChatRetention] Error auto-purging 15-day chats:', err);
+  }
+}
+
+function start15DayChatRetentionCron() {
+  // Run on startup after 10 seconds
+  setTimeout(purgeExpiredChatsOlderThan15Days, 10000);
+  // Run periodically every 6 hours
+  setInterval(purgeExpiredChatsOlderThan15Days, 6 * 60 * 60 * 1000);
+}
+
 module.exports = {
   isSupportStaff,
   registerAgentPresence,
@@ -857,4 +895,6 @@ module.exports = {
   handleChatClosed,
   checkAndDispatchWaitingQueue,
   startInactivityCleanupCron,
+  start15DayChatRetentionCron,
+  purgeExpiredChatsOlderThan15Days,
 };

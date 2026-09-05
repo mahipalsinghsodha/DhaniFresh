@@ -125,10 +125,11 @@ function initSocketServer(httpServer) {
   }, 5 * 60 * 1000); // Check every 5 minutes
 
   // ── 15-Minute Inactive Session Auto-Cleanup Cron ───────────────────────────
-  const { startInactivityCleanupCron } = require('./supportQueueManager');
+  const { startInactivityCleanupCron, start15DayChatRetentionCron } = require('./supportQueueManager');
   startInactivityCleanupCron(io);
+  start15DayChatRetentionCron();
 
-  console.log('[Socket.io] Server initialized with 15m Inactivity Cleanup');
+  console.log('[Socket.io] Server initialized with 15m Inactivity Cleanup & 15-Day Chat Retention Policy');
   return io;
 }
 

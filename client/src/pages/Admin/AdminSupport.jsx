@@ -109,7 +109,7 @@ export default function AdminSupport({ onPopOutSession, suppressIncomingModal = 
   // Fetch Initial Sessions
   const fetchSessions = useCallback(async () => {
     try {
-      const res = await api.get('/api/chat/sessions?limit=50');
+      const res = await api.get('/api/chat/sessions?limit=100');
       setSessions(res.data.sessions || []);
     } catch (e) {
       console.error(e);
@@ -327,7 +327,14 @@ export default function AdminSupport({ onPopOutSession, suppressIncomingModal = 
 
     const matchF = filter === "ALL" || s?.status === filter;
     const q = (search || '').toLowerCase();
-    const matchS = !q || s?.guestName?.toLowerCase().includes(q) || s?.userId?.name?.toLowerCase().includes(q) || s?.sessionId?.toLowerCase().includes(q);
+    const matchS = !q || 
+      s?.guestName?.toLowerCase().includes(q) || 
+      s?.guestEmail?.toLowerCase().includes(q) || 
+      s?.userId?.name?.toLowerCase().includes(q) || 
+      s?.userId?.email?.toLowerCase().includes(q) || 
+      s?.agentId?.name?.toLowerCase().includes(q) || 
+      s?.userPhone?.toLowerCase().includes(q) || 
+      s?.sessionId?.toLowerCase().includes(q);
 
     return matchF && matchS;
   });

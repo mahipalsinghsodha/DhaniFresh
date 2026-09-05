@@ -11,6 +11,14 @@ import { useSocket } from '../../hooks/useSocket'
 import RestrictedAccess from '../../components/RestrictedAccess'
 import { useConfirm } from '../../context/ConfirmContext'
 
+const formatWorkTime = (sec = 0) => {
+  if (!sec || sec < 60) return `${sec || 0}s`;
+  const m = Math.floor(sec / 60);
+  const h = Math.floor(m / 60);
+  if (h === 0) return `${m}m`;
+  return `${h}h ${m % 60}m`;
+};
+
 const AdminSupportAgents = () => {
   const { user } = useAuth()
   const { connect, on, off } = useSocket()
@@ -309,6 +317,7 @@ const AdminSupportAgents = () => {
                           </div>
                         </div>
                       </td>
+                      {/* 2. Live Status */}
                       <td className="px-6 py-4">
                         {agent.isOnline && agent.isLive ? (
                           <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-extrabold bg-emerald-100 text-emerald-800 border border-emerald-200">
@@ -324,9 +333,20 @@ const AdminSupportAgents = () => {
                           </span>
                         )}
                       </td>
+
+                      {/* 3. Work Time (Today) */}
+                      <td className="px-6 py-4 text-center">
+                        <span className="inline-flex items-center gap-1 font-mono text-xs font-bold text-slate-700 bg-slate-100 px-2.5 py-1 rounded-lg">
+                          <FiClock size={11} className="text-brand-primary" /> {formatWorkTime(agent.todayWorkSeconds || 0)}
+                        </span>
+                      </td>
+
+                      {/* 4. Dispatched */}
                       <td className="px-6 py-4 text-center">
                         <span className="font-bold text-sm text-slate-700 font-mono">{dispatched}</span>
                       </td>
+
+                      {/* 5. Accepted (Rate) */}
                       <td className="px-6 py-4 text-center">
                         <div className="flex flex-col items-center">
                           <span className="font-bold text-sm text-emerald-600 font-mono">{accepted}</span>
@@ -335,12 +355,26 @@ const AdminSupportAgents = () => {
                           </span>
                         </div>
                       </td>
+
+                      {/* 6. Rejected */}
                       <td className="px-6 py-4 text-center">
-                        <span className="font-bold text-sm text-rose-600 font-mono">{rejected}</span>
+                        <div className="flex flex-col items-center">
+                          <span className="font-bold text-sm text-rose-600 font-mono">{rejected}</span>
+                          {missed > 0 && <span className="text-[10px] text-orange-500 font-medium">{missed} missed</span>}
+                        </div>
                       </td>
+
+                      {/* 7. Rating ⭐ */}
                       <td className="px-6 py-4 text-center">
-                        <span className="font-bold text-sm text-orange-600 font-mono">{missed}</span>
+                        <div className="flex flex-col items-center">
+                          <span className="font-bold text-xs text-amber-600 font-mono flex items-center gap-0.5">
+                            ⭐ {agent.avgRating || 5}
+                          </span>
+                          <span className="text-[10px] text-slate-400 font-medium">{agent.ratingCount || 0} reviews</span>
+                        </div>
                       </td>
+
+                      {/* 8. Active */}
                       <td className="px-6 py-4 text-center">
                         <div className="flex flex-col items-center">
                           <span className="text-xs font-bold text-slate-800">{agent.activeChats || 0} active</span>
