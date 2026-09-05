@@ -101,7 +101,7 @@ function initSocketServer(httpServer) {
 
     socket.on('disconnect', (reason) => {
       if (socket.user) {
-        unregisterAgentPresence(socket.user._id, socket.id);
+        unregisterAgentPresence(socket.user._id, socket.id, io);
       }
       console.log(`[Socket] ${role} disconnected: ${userId} — reason: ${reason}`);
     });

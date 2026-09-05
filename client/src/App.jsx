@@ -1,4 +1,4 @@
-import { BrowserRouter as Router, Routes, Route, Navigate, useLocation, useSearchParams } from 'react-router-dom'
+import { BrowserRouter as Router, Routes, Route, Navigate, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { lazy, Suspense, useEffect, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { HelmetProvider } from 'react-helmet-async'
@@ -18,6 +18,7 @@ import NotificationDrawer from './components/NotificationDrawer'
 import api from './api/axios'
 import { ConfirmProvider } from './context/ConfirmContext'
 import SupportPopup from './components/chat/SupportPopup'
+import IncomingChatModal from './components/chat/IncomingChatModal'
 import { useSupportStore } from './store/support'
 
 
@@ -314,6 +315,31 @@ function AnimatedRoutes() {
 }
 
 
+function GlobalStaffIncomingChat() {
+  const { user, hasPermission } = useAuth()
+  const navigate = useNavigate()
+  const location = useLocation()
+
+  const isStaff = user && (
+    ['admin', 'superadmin', 'support'].includes(user.role) ||
+    (Array.isArray(user.permissions) && (user.permissions.includes('support') || user.permissions.includes('all'))) ||
+    (typeof hasPermission === 'function' && hasPermission('support'))
+  )
+
+  if (!isStaff) return null
+
+  return (
+    <IncomingChatModal
+      onAcceptChat={(sessionId) => {
+        window.dispatchEvent(new CustomEvent('support:incoming_accepted', { detail: { sessionId } }))
+        if (location.pathname !== '/support-panel' && location.pathname !== '/admin/support') {
+          navigate('/support-panel', { state: { autoSelectSessionId: sessionId } })
+        }
+      }}
+    />
+  )
+}
+
 // ─── App ──────────────────────────────────────────────────────────────────────
 function App() {
   const { initTheme } = useThemeStore()
@@ -357,6 +383,7 @@ function App() {
                     <WhatsAppButton />
                     <NotificationDrawer />
                     <SupportPopup />
+                    <GlobalStaffIncomingChat />
                   </SiteStatusWrapper>
                 </div>
               </Router>

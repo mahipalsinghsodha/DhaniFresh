@@ -133,20 +133,22 @@ const AdminSupportAgents = () => {
     <RestrictedAccess title="Superadmin Required" message="Only Super Administrators can manage support agents and call center analytics." />
   )
 
-  const filtered = agents.filter(a => 
-    a.name.toLowerCase().includes(search.toLowerCase()) || 
-    a.email.toLowerCase().includes(search.toLowerCase())
+  const safeAgents = Array.isArray(agents) ? agents : []
+
+  const filtered = safeAgents.filter(a => 
+    (a?.name || '').toLowerCase().includes(search.toLowerCase()) || 
+    (a?.email || '').toLowerCase().includes(search.toLowerCase())
   )
 
   // Overall KPI aggregates
-  const totalDispatched = agents.reduce((sum, a) => sum + (a.supportStats?.dispatchedCount || 0), 0)
-  const totalAccepted = agents.reduce((sum, a) => sum + (a.supportStats?.acceptedCount || 0), 0)
-  const totalRejected = agents.reduce((sum, a) => sum + (a.supportStats?.rejectedCount || 0), 0)
-  const totalMissed = agents.reduce((sum, a) => sum + (a.supportStats?.missedCount || 0), 0)
-  const onlineCount = agents.filter(a => a.isOnline && a.isLive).length
+  const totalDispatched = safeAgents.reduce((sum, a) => sum + (a?.supportStats?.dispatchedCount || 0), 0)
+  const totalAccepted = safeAgents.reduce((sum, a) => sum + (a?.supportStats?.acceptedCount || 0), 0)
+  const totalRejected = safeAgents.reduce((sum, a) => sum + (a?.supportStats?.rejectedCount || 0), 0)
+  const totalMissed = safeAgents.reduce((sum, a) => sum + (a?.supportStats?.missedCount || 0), 0)
+  const onlineCount = safeAgents.filter(a => a?.isOnline && a?.isLive).length
   const avgAcceptance = totalDispatched > 0 ? Math.round((totalAccepted / totalDispatched) * 100) : 100
 
-  if (loading && agents.length === 0) return (
+  if (loading && safeAgents.length === 0) return (
     <div className="min-h-screen pb-20 flex items-center justify-center" style={{ background: 'var(--bg-base)' }}>
       <div className="w-10 h-10 border-2 border-t-[var(--brand-primary)] border-transparent rounded-full animate-spin" />
     </div>
@@ -194,7 +196,7 @@ const AdminSupportAgents = () => {
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
           <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm">
             <p className="text-xs font-bold text-slate-500 uppercase">Total Agents</p>
-            <p className="text-2xl font-extrabold text-slate-800 mt-1">{agents.length}</p>
+            <p className="text-2xl font-extrabold text-slate-800 mt-1">{safeAgents.length}</p>
           </div>
           <div className="bg-white p-4 rounded-2xl border border-emerald-100 shadow-sm">
             <p className="text-xs font-bold text-emerald-600 uppercase flex items-center gap-1.5">
@@ -298,11 +300,11 @@ const AdminSupportAgents = () => {
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-3">
                           <div className="w-10 h-10 rounded-full bg-brand-primary/10 text-brand-primary flex items-center justify-center font-bold border border-brand-primary/20 shrink-0">
-                            {agent.name.charAt(0).toUpperCase()}
+                            {(agent.name || 'Agent').charAt(0).toUpperCase()}
                           </div>
                           <div>
-                            <p className="font-bold text-sm text-slate-800">{agent.name}</p>
-                            <p className="text-xs text-slate-500 flex items-center gap-1 mt-0.5"><FiMail size={10} /> {agent.email}</p>
+                            <p className="font-bold text-sm text-slate-800">{agent.name || 'Agent'}</p>
+                            <p className="text-xs text-slate-500 flex items-center gap-1 mt-0.5"><FiMail size={10} /> {agent.email || ''}</p>
                             {agent.phone && <p className="text-[10px] text-slate-400 flex items-center gap-1 mt-0.5"><FiPhone size={10} /> {agent.phone}</p>}
                           </div>
                         </div>
@@ -310,7 +312,11 @@ const AdminSupportAgents = () => {
                       <td className="px-6 py-4">
                         {agent.isOnline && agent.isLive ? (
                           <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-extrabold bg-emerald-100 text-emerald-800 border border-emerald-200">
-                            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" /> Online
+                            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" /> Live & Online
+                          </span>
+                        ) : agent.isOnline ? (
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-100 text-amber-800 border border-amber-200">
+                            <span className="w-2 h-2 rounded-full bg-amber-500" /> Away (Connected)
                           </span>
                         ) : (
                           <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-slate-100 text-slate-500 border border-slate-200">

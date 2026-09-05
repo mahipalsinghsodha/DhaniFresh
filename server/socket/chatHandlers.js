@@ -32,6 +32,8 @@ const ESCALATION_TRIGGERS = [
   'support executive', 'support agent', 'connect to agent', 'connect with agent',
   'connect to human', 'connect with support', 'not helpful', "can't help",
   'useless', 'frustrated', 'not satisfied', 'call me', 'callback', 'executive',
+  // Hindi triggers
+  'एजेंट', 'बात करें', 'बात करनी', 'लाइव एजेंट', 'कस्टमर केयर', 'सहायता', 'इंसान से बात', 'प्रतिनिधि', 'कॉल करें',
 ];
 
 function needsEscalation(text) {
@@ -114,6 +116,15 @@ function registerChatHandlers(io, socket) {
       socket.sessionId = sessionId;
 
       socket.emit('chat:session_created', { sessionId, status: 'BOT_HANDLING', language: activeLang });
+
+      // Notify admin staff immediately of newly started session
+      try {
+        const fullNewSession = await ChatSession.findById(session._id)
+          .populate('userId', 'name email avatar phone')
+          .populate('orderId')
+          .lean();
+        io.to('admin_room').emit('admin:new_session', fullNewSession);
+      } catch (e) {}
 
       const userMsgContent = initialMessage || subIssue;
 
@@ -225,7 +236,7 @@ function registerChatHandlers(io, socket) {
       await ChatSession.findOneAndUpdate({ sessionId }, { lastMessageAt: new Date() });
 
       // Check for escalation keywords (e.g. "Talk to a person" / "Talk to a human agent")
-      if (needsEscalation(content) && session.status === 'BOT_HANDLING') {
+      if (needsEscalation(content) && session.status !== 'CLOSED' && session.status !== 'ACTIVE') {
         await escalateToHuman(io, socket, session);
         return;
       }

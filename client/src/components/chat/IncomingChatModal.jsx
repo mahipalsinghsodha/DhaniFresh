@@ -10,8 +10,45 @@ export default function IncomingChatModal({ onAcceptChat }) {
   const audioContextRef = useRef(null);
   const intervalRef = useRef(null);
   const soundIntervalRef = useRef(null);
+  const incomingCallRef = useRef(null);
 
-  // Play Web Audio Beep / Chime without external MP3 dependencies
+  useEffect(() => {
+    incomingCallRef.current = incomingCall;
+  }, [incomingCall]);
+
+  // Pre-unlock Web Audio on first user interaction on the page
+  useEffect(() => {
+    const unlockAudio = () => {
+      try {
+        if (!audioContextRef.current) {
+          audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)();
+        }
+        if (audioContextRef.current.state === 'suspended') {
+          audioContextRef.current.resume();
+        }
+      } catch (e) {}
+      window.removeEventListener('click', unlockAudio);
+      window.removeEventListener('keydown', unlockAudio);
+      window.removeEventListener('touchstart', unlockAudio);
+    };
+
+    window.addEventListener('click', unlockAudio);
+    window.addEventListener('keydown', unlockAudio);
+    window.addEventListener('touchstart', unlockAudio);
+
+    // Request notification permission if supported
+    if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission().catch(() => {});
+    }
+
+    return () => {
+      window.removeEventListener('click', unlockAudio);
+      window.removeEventListener('keydown', unlockAudio);
+      window.removeEventListener('touchstart', unlockAudio);
+    };
+  }, []);
+
+  // Play Web Audio Chime without external MP3 dependencies
   const playRingtone = () => {
     try {
       if (!audioContextRef.current) {
@@ -19,33 +56,45 @@ export default function IncomingChatModal({ onAcceptChat }) {
       }
       const ctx = audioContextRef.current;
       if (ctx.state === 'suspended') {
-        ctx.resume();
+        ctx.resume().catch(() => {});
       }
       
       const now = ctx.currentTime;
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
+      // Tone 1: 587.33 (D5) -> 880 (A5)
+      const osc1 = ctx.createOscillator();
+      const gain1 = ctx.createGain();
+      osc1.type = 'sine';
+      osc1.frequency.setValueAtTime(587.33, now);
+      osc1.frequency.setValueAtTime(880.00, now + 0.12);
+      gain1.gain.setValueAtTime(0.35, now);
+      gain1.gain.exponentialRampToValueAtTime(0.001, now + 0.45);
+      osc1.connect(gain1);
+      gain1.connect(ctx.destination);
+      osc1.start(now);
+      osc1.stop(now + 0.45);
 
-      osc.type = 'sine';
-      osc.frequency.setValueAtTime(587.33, now); // D5
-      osc.frequency.setValueAtTime(880.00, now + 0.1); // A5
-
-      gain.gain.setValueAtTime(0.15, now);
-      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
-
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-
-      osc.start(now);
-      osc.stop(now + 0.35);
+      // Tone 2 (second chime): 783.99 (G5) -> 1046.50 (C6)
+      const osc2 = ctx.createOscillator();
+      const gain2 = ctx.createGain();
+      osc2.type = 'sine';
+      osc2.frequency.setValueAtTime(783.99, now + 0.22);
+      osc2.frequency.setValueAtTime(1046.50, now + 0.34);
+      gain2.gain.setValueAtTime(0.0001, now);
+      gain2.gain.setValueAtTime(0.3, now + 0.22);
+      gain2.gain.exponentialRampToValueAtTime(0.001, now + 0.65);
+      osc2.connect(gain2);
+      gain2.connect(ctx.destination);
+      osc2.start(now + 0.22);
+      osc2.stop(now + 0.65);
     } catch (e) {
-      // Audio autoplay policy fallback
+      // Autoplay fallback
     }
   };
 
   useEffect(() => {
     const handleRing = (data) => {
       setIncomingCall(data);
+      incomingCallRef.current = data;
       const totalSec = data.timeoutSeconds || 30;
       setTimeLeft(totalSec);
 
@@ -53,6 +102,18 @@ export default function IncomingChatModal({ onAcceptChat }) {
       playRingtone();
       if (soundIntervalRef.current) clearInterval(soundIntervalRef.current);
       soundIntervalRef.current = setInterval(playRingtone, 2000);
+
+      // Trigger Desktop Notification if permitted
+      if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
+        try {
+          new Notification('Incoming Support Call 📞', {
+            body: `${data.customerName || 'A customer'} needs support right now!`,
+            icon: '/logo_circle.png',
+            tag: data.sessionId,
+            requireInteraction: true,
+          });
+        } catch (e) {}
+      }
 
       // Start Countdown
       if (intervalRef.current) clearInterval(intervalRef.current);
@@ -65,15 +126,18 @@ export default function IncomingChatModal({ onAcceptChat }) {
           clearInterval(intervalRef.current);
           clearInterval(soundIntervalRef.current);
           setIncomingCall(null);
+          incomingCallRef.current = null;
         }
       }, 500);
     };
 
     const handleDismiss = (data) => {
-      if (!incomingCall || incomingCall.sessionId === data.sessionId) {
+      const cur = incomingCallRef.current;
+      if (!cur || cur.sessionId === data.sessionId) {
         clearInterval(intervalRef.current);
         clearInterval(soundIntervalRef.current);
         setIncomingCall(null);
+        incomingCallRef.current = null;
       }
     };
 
@@ -86,7 +150,7 @@ export default function IncomingChatModal({ onAcceptChat }) {
       if (intervalRef.current) clearInterval(intervalRef.current);
       if (soundIntervalRef.current) clearInterval(soundIntervalRef.current);
     };
-  }, [on, off, incomingCall]);
+  }, [on, off]);
 
   const handleAccept = () => {
     if (!incomingCall) return;
@@ -103,6 +167,7 @@ export default function IncomingChatModal({ onAcceptChat }) {
   const handleDecline = () => {
     if (!incomingCall) return;
     emit('agent:reject_incoming', { sessionId: incomingCall.sessionId });
+    emit('agent:reject_session', { sessionId: incomingCall.sessionId });
     clearInterval(intervalRef.current);
     clearInterval(soundIntervalRef.current);
     setIncomingCall(null);

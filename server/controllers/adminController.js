@@ -106,7 +106,7 @@ exports.getSupportAgents = async (req, res) => {
           ...agent,
           activeChats,
           isOnline,
-          isLive: stats.isLive !== false,
+          isLive: onlineInfo ? (onlineInfo.isLive !== false) : (stats.isLive !== false),
           acceptanceRate,
           todayWorkSeconds,
           totalWorkSeconds,

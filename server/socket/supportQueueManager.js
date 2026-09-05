@@ -27,25 +27,6 @@ function registerAgentPresence(user, socketId, io) {
   if (!isSupportStaff(user)) return;
   const uId = user._id.toString();
 
-  // For support staff: Single active device enforcement (kick out old socket)
-  if (user.role === 'support' && agentPresenceMap.has(uId) && io) {
-    const existingSockets = agentPresenceMap.get(uId)?.socketIds;
-    if (existingSockets && existingSockets.size > 0) {
-      for (const oldSocketId of existingSockets) {
-        if (oldSocketId !== socketId) {
-          const oldSock = io.sockets.sockets.get(oldSocketId);
-          if (oldSock) {
-            oldSock.emit('auth:force_logout', {
-              reason: 'You have been logged out because this support account was opened on another device / browser.'
-            });
-            oldSock.disconnect(true);
-          }
-        }
-      }
-      existingSockets.clear();
-    }
-  }
-
   const isLive = user.supportStats?.isLive !== false;
   const now = new Date();
 
@@ -64,11 +45,7 @@ function registerAgentPresence(user, socketId, io) {
     });
   } else {
     const data = agentPresenceMap.get(uId);
-    if (user.role === 'support') {
-      data.socketIds = new Set([socketId]);
-    } else {
-      data.socketIds.add(socketId);
-    }
+    data.socketIds.add(socketId);
     if (isLive && !data.readyStartedAt) {
       data.readyStartedAt = now;
     }
@@ -80,9 +57,25 @@ function registerAgentPresence(user, socketId, io) {
       avatar: user.avatar,
     };
   }
+
+  // Notify admin room and check waiting queue
+  if (io) {
+    const activeData = agentPresenceMap.get(uId);
+    const currentIsLive = activeData ? activeData.isLive : isLive;
+    io.to('admin_room').emit('admin:agent_presence_change', {
+      agentId: uId,
+      isLive: currentIsLive,
+      isOnline: true,
+    });
+    if (currentIsLive) {
+      setTimeout(() => {
+        checkAndDispatchWaitingQueue(io);
+      }, 600);
+    }
+  }
 }
 
-async function unregisterAgentPresence(userId, socketId) {
+async function unregisterAgentPresence(userId, socketId, io) {
   if (!userId) return;
   const uId = userId.toString();
   if (agentPresenceMap.has(uId)) {
@@ -107,6 +100,13 @@ async function unregisterAgentPresence(userId, socketId) {
         }
       }
       agentPresenceMap.delete(uId);
+      if (io) {
+        io.to('admin_room').emit('admin:agent_presence_change', {
+          agentId: uId,
+          isLive: false,
+          isOnline: false,
+        });
+      }
     }
   }
 }
@@ -263,9 +263,13 @@ async function findNextEligibleAgent(session, maxConcurrentChats = 3) {
     (session.routingAttempts || []).map(a => a.agentId?.toString()).filter(Boolean)
   );
 
+  // Prioritize dedicated support staff (role === 'support') over general admins
+  const dedicatedAgents = onlineAgents.filter(a => a.role === 'support');
+  const agentPool = dedicatedAgents.length > 0 ? dedicatedAgents : onlineAgents;
+
   const candidates = [];
 
-  for (const agent of onlineAgents) {
+  for (const agent of agentPool) {
     if (alreadyAttemptedIds.has(agent._id.toString())) continue;
 
     // Count how many ACTIVE chats this agent currently has
@@ -279,6 +283,21 @@ async function findNextEligibleAgent(session, maxConcurrentChats = 3) {
         ...agent,
         activeChatsCount,
       });
+    }
+  }
+
+  // If dedicated support agents are all busy/attempted, fall back to other online staff
+  if (candidates.length === 0 && dedicatedAgents.length > 0) {
+    for (const agent of onlineAgents) {
+      if (agent.role === 'support') continue;
+      if (alreadyAttemptedIds.has(agent._id.toString())) continue;
+      const activeChatsCount = await ChatSession.countDocuments({
+        agentId: agent._id,
+        status: 'ACTIVE',
+      });
+      if (activeChatsCount < maxConcurrentChats) {
+        candidates.push({ ...agent, activeChatsCount });
+      }
     }
   }
 
@@ -313,21 +332,32 @@ async function dispatchNextAgent(sessionId, io, triggerReason = 'INITIAL') {
     const ringTimeoutSeconds = sched.ringTimeoutSeconds || 30;
     const maxConcurrentChats = sched.maxConcurrentChats || 3;
 
-    // 1. Check Schedule
-    const scheduleCheck = await checkSupportSchedule();
-    if (!scheduleCheck.isOpen) {
-      session.status = 'WAITING';
-      session.currentDispatchedTo = null;
-      session.dispatchExpiresAt = null;
-      await session.save();
+    // Check Schedule only if NO live agents are online
+    const liveAgents = getOnlineAgents().filter(a => a.isLive !== false);
+    if (liveAgents.length === 0) {
+      const scheduleCheck = await checkSupportSchedule();
+      if (!scheduleCheck.isOpen) {
+        session.status = 'WAITING';
+        session.currentDispatchedTo = null;
+        session.dispatchExpiresAt = null;
+        await session.save();
 
-      io.to(`session:${sessionId}`).emit('chat:status_changed', {
-        status: 'OFFLINE_HOURS',
-        reason: scheduleCheck.reason,
-        message: scheduleCheck.message,
-        canCreateTicket: true,
-      });
-      return;
+        const fullSession = await ChatSession.findById(session._id)
+          .populate('userId', 'name email avatar phone')
+          .populate('orderId')
+          .lean();
+
+        io.to('admin_room').emit('admin:new_session', fullSession);
+        io.to('admin_room').emit('admin:session_update', fullSession);
+
+        io.to(`session:${sessionId}`).emit('chat:status_changed', {
+          status: 'OFFLINE_HOURS',
+          reason: scheduleCheck.reason,
+          message: scheduleCheck.message,
+          canCreateTicket: true,
+        });
+        return;
+      }
     }
 
     // 2. Find eligible agent
@@ -380,6 +410,15 @@ async function dispatchNextAgent(sessionId, io, triggerReason = 'INITIAL') {
         triggerReason,
       };
 
+      const fullSession = await ChatSession.findById(session._id)
+        .populate('userId', 'name email avatar phone')
+        .populate('orderId')
+        .lean();
+
+      // Emit new/updated session to admin room in real-time
+      io.to('admin_room').emit('admin:new_session', fullSession);
+      io.to('admin_room').emit('admin:session_update', fullSession);
+
       // Emit ring modal to the specific agent
       io.to(`user:${candidate._id.toString()}`).emit('agent:incoming_chat_ring', ringPayload);
 
@@ -387,14 +426,6 @@ async function dispatchNextAgent(sessionId, io, triggerReason = 'INITIAL') {
       io.to(`session:${sessionId}`).emit('chat:status_changed', {
         status: 'ROUTING',
         message: 'Matching you with a live support specialist...',
-      });
-
-      // Broadcast queue update to admin room
-      io.to('admin_room').emit('admin:session_update', {
-        sessionId,
-        status: 'ROUTING',
-        currentDispatchedTo: candidate._id,
-        agentName: candidate.name,
       });
 
       // Set 30s Timeout Timer
@@ -420,6 +451,16 @@ async function dispatchNextAgent(sessionId, io, triggerReason = 'INITIAL') {
       const waitingCount = await ChatSession.countDocuments({ status: 'WAITING' });
       const onlineCount = getOnlineAgents().filter(a => a.isLive !== false).length;
 
+      const fullSession = await ChatSession.findById(session._id)
+        .populate('userId', 'name email avatar phone')
+        .populate('orderId')
+        .lean();
+
+      // Broadcast queue update and new session to admin room in real-time
+      io.to('admin_room').emit('admin:new_session', fullSession);
+      io.to('admin_room').emit('admin:session_update', fullSession);
+      io.to('admin_room').emit('admin:queue_count', { count: waitingCount });
+
       io.to(`session:${sessionId}`).emit('chat:status_changed', {
         status: 'WAITING',
         position: waitingCount,
@@ -429,13 +470,6 @@ async function dispatchNextAgent(sessionId, io, triggerReason = 'INITIAL') {
           : `All specialists are currently assisting other customers. You are #${waitingCount} in queue.`,
         canCreateTicket: true,
       });
-
-      io.to('admin_room').emit('admin:session_update', {
-        sessionId,
-        status: 'WAITING',
-        currentDispatchedTo: null,
-      });
-      io.to('admin_room').emit('admin:queue_count', { count: waitingCount });
     }
   } catch (err) {
     console.error('[SupportQueue] dispatchNextAgent error:', err);

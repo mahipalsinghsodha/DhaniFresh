@@ -9,10 +9,8 @@ import {
 } from 'react-icons/fi';
 import api from '../../api/axios';
 import { toast } from 'react-toastify';
-import { useAuth } from '../../context/AuthContext';
 import AdminSupport from './AdminSupport';
 import AdminFloatingChat from '../../components/chat/AdminFloatingChat';
-import IncomingChatModal from '../../components/chat/IncomingChatModal';
 import { formatOrderId } from '../../utils/formatOrderId';
 
 export default function SupportDashboard() {
@@ -49,6 +47,14 @@ export default function SupportDashboard() {
   const [selectedTicket, setSelectedTicket] = useState(null);
   const [replyMessage, setReplyMessage] = useState('');
   const [replying, setReplying] = useState(false);
+
+  useEffect(() => {
+    const handleIncoming = () => {
+      setActiveTab('chat');
+    };
+    window.addEventListener('support:incoming_accepted', handleIncoming);
+    return () => window.removeEventListener('support:incoming_accepted', handleIncoming);
+  }, []);
 
   useEffect(() => {
     if (activeTab === 'tickets') {
@@ -229,9 +235,6 @@ export default function SupportDashboard() {
 
   return (
     <div className="min-h-screen p-4 md:p-8" style={{ background: 'var(--bg-base)' }}>
-      {/* ── Global Incoming Ring Modal ── */}
-      <IncomingChatModal onAcceptChat={() => setActiveTab('chat')} />
-
       <div className="max-w-[1360px] mx-auto space-y-6">
         
         {/* Header */}
@@ -284,10 +287,13 @@ export default function SupportDashboard() {
         {/* Tab 1: Live Chat */}
         {activeTab === 'chat' && (
           <div className="rounded-2xl overflow-hidden border border-slate-100 shadow-sm bg-white">
-            <AdminSupport onPopOutSession={(session) => {
-              setFloatingSession(session);
-              toast.info(`Chat with ${session.userId?.name || session.guestName || 'Customer'} popped out to floating window!`);
-            }} />
+            <AdminSupport
+              suppressIncomingModal={true}
+              onPopOutSession={(session) => {
+                setFloatingSession(session);
+                toast.info(`Chat with ${session.userId?.name || session.guestName || 'Customer'} popped out to floating window!`);
+              }}
+            />
           </div>
         )}
 

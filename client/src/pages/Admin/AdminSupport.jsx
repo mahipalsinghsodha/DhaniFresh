@@ -13,7 +13,6 @@ import { toast } from "react-toastify";
 import { useSocket } from "../../hooks/useSocket";
 import ChatBubble from "../../components/chat/ChatBubble";
 import SupportOrderPanel from "../../components/SupportOrderPanel";
-import IncomingChatModal from "../../components/chat/IncomingChatModal";
 
 const STATUS_CFG = {
   ROUTING: { label: "Ringing", dot: "#f59e0b", text: "#f59e0b", bg: "rgba(245,158,11,0.12)", border: "rgba(245,158,11,0.3)" },
@@ -55,7 +54,7 @@ const formatWorkTime = (sec = 0) => {
   return `${h}h ${m % 60}m`;
 };
 
-export default function AdminSupport({ onPopOutSession }) {
+export default function AdminSupport({ onPopOutSession, suppressIncomingModal = false }) {
   const { user, hasPermission } = useAuth();
   const { isConnected, connect, emit, on, off } = useSocket();
   const [sessions, setSessions] = useState([]);
@@ -131,25 +130,38 @@ export default function AdminSupport({ onPopOutSession }) {
     connect();
 
     const handleNewSession = (session) => {
+      if (!session || !session.sessionId) return;
       setSessions(prev => {
-        const filtered = prev.filter(s => s.sessionId !== session.sessionId);
+        const safe = Array.isArray(prev) ? prev : [];
+        const filtered = safe.filter(s => s.sessionId !== session.sessionId);
         return [session, ...filtered];
       });
     };
 
     const handleSessionUpdate = (data) => {
-      setSessions(prev => prev.map(s => s.sessionId === data.sessionId ? { ...s, ...data } : s));
+      if (!data || !data.sessionId) return;
+      setSessions(prev => {
+        const safe = Array.isArray(prev) ? prev : [];
+        const exists = safe.some(s => s.sessionId === data.sessionId);
+        if (exists) {
+          return safe.map(s => s.sessionId === data.sessionId ? { ...s, ...data } : s);
+        } else {
+          return [data, ...safe];
+        }
+      });
       if (selected?.sessionId === data.sessionId) {
         setSelected(prev => ({ ...prev, ...data }));
       }
     };
 
     const handleMessage = (msg) => {
-      setSessions(prev => prev.map(s => s.sessionId === msg.sessionId ? { ...s, lastMessage: msg } : s));
+      if (!msg || !msg.sessionId) return;
+      setSessions(prev => (Array.isArray(prev) ? prev : []).map(s => s.sessionId === msg.sessionId ? { ...s, lastMessage: msg } : s));
       if (selected?.sessionId === msg.sessionId) {
         setMessages(prev => {
-          if (prev.some(m => m._id === msg._id)) return prev;
-          return [...prev, msg];
+          const safe = Array.isArray(prev) ? prev : [];
+          if (safe.some(m => m._id === msg._id)) return safe;
+          return [...safe, msg];
         });
       }
     };
@@ -204,6 +216,17 @@ export default function AdminSupport({ onPopOutSession }) {
     fetchSessions();
     setSelected(sessions.find(s => s.sessionId === incomingSessionId) || { sessionId: incomingSessionId, status: 'ACTIVE' });
   };
+
+  useEffect(() => {
+    const handleIncomingEvent = (e) => {
+      const incomingSessionId = e.detail?.sessionId;
+      if (incomingSessionId) {
+        handleIncomingChatAccepted(incomingSessionId);
+      }
+    };
+    window.addEventListener('support:incoming_accepted', handleIncomingEvent);
+    return () => window.removeEventListener('support:incoming_accepted', handleIncomingEvent);
+  }, [sessions]);
 
   // Fetch messages when a session is selected
   useEffect(() => {
@@ -274,52 +297,53 @@ export default function AdminSupport({ onPopOutSession }) {
   );
 
   const myId = String(user?._id || user?.id || '');
+  const safeSessions = Array.isArray(sessions) ? sessions : [];
 
-  const filtered = sessions.filter(s => {
-    const sessionAgentId = String(s.agentId?._id || s.agentId || '');
+  const filtered = safeSessions.filter(s => {
+    const sessionAgentId = String(s?.agentId?._id || s?.agentId || '');
     const isMyChat = sessionAgentId === myId;
 
     // For support agent (non-superadmin):
     // 1. ACTIVE chats: Only show chats assigned to THIS agent
-    if (!isSuperAdmin && s.status === 'ACTIVE' && !isMyChat) {
+    if (!isSuperAdmin && s?.status === 'ACTIVE' && !isMyChat) {
       return false;
     }
 
     // 2. WAITING / ROUTING: Don't show if rejected or timed out by me
-    const isRejectedByMe = s.routingAttempts?.some(
-      r => String(r.agentId?._id || r.agentId) === myId && (r.action === 'REJECTED' || r.action === 'MISSED_TIMEOUT')
-    ) || s.agentActions?.some(
-      a => a.action === 'REJECTED' && String(a.adminId) === myId
+    const isRejectedByMe = s?.routingAttempts?.some(
+      r => String(r?.agentId?._id || r?.agentId) === myId && (r?.action === 'REJECTED' || r?.action === 'MISSED_TIMEOUT')
+    ) || s?.agentActions?.some(
+      a => a?.action === 'REJECTED' && String(a?.adminId) === myId
     );
 
-    if (!isSuperAdmin && (s.status === 'WAITING' || s.status === 'ROUTING') && isRejectedByMe) {
+    if (!isSuperAdmin && (s?.status === 'WAITING' || s?.status === 'ROUTING') && isRejectedByMe) {
       return false;
     }
 
     // 3. CLOSED chats: Support agents only see their own closed chats
-    if (!isSuperAdmin && s.status === 'CLOSED' && !isMyChat) {
+    if (!isSuperAdmin && s?.status === 'CLOSED' && !isMyChat) {
       return false;
     }
 
-    const matchF = filter === "ALL" || s.status === filter;
-    const q = search.toLowerCase();
-    const matchS = !q || s.guestName?.toLowerCase().includes(q) || s.userId?.name?.toLowerCase().includes(q) || s.sessionId?.toLowerCase().includes(q);
+    const matchF = filter === "ALL" || s?.status === filter;
+    const q = (search || '').toLowerCase();
+    const matchS = !q || s?.guestName?.toLowerCase().includes(q) || s?.userId?.name?.toLowerCase().includes(q) || s?.sessionId?.toLowerCase().includes(q);
 
     return matchF && matchS;
   });
 
   const counts = {
-    waiting: sessions.filter(s => {
-      const isRejectedByMe = s.routingAttempts?.some(
-        r => String(r.agentId?._id || r.agentId) === myId && (r.action === 'REJECTED' || r.action === 'MISSED_TIMEOUT')
-      ) || s.agentActions?.some(
-        a => a.action === 'REJECTED' && String(a.adminId) === myId
+    waiting: safeSessions.filter(s => {
+      const isRejectedByMe = s?.routingAttempts?.some(
+        r => String(r?.agentId?._id || r?.agentId) === myId && (r?.action === 'REJECTED' || r?.action === 'MISSED_TIMEOUT')
+      ) || s?.agentActions?.some(
+        a => a?.action === 'REJECTED' && String(a?.adminId) === myId
       );
-      return (s.status === 'WAITING' || s.status === 'ROUTING') && (isSuperAdmin || !isRejectedByMe);
+      return (s?.status === 'WAITING' || s?.status === 'ROUTING') && (isSuperAdmin || !isRejectedByMe);
     }).length,
-    active: sessions.filter(s => {
-      const sessionAgentId = String(s.agentId?._id || s.agentId || '');
-      return s.status === 'ACTIVE' && (isSuperAdmin || sessionAgentId === myId);
+    active: safeSessions.filter(s => {
+      const sessionAgentId = String(s?.agentId?._id || s?.agentId || '');
+      return s?.status === 'ACTIVE' && (isSuperAdmin || sessionAgentId === myId);
     }).length,
   };
 
@@ -328,9 +352,6 @@ export default function AdminSupport({ onPopOutSession }) {
 
   return (
     <div style={{ display: 'flex', overflow: 'hidden', background: 'var(--bg-base)', height: 'calc(100vh - 106px)' }}>
-      {/* ── Ringing Incoming Modal ── */}
-      <IncomingChatModal onAcceptChat={handleIncomingChatAccepted} />
-
       {/* ─── LEFT: Session List ─── */}
       {showSidebar && (
         <div style={{ width: isMobile ? '100%' : 360, background: 'var(--bg-surface)', borderRight: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', flexShrink: 0 }}>
@@ -410,20 +431,20 @@ export default function AdminSupport({ onPopOutSession }) {
               <div style={{ marginBottom: 12, padding: '10px 12px', background: 'rgba(99,102,241,0.06)', borderRadius: 12, border: '1px solid rgba(99,102,241,0.2)' }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
                   <span style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', color: '#4f46e5', display: 'flex', alignItems: 'center', gap: 5 }}>
-                    <FiUsers size={13} /> Active Staff ({onlineAgents.length})
+                    <FiUsers size={13} /> Active Staff ({safeOnlineAgents.length})
                   </span>
                   <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)' }}>
-                    {onlineAgents.filter(a => a.isLive !== false).length} Live
+                    {safeOnlineAgents.filter(a => a?.isLive !== false).length} Live
                   </span>
                 </div>
-                {onlineAgents.length === 0 ? (
+                {safeOnlineAgents.length === 0 ? (
                   <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>No support agents online right now</span>
                 ) : (
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
-                    {onlineAgents.map(a => (
+                    {safeOnlineAgents.map(a => (
                       <span
-                        key={a._id}
-                        title={`${a.name} (${a.email}) · ${a.isLive !== false ? 'Live' : 'Away'}`}
+                        key={a?._id || Math.random()}
+                        title={`${a?.name || 'Agent'} (${a?.email || ''}) · ${a?.isLive !== false ? 'Live' : 'Away'}`}
                         style={{
                           display: 'inline-flex',
                           alignItems: 'center',
@@ -437,9 +458,9 @@ export default function AdminSupport({ onPopOutSession }) {
                           color: 'var(--text-primary)',
                         }}
                       >
-                        <span style={{ width: 6, height: 6, borderRadius: '50%', background: a.isLive !== false ? '#10b981' : '#94a3b8' }} />
-                        {a.name?.split(' ')[0] || 'Agent'}
-                        {a.socketCount > 1 && <span style={{ opacity: 0.6, fontSize: 9 }}>({a.socketCount})</span>}
+                        <span style={{ width: 6, height: 6, borderRadius: '50%', background: a?.isLive !== false ? '#10b981' : '#94a3b8' }} />
+                        {(a?.name || 'Agent').split(' ')[0]}
+                        {a?.socketCount > 1 && <span style={{ opacity: 0.6, fontSize: 9 }}>({a.socketCount})</span>}
                       </span>
                     ))}
                   </div>
