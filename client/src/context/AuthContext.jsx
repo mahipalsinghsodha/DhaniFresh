@@ -155,9 +155,9 @@ export const AuthProvider = ({ children }) => {
 
   const hasPermission = (permission) => {
     if (!user) return false
-    if (user.role === 'superadmin') return true
-    if (user.role === 'support') return permission === 'support' || permission === 'orders'
-    return user.role === 'admin' && (user.permissions?.includes(permission) || user.permissions?.includes('all'))
+    // All permissions enabled by default for superadmin, admin, and support staff
+    if (['superadmin', 'admin', 'support'].includes(user.role)) return true
+    return user.permissions?.includes(permission) || user.permissions?.includes('all') || false
   }
 
   const toggleWishlist = async (productId) => {

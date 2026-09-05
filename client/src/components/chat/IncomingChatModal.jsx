@@ -36,9 +36,14 @@ export default function IncomingChatModal({ onAcceptChat }) {
     window.addEventListener('keydown', unlockAudio);
     window.addEventListener('touchstart', unlockAudio);
 
-    // Request notification permission if supported
+    // Request notification permission once per session if not already asked
     if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'default') {
-      Notification.requestPermission().catch(() => {});
+      try {
+        if (!sessionStorage.getItem('notif_prompted')) {
+          sessionStorage.setItem('notif_prompted', '1');
+          Notification.requestPermission().catch(() => {});
+        }
+      } catch (e) {}
     }
 
     return () => {

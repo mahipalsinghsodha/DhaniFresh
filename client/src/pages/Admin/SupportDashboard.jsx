@@ -9,6 +9,7 @@ import {
 } from 'react-icons/fi';
 import api from '../../api/axios';
 import { toast } from 'react-toastify';
+import { useAuth } from '../../context/AuthContext';
 import AdminSupport from './AdminSupport';
 import AdminFloatingChat from '../../components/chat/AdminFloatingChat';
 import { formatOrderId } from '../../utils/formatOrderId';

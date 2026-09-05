@@ -44,9 +44,9 @@ auth.optional = async (req, res, next) => {
   next();
 };
 
-// ✅ Updated Admin middleware (allows superadmin too)
+// ✅ Updated Admin middleware (allows admin, superadmin, and support staff)
 auth.admin = (req, res, next) => {
-  if (req.user && (req.user.role === 'admin' || req.user.role === 'superadmin')) {
+  if (req.user && (req.user.role === 'admin' || req.user.role === 'superadmin' || req.user.role === 'support')) {
     next();
   } else {
     res.status(403).json({ message: 'Admin access only' });
@@ -62,25 +62,27 @@ auth.support = (req, res, next) => {
   }
 };
 
-// ✅ Super Admin only middleware
+// ✅ Super Admin only middleware (allows superadmin and admin)
 auth.superadmin = (req, res, next) => {
-  if (req.user && req.user.role === 'superadmin') {
+  if (req.user && (req.user.role === 'superadmin' || req.user.role === 'admin')) {
     next();
   } else {
     res.status(403).json({ message: 'Super Admin access only' });
   }
 };
 
-// ✅ Permission-specific middleware
+// ✅ Permission-specific middleware (All permissions on for admin & support staff)
 auth.hasPermission = (permission) => {
   return (req, res, next) => {
     if (!req.user) return res.status(401).json({ message: 'Unauthorized' });
     
-    // Superadmin has all permissions
-    if (req.user.role === 'superadmin') return next();
+    // Superadmin, Admin, and Support staff have all permissions enabled by default
+    if (req.user.role === 'superadmin' || req.user.role === 'admin' || req.user.role === 'support') {
+      return next();
+    }
     
     // Check specific permission
-    if (req.user.role === 'admin' && req.user.permissions?.includes(permission)) {
+    if (req.user.permissions?.includes(permission) || req.user.permissions?.includes('all')) {
       return next();
     }
     
