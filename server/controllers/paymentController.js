@@ -178,6 +178,8 @@ exports.verifyPayment = async (req, res) => {
 
     // 5️⃣ INCREMENT COUPON USAGE (if coupon was used)
     if (order.coupon && order.coupon.code) {
+      order.couponUsageIncremented = true;
+      await order.save();
       await Coupon.findOneAndUpdate(
         { code: order.coupon.code },
         { $inc: { usedCount: 1 } }

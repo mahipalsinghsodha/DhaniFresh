@@ -486,6 +486,7 @@ router.post('/', auth.optional, async (req, res) => {
 
         // Increment coupon usage
         if (appliedCoupon) {
+          order.couponUsageIncremented = true;
           await Coupon.findOneAndUpdate(
             { code: appliedCoupon.code },
             { $inc: { usedCount: 1 } },

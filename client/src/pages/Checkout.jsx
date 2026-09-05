@@ -278,8 +278,11 @@ const Checkout = () => {
         catch { toast.error('Payment verification failed') }
       },
       modal: { ondismiss: async () => {
-        try { await api.post('/api/orders/fail', { razorpay_order_id: rzrOrder.id }) } catch {}
-        toast.error('Payment cancelled')
+        try {
+          await api.post('/api/orders/fail', { razorpay_order_id: rzrOrder.id });
+          api.get('/api/wallet').then(res => setWalletBalance(res.data.walletBalance)).catch(() => {});
+        } catch {}
+        toast.info('Payment cancelled. Any deducted wallet balance has been restored.');
       }},
     })
     rzp.open()
@@ -551,15 +554,53 @@ const Checkout = () => {
                 </div>
               </div>
 
-              <div className="flex justify-between items-center py-5 border-t border-brand-primary/10">
-                <span className="font-extrabold text-lg text-brand-primary">Total Amount</span>
-                {previewLoad
-                  ? <span className="inline-block w-24 h-8 bg-brand-primary/5 rounded-full animate-pulse"/>
-                  : <span className="text-3xl font-extrabold font-display text-brand-primary">
-                      ₹{Math.max(0, Math.round(((preview?.totalPrice && preview.totalPrice > 0 ? preview.totalPrice : ((cart?.items?.reduce((acc, i) => acc + getCartItemDetails(i).price * (i.quantity || 1), 0) || 0) + (cart?.items?.reduce((acc, i) => acc + getCartItemDetails(i).price * (i.quantity || 1), 0) > 500 ? 0 : 50))) - (appliedGiftCard ? appliedGiftCard.balance : 0)))).toLocaleString('en-IN')}
-                    </span>
-                }
-              </div>
+              {/* Net Payable & Deductions */}
+              {(() => {
+                const rawTotal = (preview?.totalPrice && preview.totalPrice > 0)
+                  ? preview.totalPrice
+                  : ((cart?.items?.reduce((acc, i) => acc + getCartItemDetails(i).price * (i.quantity || 1), 0) || 0) +
+                     ((cart?.items?.reduce((acc, i) => acc + getCartItemDetails(i).price * (i.quantity || 1), 0) || 0) > 500 ? 0 : 50));
+                const effectiveWallet = (useWallet && walletBalance > 0) ? Math.min(rawTotal, walletBalance) : 0;
+                const afterWallet = rawTotal - effectiveWallet;
+                const effectiveGC = appliedGiftCard ? Math.min(afterWallet, appliedGiftCard.balance) : 0;
+                const netPayable = Math.max(0, Math.round((afterWallet - effectiveGC) * 100) / 100);
+
+                return (
+                  <div className="space-y-3 py-4 border-t border-brand-primary/10">
+                    <div className="flex justify-between items-center text-sm font-bold text-brand-text/70">
+                      <span>Order Subtotal</span>
+                      <span>₹{Math.round(rawTotal).toLocaleString('en-IN')}</span>
+                    </div>
+
+                    {effectiveWallet > 0 && (
+                      <div className="flex justify-between items-center text-sm font-bold text-green-600 bg-green-50 px-3 py-1.5 rounded-lg border border-green-200">
+                        <span>Wallet Applied</span>
+                        <span>−₹{Math.round(effectiveWallet).toLocaleString('en-IN')}</span>
+                      </div>
+                    )}
+
+                    {effectiveGC > 0 && (
+                      <div className="flex justify-between items-center text-sm font-bold text-green-600 bg-green-50 px-3 py-1.5 rounded-lg border border-green-200">
+                        <span>Gift Card Applied</span>
+                        <span>−₹{Math.round(effectiveGC).toLocaleString('en-IN')}</span>
+                      </div>
+                    )}
+
+                    <div className="flex justify-between items-center pt-2">
+                      <div>
+                        <span className="font-extrabold text-lg text-brand-primary block">Net Payable</span>
+                        <span className="text-[10px] text-brand-text/50 font-medium uppercase tracking-wider">Final Amount to Pay</span>
+                      </div>
+                      {previewLoad
+                        ? <span className="inline-block w-24 h-8 bg-brand-primary/5 rounded-full animate-pulse"/>
+                        : <span className="text-3xl font-extrabold font-display text-brand-primary">
+                            ₹{Math.round(netPayable).toLocaleString('en-IN')}
+                          </span>
+                      }
+                    </div>
+                  </div>
+                );
+              })()}
 
               {/* Gift Card Section */}
               <div className="p-4 rounded-xl border border-brand-primary/10 bg-[var(--ivory)] mb-6">
@@ -601,7 +642,7 @@ const Checkout = () => {
                       {useWallet 
                         ? (walletBalance >= (preview?.totalPrice || 0) 
                            ? 'Your order will be fully paid using your wallet.' 
-                           : `Remaining ₹${((preview?.totalPrice || 0) - walletBalance).toLocaleString('en-IN')} to be paid.`) 
+                           : `Remaining ₹${Math.max(0, (preview?.totalPrice || 0) - walletBalance).toLocaleString('en-IN')} to be paid.`) 
                         : 'Check to apply wallet balance towards this order.'}
                     </p>
                   </div>
@@ -614,12 +655,31 @@ const Checkout = () => {
                 </div>
               )}
 
-              <button type="submit" disabled={loading}
-                className="w-full h-14 btn btn-primary rounded-full flex items-center justify-center gap-2 text-base transition-all disabled:opacity-60"
-              >
-                {loading ? <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"/> : <FiArrowRight size={18}/>}
-                {loading ? 'Placing Order…' : (paymentMethod === 'COD' ? 'Place Order' : ((useWallet && walletBalance >= (preview?.totalPrice || 0)) ? 'Pay via Wallet' : 'Pay Now'))}
-              </button>
+              {(() => {
+                const rawTotal = (preview?.totalPrice && preview.totalPrice > 0)
+                  ? preview.totalPrice
+                  : ((cart?.items?.reduce((acc, i) => acc + getCartItemDetails(i).price * (i.quantity || 1), 0) || 0) +
+                     ((cart?.items?.reduce((acc, i) => acc + getCartItemDetails(i).price * (i.quantity || 1), 0) || 0) > 500 ? 0 : 50));
+                const effectiveWallet = (useWallet && walletBalance > 0) ? Math.min(rawTotal, walletBalance) : 0;
+                const afterWallet = rawTotal - effectiveWallet;
+                const effectiveGC = appliedGiftCard ? Math.min(afterWallet, appliedGiftCard.balance) : 0;
+                const netPayable = Math.max(0, Math.round((afterWallet - effectiveGC) * 100) / 100);
+
+                let btnText = 'Place Order';
+                if (loading) btnText = 'Placing Order…';
+                else if (netPayable === 0) btnText = 'Pay via Wallet / Gift Card';
+                else if (paymentMethod === 'COD') btnText = `Place Order (COD: ₹${Math.round(netPayable).toLocaleString('en-IN')})`;
+                else btnText = `Pay ₹${Math.round(netPayable).toLocaleString('en-IN')} Online`;
+
+                return (
+                  <button type="submit" disabled={loading}
+                    className="w-full h-14 btn btn-primary rounded-full flex items-center justify-center gap-2 text-base transition-all disabled:opacity-60"
+                  >
+                    {loading ? <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"/> : <FiArrowRight size={18}/>}
+                    {btnText}
+                  </button>
+                );
+              })()}
 
               <div className="mt-6 grid grid-cols-2 gap-3">
                 {[['🔒','Secure Payment'],['🚚','Fast Delivery']].map(([ic,lb]) => (

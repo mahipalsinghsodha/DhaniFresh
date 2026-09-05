@@ -200,9 +200,27 @@ const OrderDetail = () => {
                 <div className="flex justify-between"><span style={{ color: 'var(--text-muted)' }}>Tax ({(order.gstRate || 0)}%)</span><span style={{ color: 'var(--text-primary)', fontWeight: 600 }}>{fmtINR(order.taxPrice)}</span></div>
                 <div className="flex justify-between"><span style={{ color: 'var(--text-muted)' }}>Shipping</span><span style={{ color: 'var(--text-primary)', fontWeight: 600 }}>{order.shippingPrice === 0 ? 'FREE' : fmtINR(order.shippingPrice)}</span></div>
                 <div className="flex justify-between pt-3 border-t mt-3" style={{ borderColor: 'var(--border-color)' }}>
-                  <span className="font-bold text-base" style={{ color: 'var(--text-primary)' }}>Total</span>
+                  <span className="font-bold text-base" style={{ color: 'var(--text-primary)' }}>Total Order Value</span>
                   <span className={`font-black text-lg ${isVoid ? 'line-through opacity-50' : ''}`} style={{ color: 'var(--text-primary)' }}>{fmtINR(order.totalPrice)}</span>
                 </div>
+                {order.walletUsed > 0 && (
+                  <div className="flex justify-between text-green-600 font-medium">
+                    <span>Paid via Wallet</span>
+                    <span>-{fmtINR(order.walletUsed)}</span>
+                  </div>
+                )}
+                {order.giftCard?.amountUsed > 0 && (
+                  <div className="flex justify-between text-green-600 font-medium">
+                    <span>Paid via Gift Card</span>
+                    <span>-{fmtINR(order.giftCard.amountUsed)}</span>
+                  </div>
+                )}
+                {(order.walletUsed > 0 || order.giftCard?.amountUsed > 0) && (
+                  <div className="flex justify-between pt-2 border-t mt-2 font-bold" style={{ borderColor: 'var(--border-color)' }}>
+                    <span style={{ color: 'var(--text-primary)' }}>Net {order.isPaid ? 'Paid' : 'Payable'}</span>
+                    <span style={{ color: 'var(--text-primary)' }}>{fmtINR(Math.max(0, order.totalPrice - (order.walletUsed || 0) - (order.giftCard?.amountUsed || 0)))}</span>
+                  </div>
+                )}
               </div>
               <div className="mt-4 pt-4 border-t" style={{ borderColor: 'var(--border-color)' }}>
                 <p className="text-xs uppercase tracking-wider font-bold mb-1" style={{ color: 'var(--text-muted)' }}>Payment Method</p>

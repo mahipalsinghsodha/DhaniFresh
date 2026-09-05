@@ -43,22 +43,51 @@ router.post('/purchase', async (req, res) => {
 });
 
 // Verify Payment and Create Gift Card
-router.post('/verify', async (req, res) => {
+router.post('/verify', auth.optional, async (req, res) => {
   try {
-    const { razorpay_order_id, razorpay_payment_id, razorpay_signature, amount, senderName, recipientEmail, recipientName, message } = req.body;
+    const { razorpay_order_id, razorpay_payment_id, razorpay_signature, senderName, recipientEmail, recipientName, message } = req.body;
     
-    // Verify signature
+    if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
+      return res.status(400).json({ message: 'Missing payment details' });
+    }
+
+    if (!senderName || !recipientEmail || !recipientName) {
+      return res.status(400).json({ message: 'Sender and recipient details are required' });
+    }
+
+    // 1️⃣ Verify HMAC SHA-256 signature
     const body = razorpay_order_id + "|" + razorpay_payment_id;
     const expectedSignature = crypto
-      .createHmac("sha256", process.env.RAZORPAY_KEY_SECRET || 'dummy_secret')
+      .createHmac("sha256", process.env.RAZORPAY_KEY_SECRET)
       .update(body.toString())
       .digest("hex");
 
-    if (expectedSignature !== razorpay_signature && process.env.NODE_ENV !== 'development') {
-       // In dev we might allow bypass if key is dummy, but for now strict check:
-       if (process.env.RAZORPAY_KEY_SECRET !== 'dummy_secret') {
-         return res.status(400).json({ message: 'Invalid signature' });
-       }
+    if (expectedSignature !== razorpay_signature) {
+      return res.status(400).json({ message: 'Invalid payment signature' });
+    }
+
+    // 2️⃣ Replay Attack Protection: Check if gift card was already created for this payment ID
+    const existingGC = await GiftCard.findOne({ razorpayPaymentId: razorpay_payment_id });
+    if (existingGC) {
+      return res.status(400).json({ message: 'Gift card already generated for this payment' });
+    }
+
+    // 3️⃣ Verify payment status and actual captured amount from Razorpay directly
+    let payment;
+    try {
+      payment = await razorpay.payments.fetch(razorpay_payment_id);
+    } catch (fetchErr) {
+      console.error('Failed to fetch Razorpay payment for gift card:', fetchErr);
+      return res.status(400).json({ message: 'Failed to verify payment with gateway' });
+    }
+
+    if (!payment || (payment.status !== 'captured' && payment.status !== 'authorized')) {
+      return res.status(400).json({ message: 'Payment is not captured or authorized' });
+    }
+
+    const verifiedAmount = Math.round(payment.amount) / 100;
+    if (verifiedAmount < 100) {
+      return res.status(400).json({ message: 'Gift card amount must be at least ₹100' });
     }
 
     const code = generateGiftCardCode();
@@ -67,13 +96,14 @@ router.post('/verify', async (req, res) => {
 
     const giftCard = new GiftCard({
       code,
-      originalBalance: amount,
-      balance: amount,
+      originalBalance: verifiedAmount,
+      balance: verifiedAmount,
       senderName,
       recipientEmail,
       recipientName,
       message,
-      validUntil
+      validUntil,
+      razorpayPaymentId: razorpay_payment_id
     });
 
     // If user is logged in, attach purchaser
@@ -89,7 +119,7 @@ router.post('/verify', async (req, res) => {
         to: recipientEmail,
         recipientName,
         senderName,
-        amount,
+        amount: verifiedAmount,
         code,
         message,
         validUntil
@@ -98,8 +128,9 @@ router.post('/verify', async (req, res) => {
       console.error('Failed to send gift card email:', e);
     }
 
-    res.json({ message: 'Gift card purchased successfully', giftCard: { _id: giftCard._id, code } });
+    res.json({ message: 'Gift card purchased successfully', giftCard: { _id: giftCard._id, code, balance: verifiedAmount } });
   } catch (error) {
+    console.error('Gift card verification error:', error);
     res.status(500).json({ message: error.message });
   }
 });

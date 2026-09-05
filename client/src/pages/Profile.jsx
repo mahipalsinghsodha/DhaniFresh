@@ -231,7 +231,20 @@ const CancelModal = ({ order, onClose, onConfirm, loading }) => {
           {willRefund && (
             <div className="mb-4 p-3.5 rounded-xl flex items-start gap-2.5 bg-emerald-50 border border-emerald-100">
               <FiRefreshCw size={14} className="shrink-0 mt-0.5 text-emerald-600" />
-              <p className="text-xs text-emerald-700">A full refund of ₹{Number(order.totalPrice).toFixed(2)} will be initiated to your original payment method.</p>
+              <div className="text-xs text-emerald-700 space-y-1">
+                {order.walletUsed > 0 && (
+                  <p>• <strong>₹{Number(order.walletUsed).toFixed(2)}</strong> will be credited instantly back to your Daatasa Wallet.</p>
+                )}
+                {((Number(order.totalPrice || 0) - Number(order.walletUsed || 0) - Number(order.giftCard?.amountUsed || 0)) > 0 && order.paymentMethod === 'Online') && (
+                  <p>• <strong>₹{Number(order.totalPrice - (order.walletUsed || 0) - (order.giftCard?.amountUsed || 0)).toFixed(2)}</strong> will be refunded to your original payment method in 5–7 business days.</p>
+                )}
+                {order.paymentMethod === 'Wallet' && !order.walletUsed && (
+                  <p>• A full refund of <strong>₹{Number(order.totalPrice).toFixed(2)}</strong> will be credited back to your Daatasa Wallet.</p>
+                )}
+                {order.paymentMethod === 'COD' && !order.walletUsed && (
+                  <p>No payment was collected yet, so no monetary refund is necessary.</p>
+                )}
+              </div>
             </div>
           )}
 
@@ -341,6 +354,83 @@ const ReturnModal = ({ order, onClose, onConfirm, loading }) => {
   )
 }
 
+// ── Top Up Wallet Modal ──
+const TopupModal = ({ isOpen, onClose, onTopup, loading }) => {
+  const [amt, setAmt] = useState(500);
+  if (!isOpen) return null;
+  const presets = [100, 200, 500, 1000, 2000];
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+      <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
+        className="w-full max-w-md bg-white rounded-3xl p-6 shadow-2xl border border-brand-primary/10">
+        <div className="flex items-center justify-between pb-4 mb-4 border-b border-brand-primary/5">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-full bg-brand-primary/10 text-brand-primary flex items-center justify-center font-bold">
+              <FiCreditCard size={18} />
+            </div>
+            <div>
+              <h3 className="text-base font-bold font-display text-brand-primary">Top Up Wallet</h3>
+              <p className="text-xs text-brand-text/60">Instant balance credit via Razorpay</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="w-8 h-8 rounded-full flex items-center justify-center bg-gray-100 hover:bg-gray-200 text-gray-500">
+            <FiX size={16} />
+          </button>
+        </div>
+
+        <div className="space-y-4">
+          <div>
+            <label className="block text-xs font-bold text-brand-text/70 uppercase tracking-wider mb-2">Amount to Add (₹)</label>
+            <div className="relative">
+              <span className="absolute left-4 top-1/2 -translate-y-1/2 text-lg font-bold text-brand-primary">₹</span>
+              <input
+                type="number"
+                min="10"
+                value={amt}
+                onChange={e => setAmt(Number(e.target.value))}
+                className="w-full h-12 pl-9 pr-4 rounded-xl border border-brand-primary/20 bg-white font-display font-bold text-xl text-brand-primary focus:border-brand-secondary outline-none"
+                placeholder="500"
+              />
+            </div>
+          </div>
+
+          <div>
+            <p className="text-xs font-medium text-brand-text/50 mb-2">Popular Amounts:</p>
+            <div className="flex flex-wrap gap-2">
+              {presets.map(p => (
+                <button
+                  key={p}
+                  type="button"
+                  onClick={() => setAmt(p)}
+                  className={`px-3.5 py-1.5 rounded-xl text-xs font-bold border transition-colors ${
+                    amt === p ? 'bg-brand-primary text-white border-brand-primary' : 'bg-gray-50 hover:bg-gray-100 text-brand-text/80 border-gray-200'
+                  }`}
+                >
+                  +₹{p}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="pt-2">
+            <button
+              type="button"
+              disabled={loading || !amt || amt < 10}
+              onClick={() => onTopup(amt)}
+              className="w-full h-12 btn btn-primary rounded-full font-bold flex items-center justify-center gap-2 text-sm disabled:opacity-50"
+            >
+              {loading ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <FiArrowRight size={16} />}
+              {loading ? 'Processing...' : `Pay ₹${amt || 0} via Razorpay`}
+            </button>
+            <p className="text-[11px] text-center text-brand-text/40 mt-2">100% Secure Payment • UPI, Cards & Netbanking</p>
+          </div>
+        </div>
+      </motion.div>
+    </div>
+  );
+};
+
 // ── Main Profile & Account Dashboard ──
 const Profile = () => {
   const { user, updateUser, logout } = useAuth()
@@ -397,6 +487,8 @@ const Profile = () => {
   // ── Wallet & Subscriptions State ──
   const [walletData, setWalletData] = useState({ walletBalance: 0, rewardPoints: 0, transactions: [] })
   const [walletLoading, setWalletLoading] = useState(false)
+  const [topupModal, setTopupModal] = useState(false)
+  const [topupLoading, setTopupLoading] = useState(false)
   const [subscriptions, setSubscriptions] = useState([])
 
   // ── Change Password State ──
@@ -711,6 +803,60 @@ const Profile = () => {
   }
 
   // ── Wallet & Subscriptions Handlers ──
+  const handleWalletTopup = async (amt) => {
+    const amount = Number(amt);
+    if (!amount || amount < 10) {
+      toast.error('Minimum top-up amount is ₹10');
+      return;
+    }
+    setTopupLoading(true);
+    try {
+      const { data: order } = await api.post('/api/wallet/topup', { amount });
+
+      const razorpayKey = import.meta.env.VITE_RAZORPAY_KEY_ID || 'rzp_test_EvzmZvtG1AJQAS';
+      if (!window.Razorpay) {
+        await new Promise((resolve, reject) => {
+          const script = document.createElement('script');
+          script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+          script.async = true;
+          script.onload = resolve;
+          script.onerror = reject;
+          document.body.appendChild(script);
+        });
+      }
+
+      const rzp = new window.Razorpay({
+        key: razorpayKey,
+        order_id: order.id,
+        name: 'Daatasa',
+        description: 'Wallet Top-Up',
+        amount: order.amount,
+        theme: { color: '#F5A623' },
+        prefill: { name: user?.name, email: user?.email, contact: user?.phone },
+        handler: async (response) => {
+          try {
+            await api.post('/api/wallet/topup/verify', response);
+            toast.success(`₹${amount} added to your wallet successfully!`);
+            setTopupModal(false);
+            fetchWallet();
+          } catch (vErr) {
+            toast.error(vErr.response?.data?.message || 'Top-up verification failed');
+          }
+        },
+        modal: {
+          ondismiss: () => {
+            toast.info('Top-up cancelled');
+          }
+        }
+      });
+      rzp.open();
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to initiate wallet top-up');
+    } finally {
+      setTopupLoading(false);
+    }
+  };
+
   const handleConvertPoints = async () => {
     if (walletData.rewardPoints < 10) {
       toast.error('Minimum 10 points required to convert.')
@@ -1574,24 +1720,98 @@ const Profile = () => {
                     </h2>
 
                     <div className="grid sm:grid-cols-2 gap-6 mb-8">
-                      <div className="bg-[var(--ivory)] border border-brand-primary/10 rounded-[1.5rem] p-6 text-center">
-                        <p className="text-xs font-bold text-brand-text/60 mb-1 uppercase tracking-wider">Wallet Balance</p>
-                        <p className="text-3xl sm:text-4xl font-display font-bold text-brand-primary">₹{walletData.walletBalance.toFixed(2)}</p>
-                      </div>
-
-                      <div className="bg-brand-secondary/10 border border-brand-secondary/20 rounded-[1.5rem] p-6 text-center">
-                        <p className="text-xs font-bold text-brand-text/60 mb-1 uppercase tracking-wider">Reward Points</p>
-                        <p className="text-3xl sm:text-4xl font-display font-bold text-brand-secondary">{walletData.rewardPoints}</p>
+                      <div className="bg-[var(--ivory)] border border-brand-primary/10 rounded-[1.5rem] p-6 text-center flex flex-col justify-between">
+                        <div>
+                          <p className="text-xs font-bold text-brand-text/60 mb-1 uppercase tracking-wider">Wallet Balance</p>
+                          <p className="text-3xl sm:text-4xl font-display font-bold text-brand-primary">₹{walletData.walletBalance.toFixed(2)}</p>
+                        </div>
                         <button
                           type="button"
-                          onClick={handleConvertPoints}
-                          disabled={walletLoading || walletData.rewardPoints < 10}
-                          className="mt-3 px-4 py-1.5 bg-white text-brand-primary text-xs font-bold rounded-full border border-brand-primary/10 hover:bg-gray-50 disabled:opacity-50 transition-colors shadow-sm"
+                          onClick={() => setTopupModal(true)}
+                          className="mt-4 px-5 py-2 bg-brand-primary text-white text-xs font-bold rounded-full hover:bg-brand-primary/90 transition-colors shadow-sm inline-flex items-center justify-center gap-1.5 self-center"
                         >
-                          {walletLoading ? 'Converting...' : 'Convert to ₹'}
+                          <FiPlus size={14} /> Add Money to Wallet
                         </button>
-                        <p className="text-[10px] text-brand-text/50 mt-1.5 font-medium">10 Points = ₹1 wallet cash</p>
                       </div>
+
+                      <div className="bg-brand-secondary/10 border border-brand-secondary/20 rounded-[1.5rem] p-6 text-center flex flex-col justify-between">
+                        <div>
+                          <p className="text-xs font-bold text-brand-text/60 mb-1 uppercase tracking-wider">Reward Points</p>
+                          <p className="text-3xl sm:text-4xl font-display font-bold text-brand-secondary">{walletData.rewardPoints}</p>
+                        </div>
+                        <div>
+                          <button
+                            type="button"
+                            onClick={handleConvertPoints}
+                            disabled={walletLoading || walletData.rewardPoints < 10}
+                            className="mt-3 px-4 py-1.5 bg-white text-brand-primary text-xs font-bold rounded-full border border-brand-primary/10 hover:bg-gray-50 disabled:opacity-50 transition-colors shadow-sm"
+                          >
+                            {walletLoading ? 'Converting...' : 'Convert to ₹'}
+                          </button>
+                          <p className="text-[10px] text-brand-text/50 mt-1.5 font-medium">10 Points = ₹1 wallet cash</p>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* ── Wallet Passbook (Transaction History) ── */}
+                    <div className="border border-brand-primary/10 rounded-2xl overflow-hidden mb-8">
+                      <div className="bg-gray-50 px-5 py-3.5 border-b border-brand-primary/10 flex items-center justify-between">
+                        <h3 className="text-xs font-bold text-brand-primary uppercase tracking-wider flex items-center gap-2">
+                          <FiClock size={14} /> Wallet Passbook & Transactions
+                        </h3>
+                        <span className="text-[11px] font-medium text-brand-text/50">
+                          {walletData.transactions?.length || 0} transaction{walletData.transactions?.length !== 1 ? 's' : ''}
+                        </span>
+                      </div>
+
+                      {walletData.transactions && walletData.transactions.length > 0 ? (
+                        <div className="divide-y divide-brand-primary/5 max-h-96 overflow-y-auto">
+                          {walletData.transactions.map((tx) => {
+                            const isCredit = tx.type === 'CREDIT';
+                            return (
+                              <div key={tx._id} className="p-4 flex items-center justify-between gap-3 hover:bg-gray-50/50 transition-colors">
+                                <div className="flex items-center gap-3">
+                                  <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs ${
+                                    isCredit ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
+                                  }`}>
+                                    {isCredit ? '+' : '−'}
+                                  </div>
+                                  <div>
+                                    <div className="flex items-center gap-2">
+                                      <p className="font-bold text-brand-primary text-sm">{tx.description || tx.transactionType}</p>
+                                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider ${
+                                        tx.transactionType === 'REFUND' ? 'bg-amber-100 text-amber-800' :
+                                        tx.transactionType === 'TOPUP' ? 'bg-blue-100 text-blue-800' :
+                                        tx.transactionType === 'PURCHASE' ? 'bg-gray-100 text-gray-700' :
+                                        'bg-purple-100 text-purple-800'
+                                      }`}>
+                                        {tx.transactionType}
+                                      </span>
+                                    </div>
+                                    <p className="text-xs text-brand-text/50 font-medium mt-0.5">
+                                      {new Date(tx.createdAt).toLocaleString('en-IN', {
+                                        day: '2-digit', month: 'short', year: 'numeric',
+                                        hour: '2-digit', minute: '2-digit'
+                                      })} • Balance: ₹{Number(tx.balanceAfter || 0).toFixed(2)}
+                                    </p>
+                                  </div>
+                                </div>
+                                <div className="text-right">
+                                  <span className={`text-base font-extrabold font-display ${
+                                    isCredit ? 'text-green-600' : 'text-red-600'
+                                  }`}>
+                                    {isCredit ? '+' : '−'}₹{Number(tx.amount || 0).toFixed(2)}
+                                  </span>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <div className="p-8 text-center text-brand-text/50 text-xs font-medium">
+                          No wallet transactions yet. Top up your wallet to make instant 1-click checkouts!
+                        </div>
+                      )}
                     </div>
 
                     {/* Refer & Earn Card */}
@@ -1856,6 +2076,14 @@ const Profile = () => {
             onClose={() => setReturnModal(null)}
             onConfirm={handleReturnRequest}
             loading={returnLoading}
+          />
+        )}
+        {topupModal && (
+          <TopupModal
+            isOpen={topupModal}
+            onClose={() => setTopupModal(false)}
+            onTopup={handleWalletTopup}
+            loading={topupLoading}
           />
         )}
       </AnimatePresence>

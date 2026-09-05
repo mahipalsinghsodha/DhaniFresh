@@ -174,6 +174,11 @@ refundInfo: {
     default: false
   },
 
+  couponUsageIncremented: {
+    type: Boolean,
+    default: false
+  },
+
   rewardPointsAwarded: {
     type: Boolean,
     default: false

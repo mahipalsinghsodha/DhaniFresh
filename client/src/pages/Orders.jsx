@@ -233,7 +233,20 @@ const CancelModal = ({ order, onClose, onConfirm, loading }) => {
           {willRefund && (
             <div className="mb-4 p-3.5 rounded-xl flex items-start gap-2.5 bg-emerald-50 border border-emerald-100">
               <FiRefreshCw size={14} className="shrink-0 mt-0.5 text-emerald-600" />
-              <p className="text-xs text-emerald-700">A full refund of ₹{Number(order.totalPrice).toFixed(2)} will be initiated to your original payment method.</p>
+              <div className="text-xs text-emerald-700 space-y-1">
+                {order.walletUsed > 0 && (
+                  <p>• <strong>₹{Number(order.walletUsed).toFixed(2)}</strong> will be credited instantly back to your Daatasa Wallet.</p>
+                )}
+                {((Number(order.totalPrice || 0) - Number(order.walletUsed || 0) - Number(order.giftCard?.amountUsed || 0)) > 0 && order.paymentMethod === 'Online') && (
+                  <p>• <strong>₹{Number(order.totalPrice - (order.walletUsed || 0) - (order.giftCard?.amountUsed || 0)).toFixed(2)}</strong> will be refunded to your original payment method in 5–7 business days.</p>
+                )}
+                {order.paymentMethod === 'Wallet' && !order.walletUsed && (
+                  <p>• A full refund of <strong>₹{Number(order.totalPrice).toFixed(2)}</strong> will be credited back to your Daatasa Wallet.</p>
+                )}
+                {order.paymentMethod === 'COD' && !order.walletUsed && (
+                  <p>No payment was collected yet, so no monetary refund is necessary.</p>
+                )}
+              </div>
             </div>
           )}
 
