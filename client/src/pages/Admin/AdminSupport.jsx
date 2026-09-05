@@ -1,6 +1,11 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { FiMessageSquare, FiSend, FiSearch, FiArrowLeft, FiLifeBuoy, FiExternalLink, FiToggleRight, FiToggleLeft, FiShield, FiClock } from "react-icons/fi";
+import {
+  FiMessageSquare, FiSend, FiSearch, FiArrowLeft, FiLifeBuoy,
+  FiExternalLink, FiToggleRight, FiToggleLeft, FiShield, FiClock,
+  FiUsers, FiMapPin, FiPhone, FiGlobe, FiEye, FiCopy, FiCheck,
+  FiUser, FiMail
+} from "react-icons/fi";
 import api from "../../api/axios";
 import { useAuth } from "../../context/AuthContext";
 import RestrictedAccess from "../../components/RestrictedAccess";
@@ -67,6 +72,33 @@ export default function AdminSupport({ onPopOutSession }) {
   const typingTimerRef = useRef(null);
   const messagesEndRef = useRef(null);
   const messagesContainerRef = useRef(null);
+
+  const [onlineAgents, setOnlineAgents] = useState([]);
+  const [copiedField, setCopiedField] = useState('');
+  const isSuperAdmin = user?.role === 'superadmin' || user?.role === 'admin';
+
+  const fetchOnlineAgents = useCallback(async () => {
+    try {
+      const res = await api.get('/api/chat/agents/online');
+      setOnlineAgents(res.data?.agents || []);
+    } catch (e) {}
+  }, []);
+
+  useEffect(() => {
+    if (isSuperAdmin) {
+      fetchOnlineAgents();
+      const interval = setInterval(fetchOnlineAgents, 15000);
+      return () => clearInterval(interval);
+    }
+  }, [isSuperAdmin, fetchOnlineAgents]);
+
+  const handleCopyText = (text, label) => {
+    if (!text) return;
+    navigator.clipboard.writeText(text);
+    setCopiedField(label);
+    toast.success(`${label} copied!`);
+    setTimeout(() => setCopiedField(''), 2000);
+  };
 
   // Responsive layout
   useEffect(() => {
@@ -147,6 +179,7 @@ export default function AdminSupport({ onPopOutSession }) {
       setIsAgentLive(false);
       toast.warn(message || '⚠️ Daily Rejection Limit Reached (1/1 today). Set to Offline.');
     });
+    on('admin:agent_presence_change', fetchOnlineAgents);
 
     return () => {
       off('admin:new_session', handleNewSession);
@@ -157,6 +190,7 @@ export default function AdminSupport({ onPopOutSession }) {
       off('agent:live_status_updated');
       off('agent:stats_updated');
       off('agent:rejection_limit_reached');
+      off('admin:agent_presence_change', fetchOnlineAgents);
     };
   }, [hasPermission, on, off, connect, selected?.sessionId]);
 
@@ -202,9 +236,9 @@ export default function AdminSupport({ onPopOutSession }) {
   const handleInputChange = (e) => {
     setInputText(e.target.value);
     if (!selected) return;
-    
+
     emit('agent:typing', { sessionId: selected.sessionId, isTyping: true });
-    
+
     clearTimeout(typingTimerRef.current);
     typingTimerRef.current = setTimeout(() => {
       emit('agent:typing', { sessionId: selected.sessionId, isTyping: false });
@@ -239,7 +273,6 @@ export default function AdminSupport({ onPopOutSession }) {
     </div>
   );
 
-  const isSuperAdmin = user?.role === 'superadmin' || user?.role === 'admin';
   const myId = String(user?._id || user?.id || '');
 
   const filtered = sessions.filter(s => {
@@ -361,6 +394,49 @@ export default function AdminSupport({ onPopOutSession }) {
                 </span>
               </div>
             </div>
+
+            {/* Super Admin Live Staff Presence Overview */}
+            {isSuperAdmin && (
+              <div style={{ marginBottom: 12, padding: '10px 12px', background: 'rgba(99,102,241,0.06)', borderRadius: 12, border: '1px solid rgba(99,102,241,0.2)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                  <span style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', color: '#4f46e5', display: 'flex', alignItems: 'center', gap: 5 }}>
+                    <FiUsers size={13} /> Active Staff ({onlineAgents.length})
+                  </span>
+                  <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)' }}>
+                    {onlineAgents.filter(a => a.isLive !== false).length} Live
+                  </span>
+                </div>
+                {onlineAgents.length === 0 ? (
+                  <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>No support agents online right now</span>
+                ) : (
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
+                    {onlineAgents.map(a => (
+                      <span
+                        key={a._id}
+                        title={`${a.name} (${a.email}) · ${a.isLive !== false ? 'Live' : 'Away'}`}
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: 5,
+                          padding: '3px 8px',
+                          borderRadius: 8,
+                          background: 'var(--bg-surface)',
+                          border: '1px solid var(--border-color)',
+                          fontSize: 10,
+                          fontWeight: 700,
+                          color: 'var(--text-primary)',
+                        }}
+                      >
+                        <span style={{ width: 6, height: 6, borderRadius: '50%', background: a.isLive !== false ? '#10b981' : '#94a3b8' }} />
+                        {a.name?.split(' ')[0] || 'Agent'}
+                        {a.socketCount > 1 && <span style={{ opacity: 0.6, fontSize: 9 }}>({a.socketCount})</span>}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
             {((agentStats?.dailyStats?.rejected || 0) + (agentStats?.dailyStats?.missed || 0)) >= 1 && !isSuperAdmin && (
               <div style={{ marginBottom: 12, padding: '6px 10px', borderRadius: 8, background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.25)', color: '#ef4444', fontSize: 10, fontWeight: 700 }}>
                 ⚠️ Daily 1-rejection limit reached. Status set to Offline.
@@ -485,21 +561,31 @@ export default function AdminSupport({ onPopOutSession }) {
                     <div style={{ width: 36, height: 36, background: 'rgba(245,166,35,0.15)', borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--brand-secondary)', fontWeight: 800, fontSize: 14 }}>
                       {(selected.userId?.name || selected.guestName || 'G').charAt(0).toUpperCase()}
                     </div>
-                    <div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <span style={{ fontSize: 14, fontWeight: 800, color: 'var(--text-primary)' }}>{selected.userId?.name || selected.guestName || 'Guest'}</span>
-                        <StatusDot status={selected.status} />
-                        {isUserTyping && (
-                          <span style={{ fontSize: 11, color: 'var(--brand-secondary)', fontStyle: 'italic', fontWeight: 600, animation: 'pulse 1.5s infinite' }}>
-                            typing...
-                          </span>
-                        )}
+                      <div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <span style={{ fontSize: 14, fontWeight: 800, color: 'var(--text-primary)' }}>{selected.userId?.name || selected.guestName || 'Guest'}</span>
+                          <StatusDot status={selected.status} />
+                          {isUserTyping && (
+                            <span style={{ fontSize: 11, color: 'var(--brand-secondary)', fontStyle: 'italic', fontWeight: 600, animation: 'pulse 1.5s infinite' }}>
+                              typing...
+                            </span>
+                          )}
+                          {isSuperAdmin && selected.agentId && (
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 8px', borderRadius: 6, background: 'rgba(99,102,241,0.1)', color: '#4f46e5', fontSize: 10, fontWeight: 700 }}>
+                              <FiEye size={11} /> Handled by: {selected.agentId.name || 'Agent'}
+                            </span>
+                          )}
+                        </div>
+                        <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                          {selected.userId?.email || selected.guestEmail} · {selected.category}
+                          {selected.orderId && ` · Order #${selected.orderId.slice(-6).toUpperCase()}`}
+                          {selected.currentPage && (
+                            <span style={{ marginLeft: 6, color: '#4f46e5', fontFamily: 'monospace', fontWeight: 700 }}>
+                              [{selected.currentPage}]
+                            </span>
+                          )}
+                        </div>
                       </div>
-                      <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-                        {selected.userId?.email || selected.guestEmail} · {selected.category}
-                        {selected.orderId && ` · Order #${selected.orderId.slice(-6).toUpperCase()}`}
-                      </div>
-                    </div>
                   </div>
                   {/* Actions */}
                   <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
@@ -541,14 +627,14 @@ export default function AdminSupport({ onPopOutSession }) {
 
                 {/* Audit Actions (Superadmin visibility) */}
                 {user.role === 'superadmin' && selected.agentActions?.length > 0 && (
-                   <div style={{ padding: '8px 20px', background: 'rgba(99,102,241,0.05)', borderBottom: '1px solid var(--border-color)', fontSize: 11, color: 'var(--text-secondary)' }}>
-                     <strong style={{ color: 'var(--brand-primary)' }}>Audit Trail:</strong>
-                     {selected.agentActions.map((a, i) => (
-                       <span key={i} style={{ marginLeft: 8 }}>
-                         [{a.action} by {a.adminName}]
-                       </span>
-                     ))}
-                   </div>
+                  <div style={{ padding: '8px 20px', background: 'rgba(99,102,241,0.05)', borderBottom: '1px solid var(--border-color)', fontSize: 11, color: 'var(--text-secondary)' }}>
+                    <strong style={{ color: 'var(--brand-primary)' }}>Audit Trail:</strong>
+                    {selected.agentActions.map((a, i) => (
+                      <span key={i} style={{ marginLeft: 8 }}>
+                        [{a.action} by {a.adminName}]
+                      </span>
+                    ))}
+                  </div>
                 )}
 
                 {/* Messages */}
@@ -581,9 +667,9 @@ export default function AdminSupport({ onPopOutSession }) {
                     This chat is currently being handled by another agent.
                   </div>
                 ) : selected.status === 'CLOSED' ? (
-                   <div style={{ padding: '16px', textAlign: 'center', background: 'var(--bg-alt)', borderTop: '1px solid var(--border-color)', fontSize: 12, color: 'var(--text-muted)' }}>
+                  <div style={{ padding: '16px', textAlign: 'center', background: 'var(--bg-alt)', borderTop: '1px solid var(--border-color)', fontSize: 12, color: 'var(--text-muted)' }}>
                     This chat is closed.
-                   </div>
+                  </div>
                 ) : null}
               </motion.div>
             )}
@@ -591,11 +677,100 @@ export default function AdminSupport({ onPopOutSession }) {
         </div>
       )}
 
-      {/* ─── RIGHTMOST: Embedded Order Search Panel ─── */}
+      {/* ─── RIGHTMOST: Customer Context & Embedded Order Search Panel ─── */}
       {selected && !isMobile && (
         <div style={{ width: '380px', borderLeft: '1px solid var(--border-color)', background: 'var(--bg-surface)', flexShrink: 0, display: 'flex', flexDirection: 'column' }}>
-          <div style={{ padding: '14px 20px', borderBottom: '1px solid var(--border-color)', background: 'var(--bg-surface)', fontWeight: 800, fontSize: 14, color: 'var(--text-primary)' }}>
-            Search Database
+          {/* Customer Full Context Card */}
+          <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border-color)', background: 'var(--bg-surface)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+              <span style={{ fontWeight: 800, fontSize: 13, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--brand-primary)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                <FiUser size={14} /> Customer Context
+              </span>
+              <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 99, background: 'rgba(245,166,35,0.12)', color: 'var(--brand-secondary)' }}>
+                {selected.deviceInfo?.isMobile ? 'Mobile' : 'Desktop'}
+              </span>
+            </div>
+
+            {/* Current Active Page */}
+            <div style={{ marginBottom: 10, padding: '8px 12px', background: 'var(--bg-alt)', borderRadius: 10, border: '1px solid var(--border-color)' }}>
+              <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', display: 'block', marginBottom: 2 }}>
+                Current Active Page
+              </span>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                <span style={{ fontSize: 12, fontWeight: 700, fontFamily: 'monospace', color: '#4f46e5', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {selected.currentPage || '/'}
+                </span>
+                {selected.currentPage && (
+                  <a
+                    href={selected.currentPage}
+                    target="_blank"
+                    rel="noreferrer"
+                    style={{ fontSize: 11, fontWeight: 700, color: 'var(--brand-primary)', display: 'flex', alignItems: 'center', gap: 3, flexShrink: 0, textDecoration: 'none' }}
+                  >
+                    View <FiExternalLink size={11} />
+                  </a>
+                )}
+              </div>
+            </div>
+
+            {/* Customer Details & Address */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 12 }}>
+              {/* Phone */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <span style={{ color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <FiPhone size={12} /> Phone:
+                </span>
+                <span style={{ fontWeight: 700, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 4 }}>
+                  {selected.userPhone || selected.userId?.phone || 'Not provided'}
+                  {(selected.userPhone || selected.userId?.phone) && (
+                    <button
+                      onClick={() => handleCopyText(selected.userPhone || selected.userId?.phone, 'Phone')}
+                      style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 2 }}
+                      title="Copy phone"
+                    >
+                      {copiedField === 'Phone' ? <FiCheck size={12} color="#10b981" /> : <FiCopy size={12} />}
+                    </button>
+                  )}
+                </span>
+              </div>
+
+              {/* Email */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <span style={{ color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <FiMail size={12} /> Email:
+                </span>
+                <span style={{ fontWeight: 700, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 4, maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {selected.userId?.email || selected.guestEmail || 'Guest'}
+                  {(selected.userId?.email || selected.guestEmail) && (
+                    <button
+                      onClick={() => handleCopyText(selected.userId?.email || selected.guestEmail, 'Email')}
+                      style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 2 }}
+                      title="Copy email"
+                    >
+                      {copiedField === 'Email' ? <FiCheck size={12} color="#10b981" /> : <FiCopy size={12} />}
+                    </button>
+                  )}
+                </span>
+              </div>
+
+              {/* Delivery Address */}
+              <div style={{ marginTop: 4, padding: '8px 12px', background: 'var(--bg-alt)', borderRadius: 10, border: '1px solid var(--border-color)' }}>
+                <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: 4, marginBottom: 4 }}>
+                  <FiMapPin size={11} className="text-rose-500" /> Delivery Address
+                </span>
+                <p style={{ fontSize: 11, color: 'var(--text-primary)', lineHeight: 1.4, margin: 0 }}>
+                  {selected.userAddress
+                    ? [selected.userAddress.street, selected.userAddress.city, selected.userAddress.state, selected.userAddress.postalCode].filter(Boolean).join(', ')
+                    : selected.userId?.addresses?.[0]
+                    ? [selected.userId.addresses[0].street, selected.userId.addresses[0].city, selected.userId.addresses[0].state, selected.userId.addresses[0].zipCode || selected.userId.addresses[0].postalCode].filter(Boolean).join(', ')
+                    : 'No saved address found'}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div style={{ padding: '12px 20px 8px', background: 'var(--bg-surface)', fontWeight: 800, fontSize: 12, color: 'var(--text-muted)', textTransform: 'uppercase', borderBottom: '1px solid var(--border-color)' }}>
+            Order History & Database
           </div>
           <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
             <SupportOrderPanel initialSearchQuery={selected.orderId || selected.userId?.email || selected.guestEmail} />

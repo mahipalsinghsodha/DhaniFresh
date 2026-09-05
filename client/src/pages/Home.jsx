@@ -107,10 +107,10 @@ export default function Home() {
 
   // Structured Data for Trust & Feature Sections
   const TRUST_ITEMS = [
-    { icon: <FiAward size={18} />, title: t('home.trust1Title', 'Farm Fresh'), sub: t('home.trust1Sub', 'Direct from farms') },
-    { icon: <FiDroplet size={18} />, title: t('home.trust2Title', 'Bilona Crafted'), sub: t('home.trust2Sub', 'Traditional method') },
-    { icon: <FiShield size={18} />, title: t('home.trust3Title', 'FSSAI Certified'), sub: t('home.trust3Sub', 'Quality guaranteed') },
-    { icon: <FiTruck size={18} />, title: t('home.trust4Title', 'Pan India'), sub: t('home.trust4Sub', 'Fast & safe delivery') }
+    { icon: <FiAward size={18} />, title: t('home.trust1Title', 'Direct from Local Farms'), sub: t('home.trust1Sub', 'Khuri, Jaisalmer sourced') },
+    { icon: <FiDroplet size={18} />, title: t('home.trust2Title', 'Bilona Hand-Churned'), sub: t('home.trust2Sub', 'Ancient Vedic method') },
+    { icon: <FiShield size={18} />, title: t('home.trust3Title', 'FSSAI Certified'), sub: t('home.trust3Sub', 'Govt. approved quality') },
+    { icon: <FiCheck size={18} />, title: t('home.trust4Title', 'Lab Tested'), sub: t('home.trust4Sub', 'No preservatives added') }
   ]
 
   const WHY_CHOOSE = [
@@ -119,7 +119,8 @@ export default function Home() {
     { icon: <FiHeart size={20} />, title: t('home.wc3Title', 'Farm Fresh'), text: t('home.wc3Text', 'Sourced directly from trusted local farmers.') },
     { icon: <FiShield size={20} />, title: t('home.wc4Title', 'Chemical Free'), text: t('home.wc4Text', 'Zero preservatives, zero artificial additives.') },
     { icon: <FiDroplet size={20} />, title: t('home.wc5Title', 'Traditional Process'), text: t('home.wc5Text', 'Hand-churned using the authentic Vedic Bilona method.') },
-    { icon: <FiTruck size={20} />, title: t('home.wc6Title', 'Fast Delivery'), text: t('home.wc6Text', 'Delivered fresh to your doorstep across India.') }
+    { icon: <FiTruck size={20} />, title: t('home.wc6Title', 'Fast Delivery'), text: t('home.wc6Text', 'Delivered fresh to your doorstep across India.') },
+    { icon: <FiStar size={20} />, title: t('home.wc7Title', 'Lab Reports Available'), text: t('home.wc7Text', 'Full transparency — view our third-party lab test certificates anytime.'), link: '/about' },
   ]
 
   const TESTIMONIALS = [
@@ -155,12 +156,12 @@ export default function Home() {
   ]
 
   const GALLERY_IMAGES = [
-    { id: 1, cat: 'Farm', title: 'Tharparkar Herds Grazing', url: 'https://images.unsplash.com/photo-1596733430284-f7437764b1a9?w=800&q=80' },
-    { id: 2, cat: 'Products', title: 'Pure Golden Ghee Jar', url: 'https://images.unsplash.com/photo-1526362456488-87e35b7501a3?w=800&q=80' },
-    { id: 3, cat: 'Bilona', title: 'Traditional Earthen Handi', url: 'https://images.unsplash.com/photo-1513682121497-80211f36a790?w=800&q=80' },
-    { id: 4, cat: 'Lifestyle', title: 'Pure Aromatic Culinary Art', url: 'https://images.unsplash.com/photo-1490645935967-10de6ba17061?w=800&q=80' },
-    { id: 5, cat: 'Farm', title: 'Khuri Desert Sunrise Farm', url: 'https://images.unsplash.com/photo-1511690078903-71dc5a49f5e3?w=800&q=80' },
-    { id: 6, cat: 'Products', title: 'Handcrafted Batch Bottling', url: 'https://images.unsplash.com/photo-1588195538326-c5b1e9f80a1b?w=800&q=80' }
+    { id: 1, cat: 'Farm', title: 'Desi Cows at Daatasa Farm', url: '/gallery-cows.png' },
+    { id: 2, cat: 'Products', title: 'Pure A2 Desi Cow Ghee — Daatasa', url: '/gallery-jar.png' },
+    { id: 3, cat: 'Bilona', title: 'Traditional Bilona Churning', url: '/gallery-churn.png' },
+    { id: 4, cat: 'Lifestyle', title: 'Rajasthani Bilona Heritage', url: '/herosection.png' },
+    { id: 5, cat: 'Farm', title: 'Tharparkar Herd — Khuri Farm', url: '/tharparkar-herd.jpg' },
+    { id: 6, cat: 'Bilona', title: 'Earthen Matka — Traditional Process', url: '/matka.png' }
   ]
 
   const PROCESS_STEPS = [
@@ -260,9 +261,10 @@ export default function Home() {
           <motion.div {...slideIn(0.1, "left")} className="relative order-2 lg:order-1">
             <div className="aspect-[16/10] sm:aspect-[4/3] lg:aspect-[4/5] max-h-[360px] sm:max-h-[420px] rounded-2xl sm:rounded-3xl overflow-hidden shadow-lg relative max-w-md mx-auto group">
               <img 
-                src="https://images.unsplash.com/photo-1511690078903-71dc5a49f5e3?w=800&q=80" 
-                alt="Daatasa Farm in Khuri, Jaisalmer" 
+                src="/tharparkar-herd.jpg" 
+                alt="Tharparkar Cows at Daatasa Farm, Khuri Jaisalmer" 
                 className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105" 
+                style={{ objectPosition: 'center center' }}
               />
               <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/20 to-transparent flex items-center justify-center">
                 <button 
@@ -296,6 +298,36 @@ export default function Home() {
               <div>
                 <h3 className="text-2xl sm:text-3xl font-display font-bold text-brand-secondary mb-0.5">50+</h3>
                 <p className="text-xs text-brand-text/70 font-medium">{t('home.acresFarmLabel', 'Acres of Farm')}</p>
+              </div>
+            </motion.div>
+
+            {/* ── Sourcing Story 3-Step Cards ── */}
+            <motion.div {...fadeUp(0.22)} className="mb-4 sm:mb-6">
+              <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-brand-secondary mb-3">{t('home.sourcingTitle', 'How We Source')}</p>
+              <div className="grid grid-cols-3 gap-2">
+                {[
+                  {
+                    emoji: '🐄',
+                    title: t('home.src1Title', 'Free-Grazing Cows'),
+                    sub: t('home.src1Sub', 'Gir & Sahiwal breeds on open pastures'),
+                  },
+                  {
+                    emoji: '🏺',
+                    title: t('home.src2Title', 'Bilona Churning'),
+                    sub: t('home.src2Sub', 'Traditional curd hand-churned in wooden vessel'),
+                  },
+                  {
+                    emoji: '🔥',
+                    title: t('home.src3Title', 'Slow-Simmered'),
+                    sub: t('home.src3Sub', 'Low flame, no shortcuts, pure liquid gold'),
+                  }
+                ].map((s, i) => (
+                  <div key={i} className="flex flex-col items-center text-center p-2.5 rounded-xl bg-white/80 border border-brand-primary/8 shadow-2xs hover:border-brand-secondary/40 hover:shadow-sm transition-all group">
+                    <span className="text-xl mb-1.5 transition-transform group-hover:scale-110 inline-block">{s.emoji}</span>
+                    <h5 className="text-[10px] sm:text-xs font-bold text-brand-primary leading-tight mb-0.5">{s.title}</h5>
+                    <p className="text-[9px] sm:text-[10px] text-brand-text/55 font-light leading-snug">{s.sub}</p>
+                  </div>
+                ))}
               </div>
             </motion.div>
             
@@ -337,9 +369,10 @@ export default function Home() {
             <motion.div {...slideIn(0.15, "right")} className="relative">
               <div className="aspect-[16/9] max-h-[300px] sm:max-h-[360px] rounded-xl sm:rounded-2xl overflow-hidden shadow-lg relative bg-black group border border-brand-primary/10 cursor-pointer" onClick={() => setIsVideoModalOpen(true)}>
                 <img 
-                  src="https://images.unsplash.com/photo-1513682121497-80211f36a790?w=800&q=80" 
+                  src="/herosection.png" 
                   alt="Vedic Bilona Churning Process" 
                   className="w-full h-full object-cover opacity-85 transition-transform duration-700 group-hover:scale-105" 
+                  style={{ objectPosition: 'center center' }}
                 />
                 <div className="absolute inset-0 bg-gradient-to-t from-brand-primary/60 via-black/30 to-transparent" />
                 <button 
@@ -385,13 +418,26 @@ export default function Home() {
           <motion.div {...fadeUp(0.15)}>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
               {WHY_CHOOSE.map((item, idx) => (
-                <div key={idx} className="p-4 sm:p-5 rounded-xl sm:rounded-2xl bg-brand-bg border border-brand-primary/5 hover:border-brand-secondary/40 transition-all hover:shadow-md group">
-                  <div className="w-9 h-9 sm:w-11 sm:h-11 rounded-xl bg-white flex items-center justify-center text-brand-secondary mb-2.5 shadow-2xs group-hover:scale-105 group-hover:bg-brand-secondary group-hover:text-white transition-all">
-                    {item.icon}
+                item.link ? (
+                  <Link key={idx} to={item.link} className="p-4 sm:p-5 rounded-xl sm:rounded-2xl bg-brand-bg border border-brand-secondary/20 hover:border-brand-secondary/50 transition-all hover:shadow-md group block">
+                    <div className="w-9 h-9 sm:w-11 sm:h-11 rounded-xl bg-white flex items-center justify-center text-brand-secondary mb-2.5 shadow-2xs group-hover:scale-105 group-hover:bg-brand-secondary group-hover:text-white transition-all">
+                      {item.icon}
+                    </div>
+                    <h4 className="text-sm sm:text-base font-bold text-brand-primary mb-1">{item.title}</h4>
+                    <p className="text-[11px] sm:text-xs text-brand-text/65 font-light leading-relaxed">{item.text}</p>
+                    <span className="mt-2 inline-flex items-center gap-1 text-[10px] font-bold text-brand-secondary uppercase tracking-widest">
+                      View Reports <FiArrowRight size={10} />
+                    </span>
+                  </Link>
+                ) : (
+                  <div key={idx} className="p-4 sm:p-5 rounded-xl sm:rounded-2xl bg-brand-bg border border-brand-primary/5 hover:border-brand-secondary/40 transition-all hover:shadow-md group">
+                    <div className="w-9 h-9 sm:w-11 sm:h-11 rounded-xl bg-white flex items-center justify-center text-brand-secondary mb-2.5 shadow-2xs group-hover:scale-105 group-hover:bg-brand-secondary group-hover:text-white transition-all">
+                      {item.icon}
+                    </div>
+                    <h4 className="text-sm sm:text-base font-bold text-brand-primary mb-1">{item.title}</h4>
+                    <p className="text-[11px] sm:text-xs text-brand-text/65 font-light leading-relaxed">{item.text}</p>
                   </div>
-                  <h4 className="text-sm sm:text-base font-bold text-brand-primary mb-1">{item.title}</h4>
-                  <p className="text-[11px] sm:text-xs text-brand-text/65 font-light leading-relaxed">{item.text}</p>
-                </div>
+                )
               ))}
             </div>
           </motion.div>

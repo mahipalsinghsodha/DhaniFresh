@@ -69,7 +69,7 @@ const settingsSchema = new mongoose.Schema(
       },
       endHour: {
         type: String,
-        default: '20:00',
+        default: '18:00',
       },
       timezone: {
         type: String,

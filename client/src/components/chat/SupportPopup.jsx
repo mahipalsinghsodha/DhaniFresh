@@ -1,11 +1,13 @@
 // client/src/components/chat/SupportPopup.jsx
 // ── Ultra-Premium Daatasa In-App Support Drawer (Mobile & Desktop) ───────────
 import { useState, useEffect, useRef, useCallback } from 'react'
+import { useLocation } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   X, Send, Image as ImageIcon,
   Package, RotateCcw, ArrowDown, Headphones,
-  CheckCircle2, Clock, Truck, AlertTriangle, XCircle, ShieldCheck
+  CheckCircle2, Clock, Truck, AlertTriangle, XCircle, ShieldCheck,
+  FileText, Check, Phone, MapPin
 } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import { useSocket } from '../../hooks/useSocket'
@@ -54,10 +56,44 @@ export default function SupportPopup() {
   const [showScrollBtn, setShowScrollBtn] = useState(false)
   const [currentOrder, setCurrentOrder] = useState(order)
 
+  const location = useLocation()
+
+  // Operating Schedule & Live Status
+  const [supportSchedule, setSupportSchedule] = useState({ isOpen: true, startHour: '09:00', endHour: '18:00', message: '' })
+  const [statusBanner, setStatusBanner] = useState(null)
+
+  // In-Drawer Offline Ticket Form
+  const [showOfflineForm, setShowOfflineForm] = useState(false)
+  const [offlineSubject, setOfflineSubject] = useState('')
+  const [offlineMessage, setOfflineMessage] = useState('')
+  const [offlinePhone, setOfflinePhone] = useState(user?.phone || '')
+  const [offlineAddress, setOfflineAddress] = useState('')
+  const [offlineCategory, setOfflineCategory] = useState(order ? 'ORDER_ISSUE' : 'OTHER')
+  const [submittingTicket, setSubmittingTicket] = useState(false)
+  const [ticketSuccess, setTicketSuccess] = useState(false)
+
   const messagesAreaRef = useRef(null)
   const messagesEndRef = useRef(null)
   const inputRef = useRef(null)
   const fileInputRef = useRef(null)
+
+  // Fetch live schedule
+  useEffect(() => {
+    if (!isOpen) return
+    api.get('/api/chat/status')
+      .then(res => setSupportSchedule(res.data))
+      .catch(() => setSupportSchedule({ isOpen: true, startHour: '09:00', endHour: '18:00' }))
+  }, [isOpen])
+
+  // Sync page URL with active chat session in real time
+  useEffect(() => {
+    if (sessionId && isOpen) {
+      emit('chat:update_page', {
+        sessionId,
+        currentPage: location.pathname + location.search
+      })
+    }
+  }, [location.pathname, location.search, sessionId, isOpen, emit])
 
   const getActiveLang = () => {
     const lng = i18n.language || localStorage.getItem('i18nextLng') || document.documentElement.lang || 'en'
@@ -139,9 +175,21 @@ export default function SupportPopup() {
       if (isTyping) setTimeout(() => scrollToBottom(true), 50)
     }
 
-    const handleStatusChanged = ({ status, queuePosition }) => {
-      setSessionStatus(status)
-      if (queuePosition) setQueueInfo({ position: queuePosition })
+    const handleStatusChanged = (data) => {
+      setSessionStatus(data.status)
+      if (data.position) setQueueInfo({ position: data.position })
+      if (data.status === 'WAITING' || data.status === 'OFFLINE_HOURS') {
+        setStatusBanner({
+          status: data.status,
+          message: data.message || (data.onlineAgentsCount === 0
+            ? (isHindi ? 'वर्तमान में कोई सहायता एजेंट ऑनलाइन नहीं है।' : 'All support agents are currently offline.')
+            : (isHindi ? 'हमारे सभी सहायता विशेषज्ञ अन्य ग्राहकों की सहायता में व्यस्त हैं।' : 'All our specialists are currently assisting other customers.')),
+          allBusy: true,
+          canCreateTicket: true,
+        })
+      } else if (data.status === 'ACTIVE') {
+        setStatusBanner(null)
+      }
     }
 
     const handleSessionClosed = () => {
@@ -162,12 +210,26 @@ export default function SupportPopup() {
     on('chat:session_closed',  handleSessionClosed)
     on('chat:error',           handleChatError)
 
+    const activeAddress = user?.addresses?.find(a => a.isDefault) || user?.addresses?.[0] || null
     emit('chat:start', {
       guestName: user?.name || 'Customer',
       guestEmail: user?.email,
       category: order ? 'ORDER' : (initialCategory || 'OTHER'),
       orderId: order?._id || null,
       language: getActiveLang(),
+      currentPage: typeof window !== 'undefined' ? (window.location.pathname + window.location.search) : '/',
+      userPhone: user?.phone || '',
+      userAddress: activeAddress ? {
+        street: activeAddress.street || '',
+        city: activeAddress.city || '',
+        state: activeAddress.state || '',
+        postalCode: activeAddress.zipCode || activeAddress.postalCode || '',
+        country: activeAddress.country || 'India',
+      } : null,
+      deviceInfo: {
+        isMobile: typeof window !== 'undefined' && window.innerWidth < 768,
+        platform: typeof navigator !== 'undefined' ? navigator.platform : '',
+      },
     })
 
     return () => {
@@ -211,13 +273,54 @@ export default function SupportPopup() {
     setSessionStatus('BOT_HANDLING')
     setAssignedAgent(null)
 
+    const activeAddress = user?.addresses?.find(a => a.isDefault) || user?.addresses?.[0] || null
     emit('chat:start', {
       guestName: user?.name || 'Customer',
       guestEmail: user?.email,
       category: order ? 'ORDER' : 'OTHER',
       orderId: order?._id || null,
       language: getActiveLang(),
+      currentPage: typeof window !== 'undefined' ? (window.location.pathname + window.location.search) : '/',
+      userPhone: user?.phone || '',
+      userAddress: activeAddress ? {
+        street: activeAddress.street || '',
+        city: activeAddress.city || '',
+        state: activeAddress.state || '',
+        postalCode: activeAddress.zipCode || activeAddress.postalCode || '',
+        country: activeAddress.country || 'India',
+      } : null,
+      deviceInfo: {
+        isMobile: typeof window !== 'undefined' && window.innerWidth < 768,
+        platform: typeof navigator !== 'undefined' ? navigator.platform : '',
+      },
     })
+  }
+
+  // ── Offline Ticket Submission ──────────────────────────────────────────────
+  const handleSubmitTicket = async (e) => {
+    if (e && e.preventDefault) e.preventDefault()
+    if (!offlineMessage.trim()) return
+    setSubmittingTicket(true)
+    try {
+      const fullDetails = `[Page: ${window.location.pathname}] ${offlinePhone ? `[Phone: ${offlinePhone}] ` : ''}${offlineAddress ? `[Address: ${offlineAddress}] ` : ''}\n\n${offlineMessage.trim()}`
+      await api.post('/api/support', {
+        subject: offlineSubject.trim() || (order ? `Support for Order #${orderShortId}` : 'Customer Support Query'),
+        category: offlineCategory,
+        order: order?._id || null,
+        message: fullDetails,
+      })
+      setTicketSuccess(true)
+      setTimeout(() => {
+        setTicketSuccess(false)
+        setShowOfflineForm(false)
+        setOfflineMessage('')
+        setOfflineSubject('')
+      }, 3500)
+    } catch (err) {
+      console.error('Failed to submit ticket:', err)
+    } finally {
+      setSubmittingTicket(false)
+    }
   }
 
   // ── Send Message ───────────────────────────────────────────────────────────
@@ -364,6 +467,24 @@ export default function SupportPopup() {
             </div>
           </div>
 
+          {/* ── Operating Hours Bar ── */}
+          <div className="px-4 py-2 bg-gradient-to-r from-amber-500/10 via-orange-500/10 to-amber-500/10 border-b border-amber-200/50 dark:border-slate-800 flex items-center justify-between text-xs text-amber-950 dark:text-amber-200 shrink-0">
+            <div className="flex items-center gap-2">
+              <Clock size={13} className="text-amber-600 shrink-0" />
+              <span className="text-[11px] font-medium">
+                {supportSchedule?.isOpen === false
+                  ? (isHindi ? 'लाइव सहायता बंद है (समय: 9:00 AM - 6:00 PM)' : 'Live Support Closed (Hours: 9:00 AM – 6:00 PM IST)')
+                  : (isHindi ? 'लाइव सहायता खुली है (9:00 AM - 6:00 PM)' : 'Live Support Online (9:00 AM – 6:00 PM IST)')}
+              </span>
+            </div>
+            <button
+              onClick={() => setShowOfflineForm(prev => !prev)}
+              className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-amber-600 hover:bg-amber-700 text-white transition-all shrink-0 cursor-pointer"
+            >
+              {showOfflineForm ? (isHindi ? 'चैट देखें' : 'View Chat') : (isHindi ? 'टिकट भेजें' : 'Create Ticket')}
+            </button>
+          </div>
+
           {/* ── Pinned Order Context Pill ─────────────────────────────────── */}
           {activeOrder && (
             <div className="px-4 py-2.5 bg-[#FFFDF8] dark:bg-slate-900/90 border-b border-amber-200/60 dark:border-slate-800 flex items-center justify-between shrink-0 shadow-2xs">
@@ -385,7 +506,150 @@ export default function SupportPopup() {
             </div>
           )}
 
-          {/* ── Messages Scroll Area ──────────────────────────────────────── */}
+          {/* ── Status Banner (Waiting / All Agents Busy) ── */}
+          {statusBanner && !showOfflineForm && (
+            <div className="mx-4 mt-2.5 p-3 bg-amber-50/90 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 rounded-2xl flex flex-col gap-2 shrink-0 shadow-xs">
+              <div className="flex items-start gap-2.5">
+                <AlertTriangle size={16} className="text-amber-600 shrink-0 mt-0.5" />
+                <div className="flex-1 min-w-0 text-xs">
+                  <p className="font-bold text-amber-900 dark:text-amber-200">{statusBanner.message}</p>
+                  <p className="text-[11px] text-amber-700/80 dark:text-amber-400 mt-0.5">
+                    {isHindi ? 'आप कतार में प्रतीक्षा कर सकते हैं या तुरंत ऑफलाइन टिकट सबमिट कर सकते हैं।' : 'You are in queue. Or you can submit an offline ticket and we will reach out.'}
+                  </p>
+                </div>
+              </div>
+              <div className="flex justify-end">
+                <button
+                  onClick={() => setShowOfflineForm(true)}
+                  className="px-3 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded-xl font-bold text-[11px] transition-all cursor-pointer shadow-xs active:scale-95"
+                >
+                  {isHindi ? 'ऑफलाइन टिकट सबमिट करें' : 'Submit Offline Ticket'}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* ── Offline Ticket Form View (if toggled) ── */}
+          {showOfflineForm ? (
+            <div className="flex-1 overflow-y-auto p-4 sm:p-5 bg-[#FDF9F1]/40 dark:bg-slate-950/70">
+              {ticketSuccess ? (
+                <div className="py-12 flex flex-col items-center justify-center text-center space-y-3">
+                  <div className="w-14 h-14 rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-600 flex items-center justify-center font-bold">
+                    <Check size={28} />
+                  </div>
+                  <h4 className="text-base font-bold text-slate-800 dark:text-white">
+                    {isHindi ? 'टिकट सफलतापूर्वक भेजा गया!' : 'Ticket Submitted Successfully!'}
+                  </h4>
+                  <p className="text-xs text-slate-500 max-w-xs">
+                    {isHindi ? 'हमारी टीम आपके ईमेल और फोन पर जल्द ही संपर्क करेगी।' : 'Our support team will review your query and contact you as soon as possible.'}
+                  </p>
+                </div>
+              ) : (
+                <form onSubmit={handleSubmitTicket} className="space-y-3.5">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-sm font-bold text-slate-800 dark:text-white flex items-center gap-1.5">
+                      <FileText size={16} className="text-amber-600" />
+                      {isHindi ? 'सहायता टिकट / ऑफलाइन मैसेज' : 'Submit Support Ticket / Query'}
+                    </h4>
+                    <button
+                      type="button"
+                      onClick={() => setShowOfflineForm(false)}
+                      className="text-xs text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                    >
+                      {isHindi ? 'रद्द करें' : 'Back to Chat'}
+                    </button>
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-300 mb-1">
+                      {isHindi ? 'विषय (Subject)' : 'Subject'}
+                    </label>
+                    <input
+                      type="text"
+                      placeholder={isHindi ? 'उदा. ऑर्डर डिलीवरी देरी, रिफंड आदि' : 'e.g. Order delivery status, refund inquiry...'}
+                      value={offlineSubject}
+                      onChange={e => setOfflineSubject(e.target.value)}
+                      className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-850 outline-none focus:border-amber-500"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-300 mb-1">
+                        {isHindi ? 'फोन नंबर' : 'Phone Number'}
+                      </label>
+                      <input
+                        type="tel"
+                        placeholder="+91..."
+                        value={offlinePhone}
+                        onChange={e => setOfflinePhone(e.target.value)}
+                        className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-850 outline-none focus:border-amber-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-300 mb-1">
+                        {isHindi ? 'श्रेणी' : 'Category'}
+                      </label>
+                      <select
+                        value={offlineCategory}
+                        onChange={e => setOfflineCategory(e.target.value)}
+                        className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-850 outline-none focus:border-amber-500"
+                      >
+                        <option value="ORDER_ISSUE">{isHindi ? 'ऑर्डर समस्या' : 'Order Issue'}</option>
+                        <option value="PAYMENT">{isHindi ? 'पेमेंट / रिफंड' : 'Payment / Refund'}</option>
+                        <option value="PRODUCT">{isHindi ? 'प्रोडक्ट जानकारी' : 'Product Inquiry'}</option>
+                        <option value="OTHER">{isHindi ? 'अन्य' : 'Other'}</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-300 mb-1">
+                      {isHindi ? 'पता / शहर (वैकल्पिक)' : 'Address / City (Optional)'}
+                    </label>
+                    <input
+                      type="text"
+                      placeholder={isHindi ? 'उदा. जयपुर, राजस्थान' : 'e.g. Street, City, Pincode'}
+                      value={offlineAddress}
+                      onChange={e => setOfflineAddress(e.target.value)}
+                      className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-850 outline-none focus:border-amber-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-300 mb-1">
+                      {isHindi ? 'आपका संदेश / समस्या *' : 'Your Message / Issue *'}
+                    </label>
+                    <textarea
+                      required
+                      rows={4}
+                      placeholder={isHindi ? 'कृपया अपनी समस्या विस्तार से लिखें...' : 'Please describe your query or issue in detail...'}
+                      value={offlineMessage}
+                      onChange={e => setOfflineMessage(e.target.value)}
+                      className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-850 outline-none focus:border-amber-500 resize-none"
+                    />
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={submittingTicket || !offlineMessage.trim()}
+                    className="w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-amber-600 to-amber-700 hover:from-amber-500 hover:to-amber-600 text-white font-bold text-xs shadow-md transition-all disabled:opacity-50 cursor-pointer active:scale-98 flex items-center justify-center gap-2"
+                  >
+                    {submittingTicket ? (
+                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    ) : (
+                      <>
+                        <Send size={13} />
+                        {isHindi ? 'टिकट सबमिट करें' : 'Submit Ticket'}
+                      </>
+                    )}
+                  </button>
+                </form>
+              )}
+            </div>
+          ) : (
+            <>
+            {/* ── Messages Scroll Area ──────────────────────────────────────── */}
           <div
             ref={messagesAreaRef}
             onScroll={handleScroll}
@@ -523,6 +787,8 @@ export default function SupportPopup() {
               </button>
             </div>
           </div>
+          </>
+          )}
 
         </motion.div>
       )}

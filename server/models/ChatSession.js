@@ -66,6 +66,26 @@ const chatSessionSchema = new mongoose.Schema({
     enum: ['en', 'hi'],
     default: 'en',
   },
+  currentPage: {
+    type: String,
+    default: '/',
+  },
+  userPhone: {
+    type: String,
+    default: '',
+  },
+  userAddress: {
+    street: String,
+    city: String,
+    state: String,
+    postalCode: String,
+    country: { type: String, default: 'India' },
+  },
+  deviceInfo: {
+    isMobile: Boolean,
+    platform: String,
+    browser: String,
+  },
   // Rating submitted by user after chat closes
   rating: {
     score: { type: Number, min: 1, max: 5 },
@@ -73,7 +93,7 @@ const chatSessionSchema = new mongoose.Schema({
     submittedAt: Date,
   },
   closedAt: Date,
-  closedBy: { type: String, enum: ['user', 'agent', 'system', 'bot'] },
+  closedBy: { type: String, enum: ['user', 'agent', 'agent_resolved', 'system', 'bot', 'system_inactivity_15m'] },
   resolutionNote: String,
   lastMessageAt: {
     type: Date,

@@ -66,8 +66,6 @@ const GiftCards = lazy(() => import('./pages/GiftCards'))
 // Support Admin pages
 const SupportDashboard = lazy(() => import('./pages/Admin/SupportDashboard.jsx'))
 
-// Courier pages
-const ScanOrder = lazy(() => import('./pages/Courier/ScanOrder.jsx'))
 
 // Admin pages
 const AdminDashboard = lazy(() => import('./pages/Admin/AdminDashboard.jsx'))
@@ -104,9 +102,8 @@ function GuestRoute({ children }) {
   if (user) {
     const isAdmin = user.role === 'admin' || user.role === 'superadmin'
     const isSupport = user.role === 'support'
-    const isCourier = user.role === 'courier'
     // Respect the intended destination set by navigate('/login', { state: { from } })
-    const destination = location.state?.from || (isAdmin ? '/admin' : isSupport ? '/support-panel' : isCourier ? '/courier/scan' : '/')
+    const destination = location.state?.from || (isAdmin ? '/admin' : isSupport ? '/support-panel' : '/')
     return <Navigate to={destination} replace />
   }
   return children
@@ -194,12 +191,21 @@ function PageLoader() {
 }
 
 function SupportRedirect() {
+  const { user } = useAuth()
   const openSupport = useSupportStore(state => state.openSupport)
   const [searchParams] = useSearchParams()
   const orderId = searchParams.get('orderId')
+
   useEffect(() => {
-    openSupport(orderId ? { _id: orderId } : null)
-  }, [openSupport, orderId])
+    if (user?.role !== 'support') {
+      openSupport(orderId ? { _id: orderId } : null)
+    }
+  }, [openSupport, orderId, user?.role])
+
+  if (user?.role === 'support') {
+    return <Navigate to="/support-panel" replace />
+  }
+
   return <Navigate to="/orders" replace />
 }
 
@@ -288,9 +294,9 @@ function AnimatedRoutes() {
 
             {/* ── Support ── */}
             <Route path="/support-panel"          element={<ProtectedRoute supportAccess><SupportDashboard /></ProtectedRoute>} />
+            <Route path="/support-dashboard"      element={<Navigate to="/support-panel" replace />} />
+            <Route path="/support-agent"          element={<Navigate to="/support-panel" replace />} />
 
-            {/* ── Courier ── */}
-            <Route path="/courier/scan"           element={<ProtectedRoute><ScanOrder /></ProtectedRoute>} />
 
             {/* ── Superadmin ── */}
             <Route path="/admin/manage-admins"    element={<ProtectedRoute adminOnly permission="superadmin_view"><AdminManagement /></ProtectedRoute>} />

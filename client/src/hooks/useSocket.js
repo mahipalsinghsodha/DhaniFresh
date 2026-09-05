@@ -37,7 +37,7 @@ export function useSocket() {
     globalSocket = io(SOCKET_URL, {
       auth:              { token },
       withCredentials:   true,
-      transports:        ['websocket', 'polling'],
+      transports:        ['polling', 'websocket'],
       reconnection:      true,
       reconnectionDelay: 1000,
       reconnectionDelayMax: 5000,

@@ -10,7 +10,7 @@ import { useTranslation } from 'react-i18next'
 import api from '../api/axios'
 
 // ── Shared Floating Input System ──
-const FloatingInput = ({ id, label, type = 'text', value, onChange, icon: Icon, rightElement, autoComplete, required, autoFocus, maxLength, placeholder }) => {
+const FloatingInput = ({ id, label, type = 'text', value, onChange, icon: Icon, prefix, rightElement, autoComplete, required, autoFocus, maxLength, placeholder, disabled }) => {
   const [focused, setFocused] = useState(false)
 
   return (
@@ -20,15 +20,19 @@ const FloatingInput = ({ id, label, type = 'text', value, onChange, icon: Icon, 
           {label}
         </label>
       )}
-      <div className="relative">
-        {Icon && (
+      <div className="relative flex items-center">
+        {prefix ? (
+          <div className="absolute left-3 top-1/2 -translate-y-1/2 flex items-center gap-1 pointer-events-none select-none text-brand-primary font-bold text-xs border-r border-brand-primary/15 pr-2.5 z-10">
+            {prefix}
+          </div>
+        ) : Icon ? (
           <div
-            className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none transition-all duration-200"
+            className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none transition-all duration-200 z-10"
             style={{ color: focused ? 'var(--gold)' : 'var(--text-muted)' }}
           >
             <Icon size={15} />
           </div>
-        )}
+        ) : null}
         <input
           id={id}
           type={type}
@@ -38,13 +42,14 @@ const FloatingInput = ({ id, label, type = 'text', value, onChange, icon: Icon, 
           required={required}
           autoFocus={autoFocus}
           maxLength={maxLength}
+          disabled={disabled}
           placeholder={placeholder || (label ? `Enter ${label.replace('*', '').trim()}` : '')}
           onFocus={() => setFocused(true)}
           onBlur={() => setFocused(false)}
           className="w-full rounded-xl text-xs sm:text-sm font-medium outline-none transition-all placeholder:text-gray-400"
           style={{
             height: '44px',
-            paddingLeft: Icon ? '36px' : '12px',
+            paddingLeft: prefix ? '74px' : Icon ? '36px' : '12px',
             paddingRight: rightElement ? '38px' : '12px',
             background: focused ? '#FFFFFF' : 'var(--ivory)',
             border: `1.5px solid ${focused ? 'var(--brand-secondary)' : 'rgba(27, 47, 110, 0.15)'}`,
@@ -53,7 +58,7 @@ const FloatingInput = ({ id, label, type = 'text', value, onChange, icon: Icon, 
           }}
         />
         {rightElement && (
-          <div className="absolute right-3 top-1/2 -translate-y-1/2">{rightElement}</div>
+          <div className="absolute right-3 top-1/2 -translate-y-1/2 z-10">{rightElement}</div>
         )}
       </div>
     </div>
@@ -69,6 +74,7 @@ const Login = () => {
   const from = location.state?.from || '/'
 
   const [step, setStep] = useState('IDENTIFIER')
+  const [mode, setMode] = useState('mobile') // 'mobile' | 'email'
   const [identifier, setIdentifier] = useState('')
   const [otp, setOtp]               = useState(['', '', '', '', '', ''])
   const [password, setPassword]     = useState('')
@@ -79,6 +85,8 @@ const Login = () => {
   useEffect(() => {
     if (user) {
       if (user.role === 'courier') navigate('/courier/scan', { replace: true })
+      else if (user.role === 'support') navigate('/support-panel', { replace: true })
+      else if ((user.role === 'admin' || user.role === 'superadmin') && from === '/') navigate('/admin', { replace: true })
       else navigate(from, { replace: true })
     }
   }, [user, navigate, from])
@@ -107,21 +115,23 @@ const Login = () => {
 
   const handleIdentifierSubmit = async (e) => {
     e.preventDefault()
-    if (!identifier.trim()) {
-      toast.error('Please enter Mobile Number or Email')
+    const trimmed = identifier.trim()
+    if (!trimmed) {
+      toast.error(mode === 'mobile' ? 'Please enter your 10-digit mobile number' : 'Please enter your email or username')
       return
     }
 
-    const isEmail = identifier.includes('@')
-    const isMobile = /^\d{10}$/.test(identifier.trim())
-
-    if (isEmail) {
-      setStep('PASSWORD')
-    } else if (isMobile) {
+    if (mode === 'mobile') {
+      const cleanedPhone = trimmed.replace(/\D/g, '').slice(-10)
+      if (!/^[6-9][0-9]{9}$/.test(cleanedPhone)) {
+        toast.error('Please enter a valid 10-digit Indian mobile number')
+        return
+      }
       setLoading(true)
       try {
-        await api.post('/api/otp/send', { phone: identifier.trim() })
-        toast.success(`OTP sent to ${identifier.trim()}`)
+        await api.post('/api/otp/send', { phone: cleanedPhone })
+        toast.success(`OTP sent to +91 ${cleanedPhone}`)
+        setIdentifier(cleanedPhone)
         setStep('OTP')
         setTimeLeft(30)
       } catch (err) {
@@ -130,7 +140,16 @@ const Login = () => {
         setLoading(false)
       }
     } else {
-      toast.error('Please enter a valid 10-digit mobile number or email address')
+      const hasAtSymbol = trimmed.includes('@')
+      if (hasAtSymbol) {
+        const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/
+        if (!emailRegex.test(trimmed)) {
+          toast.error('Please enter a valid email address (e.g. name@gmail.com, name@domain.in, name@domain.co.in)')
+          return
+        }
+      }
+      // Valid email or username (e.g. support1, admin) -> proceed to password
+      setStep('PASSWORD')
     }
   }
 
@@ -158,9 +177,18 @@ const Login = () => {
     }
     setLoading(true)
     try {
-      await login(identifier.trim(), password)
+      const data = await login(identifier.trim(), password)
       toast.success('Welcome back! 👋')
-      navigate(from, { replace: true })
+      const targetUser = data?.user
+      if (targetUser?.role === 'support') {
+        navigate('/support-panel', { replace: true })
+      } else if (targetUser?.role === 'admin' || targetUser?.role === 'superadmin') {
+        navigate(from && from !== '/' ? from : '/admin', { replace: true })
+      } else if (targetUser?.role === 'courier') {
+        navigate('/courier/scan', { replace: true })
+      } else {
+        navigate(from, { replace: true })
+      }
     } catch (err) {
       toast.error(err.response?.data?.message || 'Invalid credentials')
     } finally {
@@ -227,21 +255,70 @@ const Login = () => {
                   Login <span className="text-brand-secondary font-normal text-lg sm:text-xl">or</span> Signup
                 </h2>
                 <p className="text-xs text-brand-text/60">
-                  Enter your mobile number or email to proceed
+                  Enter your mobile number, email, or username to proceed
                 </p>
               </div>
               
+              {/* Tab Selector: Mobile vs Email / Username */}
+              <div className="flex bg-brand-primary/5 p-1 rounded-xl mb-3">
+                <button
+                  type="button"
+                  onClick={() => { setMode('mobile'); setIdentifier(''); }}
+                  className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
+                    mode === 'mobile'
+                      ? 'bg-white text-brand-primary shadow-xs'
+                      : 'text-brand-text/60 hover:text-brand-primary'
+                  }`}
+                >
+                  <Phone size={13} />
+                  <span>Mobile OTP</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setMode('email'); setIdentifier(''); }}
+                  className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
+                    mode === 'email'
+                      ? 'bg-white text-brand-primary shadow-xs'
+                      : 'text-brand-text/60 hover:text-brand-primary'
+                  }`}
+                >
+                  <Mail size={13} />
+                  <span>Email / Password</span>
+                </button>
+              </div>
+
               <form onSubmit={handleIdentifierSubmit} className="space-y-2.5">
-                <FloatingInput
-                  id="identifier"
-                  label="Mobile Number or Email*"
-                  placeholder="e.g. 9876543210 or name@example.com"
-                  value={identifier}
-                  onChange={(e) => setIdentifier(e.target.value)}
-                  icon={identifier.includes('@') ? Mail : Phone}
-                  autoFocus
-                  required
-                />
+                {mode === 'mobile' ? (
+                  <FloatingInput
+                    id="identifier"
+                    label="Mobile Number*"
+                    prefix={<span className="flex items-center gap-1"><span>🇮🇳</span><span>+91</span></span>}
+                    placeholder="9876543210"
+                    type="tel"
+                    inputMode="numeric"
+                    maxLength={10}
+                    value={identifier}
+                    onChange={(e) => {
+                      let val = e.target.value.replace(/\D/g, '')
+                      if (val.startsWith('91') && val.length > 10) val = val.slice(2)
+                      else if (val.startsWith('0') && val.length > 10) val = val.slice(1)
+                      setIdentifier(val.slice(0, 10))
+                    }}
+                    autoFocus
+                    required
+                  />
+                ) : (
+                  <FloatingInput
+                    id="identifier"
+                    label="Email or Username*"
+                    icon={Mail}
+                    placeholder="e.g. name@gmail.com, support1"
+                    value={identifier}
+                    onChange={(e) => setIdentifier(e.target.value)}
+                    autoFocus
+                    required
+                  />
+                )}
                 
                 <p className="text-[10px] text-gray-500 my-2 leading-relaxed">
                   By continuing, I agree to the{' '}
@@ -325,7 +402,7 @@ const Login = () => {
               <div className="mb-3">
                 <h2 className="text-xl sm:text-2xl font-bold font-display text-brand-primary mb-0.5">Verify with OTP</h2>
                 <p className="text-xs font-medium text-brand-text/60">
-                  Sent to <span className="font-bold text-brand-primary">{identifier}</span>
+                  Sent to <span className="font-bold text-brand-primary font-mono">{/^\d{10}$/.test(identifier) ? `+91 ${identifier}` : identifier}</span>
                 </p>
               </div>
               
@@ -419,7 +496,7 @@ const Login = () => {
               <div className="mb-3">
                 <h2 className="text-xl sm:text-2xl font-bold font-display text-brand-primary mb-0.5">Enter Password</h2>
                 <p className="text-xs font-medium text-brand-text/60">
-                  For <span className="font-bold text-brand-primary">{identifier}</span>
+                  For <span className="font-bold text-brand-primary font-mono">{/^\d{10}$/.test(identifier) ? `+91 ${identifier}` : identifier}</span>
                 </p>
               </div>
 

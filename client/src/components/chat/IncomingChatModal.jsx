@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { FiPhoneCall, FiPhoneOff, FiUser, FiPackage, FiClock, FiAlertCircle, FiHelpCircle } from 'react-icons/fi';
+import { FiPhoneCall, FiPhoneOff, FiUser, FiPackage, FiClock, FiAlertCircle, FiHelpCircle, FiPhone, FiMapPin } from 'react-icons/fi';
 import { useSocket } from '../../hooks/useSocket';
 
 export default function IncomingChatModal({ onAcceptChat }) {
@@ -161,6 +161,11 @@ export default function IncomingChatModal({ onAcceptChat }) {
                 {incomingCall.customerEmail && (
                   <p className="text-xs text-slate-500 truncate">{incomingCall.customerEmail}</p>
                 )}
+                {incomingCall.customerPhone && (
+                  <p className="text-xs text-slate-500 flex items-center gap-1 mt-0.5">
+                    <FiPhone size={11} className="text-amber-500" /> {incomingCall.customerPhone}
+                  </p>
+                )}
                 <div className="flex flex-wrap gap-1.5 mt-2">
                   <span className="px-2.5 py-0.5 rounded-md text-[11px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
                     Category: {incomingCall.category}
@@ -172,6 +177,24 @@ export default function IncomingChatModal({ onAcceptChat }) {
                   )}
                 </div>
               </div>
+            </div>
+
+            {/* Context details: Page & Address */}
+            <div className="space-y-1.5">
+              {incomingCall.currentPage && (
+                <div className="flex items-center gap-2 text-xs text-slate-700 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-100">
+                  <span className="font-semibold text-slate-500 text-[11px]">Active Page:</span>
+                  <span className="font-mono text-indigo-600 font-bold truncate text-[11px]">{incomingCall.currentPage}</span>
+                </div>
+              )}
+              {incomingCall.customerAddress && (
+                <div className="flex items-center gap-2 text-xs text-slate-700 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-100">
+                  <FiMapPin size={12} className="text-rose-500 shrink-0" />
+                  <span className="text-[11px] text-slate-600 truncate">
+                    {[incomingCall.customerAddress.street, incomingCall.customerAddress.city, incomingCall.customerAddress.state, incomingCall.customerAddress.postalCode].filter(Boolean).join(', ')}
+                  </span>
+                </div>
+              )}
             </div>
 
             {/* Notice info */}

@@ -49,8 +49,8 @@ router.get('/sessions', auth, auth.support, async (req, res) => {
         .sort({ lastMessageAt: -1, createdAt: -1 })
         .skip(skip)
         .limit(limitNum)
-        .populate('userId', 'name email avatar')
-        .populate('agentId', 'name email avatar')
+        .populate('userId', 'name email avatar phone addresses role')
+        .populate('agentId', 'name email avatar phone role')
         .populate({
           path: 'orderId',
           select: 'orderIdString totalPrice orderStatus paymentStatus shippingAddress invoiceNumber trackingNumber orderItems itemsPrice taxPrice shippingPrice paymentMethod',
@@ -148,12 +148,38 @@ router.post('/sessions/:sessionId/rate', async (req, res) => {
 });
 
 /* ─────────────────────────────────────────────────────────────────────────── */
-/*  GET /api/chat/queue-count — Support/Admin: waiting sessions count         */
+/*  GET /api/chat/status — Public: check if live support is open & schedule   */
 /* ─────────────────────────────────────────────────────────────────────────── */
-router.get('/queue-count', auth, auth.support, async (req, res) => {
+router.get('/status', async (req, res) => {
   try {
-    const count = await ChatSession.countDocuments({ status: 'WAITING' });
-    res.json({ count });
+    const { checkSupportSchedule, getOnlineAgents } = require('../socket/supportQueueManager');
+    const scheduleCheck = await checkSupportSchedule();
+    const onlineAgents = getOnlineAgents();
+    const liveAgents = onlineAgents.filter(a => a.isLive !== false);
+
+    res.json({
+      isOpen: scheduleCheck.isOpen,
+      reason: scheduleCheck.reason || 'OPEN',
+      message: scheduleCheck.message || '',
+      startHour: scheduleCheck.schedule?.startHour || '09:00',
+      endHour: scheduleCheck.schedule?.endHour || '18:00',
+      workDays: scheduleCheck.schedule?.workDays || [1, 2, 3, 4, 5, 6],
+      onlineAgentsCount: onlineAgents.length,
+      liveAgentsCount: liveAgents.length,
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+/* ─────────────────────────────────────────────────────────────────────────── */
+/*  GET /api/chat/agents/online — Superadmin/Support: list of online agents   */
+/* ─────────────────────────────────────────────────────────────────────────── */
+router.get('/agents/online', auth, auth.support, async (req, res) => {
+  try {
+    const { getOnlineAgents } = require('../socket/supportQueueManager');
+    const agents = getOnlineAgents();
+    res.json({ agents });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }

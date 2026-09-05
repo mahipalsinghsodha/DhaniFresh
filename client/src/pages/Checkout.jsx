@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
+import { Helmet } from 'react-helmet-async'
 import api from '../api/axios'
 import { useAuth } from '../context/AuthContext'
 import { useCart, getCartItemDetails } from '../context/CartContext'
@@ -273,6 +274,10 @@ const Checkout = () => {
 
   return (
     <div className="min-h-screen pb-24 page-enter bg-[var(--ivory)] font-sans text-brand-text">
+      <Helmet>
+        <title>Secure Checkout | Daatasa - Pure Vedic Bilona Ghee</title>
+        <meta name="description" content="Fast, 100% secure checkout for pure Vedic Bilona A2 Ghee with free shipping and easy payments." />
+      </Helmet>
 
       {/* Header */}
       <div className="relative overflow-hidden py-16 sm:py-20 text-center bg-brand-primary text-white">
@@ -375,8 +380,9 @@ const Checkout = () => {
                         <div>
                           <label className={labelCls}>Phone *</label>
                           <div className="relative flex items-center">
-                            <span className="absolute left-3.5 text-xs font-bold text-brand-text/50 select-none pointer-events-none">
-                              +91
+                            <span className="absolute left-3.5 flex items-center gap-1 text-xs font-bold text-brand-primary pointer-events-none select-none border-r border-brand-primary/15 pr-2 z-10">
+                              <span>🇮🇳</span>
+                              <span>+91</span>
                             </span>
                             <input
                               required
@@ -384,8 +390,13 @@ const Checkout = () => {
                               inputMode="numeric"
                               maxLength={10}
                               value={newAddr.phone ? newAddr.phone.replace(/\D/g, '').slice(-10) : ''}
-                              onChange={e => setNewAddr(p => ({ ...p, phone: e.target.value.replace(/\D/g, '').slice(0, 10) }))}
-                              className={`${inputCls} pl-12`}
+                              onChange={e => {
+                                let val = e.target.value.replace(/\D/g, '')
+                                if (val.startsWith('91') && val.length > 10) val = val.slice(2)
+                                else if (val.startsWith('0') && val.length > 10) val = val.slice(1)
+                                setNewAddr(p => ({ ...p, phone: val.slice(0, 10) }))
+                              }}
+                              className={`${inputCls} pl-16`}
                               placeholder="9876543210"
                             />
                           </div>

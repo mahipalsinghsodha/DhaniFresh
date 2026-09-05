@@ -229,7 +229,7 @@ async function checkSupportSchedule() {
     const curTotalMin = curHour * 60 + curMin;
 
     const [sH = 9, sM = 0] = (sched.startHour || '09:00').split(':').map(Number);
-    const [eH = 20, eM = 0] = (sched.endHour || '20:00').split(':').map(Number);
+    const [eH = 18, eM = 0] = (sched.endHour || '18:00').split(':').map(Number);
 
     const startTotalMin = sH * 60 + sM;
     const endTotalMin = eH * 60 + eM;
@@ -238,7 +238,7 @@ async function checkSupportSchedule() {
       return {
         isOpen: false,
         reason: 'OUTSIDE_HOURS',
-        message: sched.offlineMessage || `Our live support hours are ${sched.startHour || '09:00'} to ${sched.endHour || '20:00'} IST. Please submit a support ticket.`,
+        message: sched.offlineMessage || `Our live support hours are ${sched.startHour || '09:00'} to ${sched.endHour || '18:00'} IST (Mon–Sat). Please submit a support ticket below and our team will get back to you.`,
         schedule: sched,
       };
     }
@@ -370,6 +370,9 @@ async function dispatchNextAgent(sessionId, io, triggerReason = 'INITIAL') {
         sessionId,
         customerName: session.userId?.name || session.guestName || 'Customer',
         customerEmail: session.userId?.email || session.guestEmail || '',
+        customerPhone: session.userPhone || session.userId?.phone || '',
+        customerAddress: session.userAddress || null,
+        currentPage: session.currentPage || '/',
         category: session.category || 'OTHER',
         order: orderInfo,
         timeoutSeconds: ringTimeoutSeconds,
@@ -501,8 +504,8 @@ async function recordAgentRejectionOrTimeout(agentId, isTimeout = false, io) {
 
     const totalDailyRejections = (user.supportStats.dailyStats.rejected || 0) + (user.supportStats.dailyStats.missed || 0);
 
-    // Max 1 rejection allowed per day for support agent -> auto-set to Away to protect queue
-    if (user.role === 'support' && totalDailyRejections >= 1) {
+    // Max 5 rejections allowed per day for support agent -> auto-set to Away to protect queue
+    if (user.role === 'support' && totalDailyRejections >= 5) {
       user.supportStats.isLive = false;
       if (agentPresenceMap.has(agentId.toString())) {
         agentPresenceMap.get(agentId.toString()).isLive = false;
@@ -510,8 +513,8 @@ async function recordAgentRejectionOrTimeout(agentId, isTimeout = false, io) {
       if (io) {
         io.to(`user:${agentId.toString()}`).emit('agent:rejection_limit_reached', {
           dailyRejections: totalDailyRejections,
-          maxAllowed: 1,
-          message: '⚠️ Daily Rejection Limit Reached (1/1 today). Your status has been auto-set to Offline.',
+          maxAllowed: 5,
+          message: '⚠️ Daily Rejection Limit Reached (5/5 today). Your status has been auto-set to Offline.',
         });
         io.to('admin_room').emit('admin:agent_presence_change', {
           agentId: agentId.toString(),
@@ -758,6 +761,54 @@ async function checkAndDispatchWaitingQueue(io) {
   }
 }
 
+/* ═══════════════════════════════════════════════════════════════════════════ */
+/*  7. 15-MINUTE INACTIVE CHAT SESSION AUTO-CLEANUP                           */
+/* ═══════════════════════════════════════════════════════════════════════════ */
+function startInactivityCleanupCron(io) {
+  const INACTIVITY_LIMIT_MS = 15 * 60 * 1000; // 15 minutes
+
+  setInterval(async () => {
+    try {
+      const cutoffTime = new Date(Date.now() - INACTIVITY_LIMIT_MS);
+
+      // Find all open chats that have been idle for > 15 minutes
+      const idleSessions = await ChatSession.find({
+        status: { $in: ['ACTIVE', 'WAITING', 'ROUTING', 'BOT_HANDLING'] },
+        $or: [
+          { lastMessageAt: { $lt: cutoffTime } },
+          { lastMessageAt: { $exists: false }, createdAt: { $lt: cutoffTime } }
+        ]
+      });
+
+      for (const session of idleSessions) {
+        session.status = 'CLOSED';
+        session.closedAt = new Date();
+        session.closedBy = 'system_inactivity_15m';
+        session.currentDispatchedTo = null;
+        session.dispatchExpiresAt = null;
+        await session.save();
+
+        if (io) {
+          io.to(`session:${session.sessionId}`).emit('chat:session_closed', {
+            reason: 'Chat session closed automatically due to 15 minutes of inactivity.',
+            inactivity: true
+          });
+          io.to('admin_room').emit('admin:session_update', {
+            sessionId: session.sessionId,
+            status: 'CLOSED'
+          });
+        }
+      }
+
+      if (idleSessions.length > 0 && io) {
+        checkAndDispatchWaitingQueue(io);
+      }
+    } catch (err) {
+      console.error('[SupportQueue] Inactivity cleanup error:', err);
+    }
+  }, 60 * 1000); // Check every 60 seconds
+}
+
 module.exports = {
   isSupportStaff,
   registerAgentPresence,
@@ -771,4 +822,5 @@ module.exports = {
   handleAgentTimeout,
   handleChatClosed,
   checkAndDispatchWaitingQueue,
+  startInactivityCleanupCron,
 };

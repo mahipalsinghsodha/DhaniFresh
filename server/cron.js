@@ -16,20 +16,20 @@ const initCronJobs = () => {
 
       if (lowStockProducts.length > 0) {
         console.log(`[CRON] Found ${lowStockProducts.length} low stock products.`);
-        
+
         // Find superadmins and admins
         const admins = await User.find({ role: { $in: ['admin', 'superadmin'] } }).select('email name');
-        
+
         if (admins.length > 0) {
           // In a real app, you might just email the primary superadmin or all admins.
           // For now, let's email the first superadmin or admin found.
           const primaryAdmin = admins.find(a => a.role === 'superadmin') || admins[0];
-          
+
           await sendLowStockAlertEmail({
             to: primaryAdmin.email,
             products: lowStockProducts
           });
-          
+
           console.log(`[CRON] Low stock alert sent to ${primaryAdmin.email}`);
         } else {
           console.log('[CRON] No admins found to receive alert.');
@@ -58,7 +58,7 @@ const initCronJobs = () => {
 
       if (abandonedCarts.length > 0) {
         console.log(`[CRON] Found ${abandonedCarts.length} abandoned carts to remind.`);
-        
+
         for (const cart of abandonedCarts) {
           if (!cart.user || !cart.user.email) continue;
 
@@ -81,7 +81,7 @@ const initCronJobs = () => {
           } catch (err) {
             console.error('Abandoned Cart WhatsApp Error:', err);
           }
-          
+
           cart.reminderSentAt = new Date();
           await cart.save();
         }

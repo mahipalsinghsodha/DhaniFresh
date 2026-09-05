@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 import { Link } from 'react-router-dom'
-import { FiInstagram, FiFacebook, FiTwitter, FiLinkedin, FiMail, FiPhone, FiMapPin, FiArrowRight } from 'react-icons/fi'
+import { FiInstagram, FiFacebook, FiMail, FiPhone, FiMapPin, FiArrowRight, FiYoutube, FiLinkedin } from 'react-icons/fi'
 import { useTranslation } from 'react-i18next'
 
 const getNavCols = (t) => [
@@ -27,10 +27,30 @@ const getNavCols = (t) => [
 ]
 
 const SOCIALS = [
-  { Icon: FiFacebook,  label: 'Facebook',  href: '#' },
-  { Icon: FiTwitter,   label: 'Twitter',   href: '#' },
-  { Icon: FiInstagram, label: 'Instagram', href: '#' },
-  { Icon: FiLinkedin,  label: 'LinkedIn',  href: '#' },
+  {
+    Icon: FiFacebook,
+    label: 'Facebook',
+    href: 'https://www.facebook.com/daatasa',
+    color: '#1877F2'
+  },
+  {
+    Icon: FiInstagram,
+    label: 'Instagram',
+    href: 'https://www.instagram.com/daatasaofficial',
+    color: '#E1306C'
+  },
+  {
+    Icon: FiYoutube,
+    label: 'YouTube',
+    href: 'https://www.youtube.com/@daatasa',
+    color: '#FF0000'
+  },
+  {
+    Icon: FiLinkedin,
+    label: 'LinkedIn',
+    href: 'https://www.linkedin.com/company/daatasa',
+    color: '#0A66C2'
+  },
 ]
 
 export default function Footer() {
@@ -61,15 +81,28 @@ export default function Footer() {
             </p>
 
             {/* Social Icons */}
-            <div className="flex gap-2.5">
-              {SOCIALS.map(({ Icon, label, href }) => (
-                <a key={label} href={href} aria-label={label}
-                  className="w-8 h-8 sm:w-9 sm:h-9 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center text-brand-secondary hover:bg-brand-secondary hover:text-brand-primary transition-all duration-300 shadow-2xs hover:shadow-gold"
+            <div className="flex gap-2.5 flex-wrap">
+              {SOCIALS.map(({ Icon, label, href, color }) => (
+                <a
+                  key={label}
+                  href={href}
+                  aria-label={label}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  title={label}
+                  className="w-9 h-9 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center text-brand-secondary hover:text-white transition-all duration-300 shadow-2xs hover:scale-110 group"
+                  style={{ '--hover-bg': color }}
+                  onMouseEnter={e => { e.currentTarget.style.background = color; e.currentTarget.style.borderColor = color }}
+                  onMouseLeave={e => { e.currentTarget.style.background = ''; e.currentTarget.style.borderColor = '' }}
                 >
-                  <Icon size={15} />
+                  <Icon size={16} />
                 </a>
               ))}
             </div>
+            {/* Follow us label */}
+            <p className="text-white/35 text-[10px] font-medium mt-2 uppercase tracking-widest">
+              Follow us @daatasaofficial
+            </p>
           </div>
 
           {/* Navigation Columns */}

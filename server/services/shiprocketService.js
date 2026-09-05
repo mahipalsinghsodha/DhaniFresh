@@ -1,6 +1,6 @@
 const axios = require('axios');
 
-const SHIPROCKET_API_URL = 'https://apiv2.shiprocket.in/v1/payload';
+const SHIPROCKET_API_URL = 'https://apiv2.shiprocket.in/v1/external';
 
 let _token = null;
 let _tokenExpiresAt = null;
@@ -18,7 +18,7 @@ const getToken = async () => {
   }
 
   try {
-    const response = await axios.post(`${SHIPROCKET_API_URL}/user/login/`, {
+    const response = await axios.post(`${SHIPROCKET_API_URL}/auth/login`, {
       email: process.env.SHIPROCKET_EMAIL,
       password: process.env.SHIPROCKET_PASSWORD
     });
@@ -40,13 +40,13 @@ const createOrder = async (orderData) => {
   const token = await getToken();
   if (!token) {
     console.log(`\n========================================`);
-    console.log(`🚀 MOCK SHIPROCKET CREATE ORDER`);
+    console.log(`🚀 [MOCK MODE] SHIPROCKET CREATE ORDER`);
     console.log(`Order ID: ${orderData.order_id}`);
     console.log(`========================================\n`);
-    // Return mock response
+    // Return mock response for seamless local testing
     return {
-      order_id: Math.floor(Math.random() * 100000000),
-      shipment_id: Math.floor(Math.random() * 100000000),
+      order_id: Math.floor(10000000 + Math.random() * 90000000),
+      shipment_id: Math.floor(10000000 + Math.random() * 90000000),
       status: 'NEW'
     };
   }
@@ -69,13 +69,19 @@ const generateAWB = async (shipmentId) => {
   const token = await getToken();
   if (!token) {
     console.log(`\n========================================`);
-    console.log(`🚀 MOCK SHIPROCKET AWB`);
+    console.log(`🚀 [MOCK MODE] SHIPROCKET AWB GENERATION`);
     console.log(`Shipment ID: ${shipmentId}`);
     console.log(`========================================\n`);
+    const mockCouriers = ['Delhivery Surface', 'BlueDart Express', 'Shadowfax', 'Xpressbees'];
+    const randomCourier = mockCouriers[Math.floor(Math.random() * mockCouriers.length)];
     return {
-      awb_code: `MOCK_AWB_${Math.floor(Math.random() * 1000000)}`,
-      courier_company_id: 1,
-      courier_name: 'Mock Courier'
+      response: {
+        data: {
+          awb_code: `SR${Math.floor(1000000000 + Math.random() * 9000000000)}`,
+          courier_company_id: 1,
+          courier_name: randomCourier
+        }
+      }
     };
   }
 
@@ -83,7 +89,7 @@ const generateAWB = async (shipmentId) => {
     const response = await axios.post(`${SHIPROCKET_API_URL}/courier/assign/awb`, {
       shipment_id: shipmentId
     }, {
-      headers: { 'Authorization': `Bearer ${token}` }
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }
     });
     return response.data;
   } catch (error) {
@@ -92,8 +98,83 @@ const generateAWB = async (shipmentId) => {
   }
 };
 
+/**
+ * Generates Shipping Label PDF URL
+ */
+const generateLabel = async (shipmentId) => {
+  const token = await getToken();
+  if (!token) {
+    return { label_url: `https://www.shiprocket.in/sample-label.pdf` };
+  }
+
+  try {
+    const response = await axios.post(`${SHIPROCKET_API_URL}/courier/generate/label`, {
+      shipment_id: [shipmentId]
+    }, {
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }
+    });
+    return response.data;
+  } catch (error) {
+    console.error('Shiprocket Label Failed:', error.response?.data || error.message);
+    throw new Error(error.response?.data?.message || 'Failed to generate Shipping Label');
+  }
+};
+
+/**
+ * Requests Courier Pickup
+ */
+const requestPickup = async (shipmentId) => {
+  const token = await getToken();
+  if (!token) {
+    return { response: { pickup_status: 1, message: 'Pickup scheduled successfully' } };
+  }
+
+  try {
+    const response = await axios.post(`${SHIPROCKET_API_URL}/courier/generate/pickup`, {
+      shipment_id: [shipmentId]
+    }, {
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }
+    });
+    return response.data;
+  } catch (error) {
+    console.error('Shiprocket Pickup Request Failed:', error.response?.data || error.message);
+    throw new Error(error.response?.data?.message || 'Failed to schedule pickup');
+  }
+};
+
+/**
+ * Track shipment by AWB
+ */
+const trackShipment = async (awbCode) => {
+  const token = await getToken();
+  if (!token) {
+    return {
+      tracking_data: {
+        track_status: 1,
+        shipment_status: 'IN TRANSIT',
+        shipment_track: [
+          { current_status: 'In Transit', location: 'Delhi Hub', date: new Date().toISOString() }
+        ]
+      }
+    };
+  }
+
+  try {
+    const response = await axios.get(`${SHIPROCKET_API_URL}/courier/track/awb/${awbCode}`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    return response.data;
+  } catch (error) {
+    console.error('Shiprocket Track Failed:', error.response?.data || error.message);
+    throw new Error(error.response?.data?.message || 'Failed to fetch tracking data');
+  }
+};
+
 module.exports = {
   isConfigured,
   createOrder,
-  generateAWB
+  generateAWB,
+  generateLabel,
+  requestPickup,
+  trackShipment
 };

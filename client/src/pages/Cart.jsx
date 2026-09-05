@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
+import { Helmet } from 'react-helmet-async'
 import { useAuth } from '../context/AuthContext'
 import {
   FiTrash2, FiMinus, FiPlus, FiShoppingCart, FiArrowRight,
@@ -125,6 +126,10 @@ const Cart = () => {
 
   return (
     <div className="min-h-screen pb-24 page-enter bg-[var(--ivory)] font-sans text-brand-text">
+      <Helmet>
+        <title>Shopping Cart | Daatasa - Pure Vedic Bilona Ghee</title>
+        <meta name="description" content="Review your shopping cart items and proceed to secure checkout for pure Vedic Bilona A2 Ghee." />
+      </Helmet>
 
       {/* ── Page Header ── */}
       <div className="relative overflow-hidden bg-white text-brand-primary border-b border-brand-primary/5">

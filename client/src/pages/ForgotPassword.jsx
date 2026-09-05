@@ -8,7 +8,7 @@ import { Helmet } from 'react-helmet-async'
 import api from '../api/axios'
 
 // ── Shared Floating Input ──
-const FloatingInput = ({ id, label, type = 'text', value, onChange, icon: Icon, rightElement, autoComplete, required, autoFocus, maxLength, placeholder }) => {
+const FloatingInput = ({ id, label, type = 'text', value, onChange, icon: Icon, prefix, rightElement, autoComplete, required, autoFocus, maxLength, placeholder, disabled }) => {
   const [focused, setFocused] = useState(false)
 
   return (
@@ -18,15 +18,19 @@ const FloatingInput = ({ id, label, type = 'text', value, onChange, icon: Icon, 
           {label}
         </label>
       )}
-      <div className="relative">
-        {Icon && (
+      <div className="relative flex items-center">
+        {prefix ? (
+          <div className="absolute left-3 top-1/2 -translate-y-1/2 flex items-center gap-1 pointer-events-none select-none text-brand-primary font-bold text-xs border-r border-brand-primary/15 pr-2.5 z-10">
+            {prefix}
+          </div>
+        ) : Icon ? (
           <div
-            className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none transition-all duration-200"
+            className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none transition-all duration-200 z-10"
             style={{ color: focused ? 'var(--gold)' : 'var(--text-muted)' }}
           >
             <Icon size={15} />
           </div>
-        )}
+        ) : null}
         <input
           id={id}
           type={type}
@@ -36,13 +40,14 @@ const FloatingInput = ({ id, label, type = 'text', value, onChange, icon: Icon, 
           required={required}
           autoFocus={autoFocus}
           maxLength={maxLength}
+          disabled={disabled}
           placeholder={placeholder || (label ? `Enter ${label.replace('*', '').trim()}` : '')}
           onFocus={() => setFocused(true)}
           onBlur={() => setFocused(false)}
           className="w-full rounded-xl text-xs sm:text-sm font-medium outline-none transition-all placeholder:text-gray-400"
           style={{
             height: '44px',
-            paddingLeft: Icon ? '36px' : '12px',
+            paddingLeft: prefix ? '74px' : Icon ? '36px' : '12px',
             paddingRight: rightElement ? '38px' : '12px',
             background: focused ? '#FFFFFF' : 'var(--ivory)',
             border: `1.5px solid ${focused ? 'var(--brand-secondary)' : 'rgba(27, 47, 110, 0.15)'}`,
@@ -51,7 +56,7 @@ const FloatingInput = ({ id, label, type = 'text', value, onChange, icon: Icon, 
           }}
         />
         {rightElement && (
-          <div className="absolute right-3 top-1/2 -translate-y-1/2">{rightElement}</div>
+          <div className="absolute right-3 top-1/2 -translate-y-1/2 z-10">{rightElement}</div>
         )}
       </div>
     </div>
@@ -62,6 +67,7 @@ const ForgotPassword = () => {
   const navigate = useNavigate()
 
   const [step, setStep] = useState('IDENTIFIER')
+  const [mode, setMode] = useState('mobile') // 'mobile' | 'email'
   const [identifier, setIdentifier] = useState('')
   const [otp, setOtp] = useState('')
   const [newPassword, setNewPassword] = useState('')
@@ -79,36 +85,47 @@ const ForgotPassword = () => {
 
   const handleIdentifierSubmit = async (e) => {
     e.preventDefault()
-    if (!identifier.trim()) {
-      toast.error('Please enter Mobile Number or Email')
+    const trimmed = identifier.trim()
+    if (!trimmed) {
+      toast.error(mode === 'mobile' ? 'Please enter your 10-digit mobile number' : 'Please enter your email address')
       return
     }
 
-    const isEmail = identifier.includes('@')
-    const isMobile = /^\d{10}$/.test(identifier.trim())
-
-    if (!isEmail && !isMobile) {
-      toast.error('Please enter a valid 10-digit mobile number or email')
-      return
-    }
-
-    setLoading(true)
-    try {
-      if (isEmail) {
-        await api.post('/api/auth/forgotpassword', { email: identifier.trim() })
+    if (mode === 'mobile') {
+      const cleanedPhone = trimmed.replace(/\D/g, '').slice(-10)
+      if (!/^[6-9][0-9]{9}$/.test(cleanedPhone)) {
+        toast.error('Please enter a valid 10-digit Indian mobile number')
+        return
+      }
+      setLoading(true)
+      try {
+        await api.post('/api/auth/forgot-password-otp', { phone: cleanedPhone })
+        toast.success(`OTP sent to +91 ${cleanedPhone}`)
+        setIdentifier(cleanedPhone)
+        setStep('OTP_RESET')
+        setCooldown(60)
+      } catch (err) {
+        toast.error(err.response?.data?.message || 'Failed to send OTP')
+      } finally {
+        setLoading(false)
+      }
+    } else {
+      const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/
+      if (!emailRegex.test(trimmed)) {
+        toast.error('Please enter a valid email address (e.g. name@gmail.com, name@domain.in, name@domain.co.in)')
+        return
+      }
+      setLoading(true)
+      try {
+        await api.post('/api/auth/forgotpassword', { email: trimmed.toLowerCase() })
         toast.success('Password reset link sent to your email')
         setStep('SENT_EMAIL')
         setCooldown(60)
-      } else {
-        await api.post('/api/auth/forgot-password-otp', { phone: identifier.trim() })
-        toast.success('OTP sent to your mobile number')
-        setStep('OTP_RESET')
-        setCooldown(60)
+      } catch (err) {
+        toast.error(err.response?.data?.message || 'Failed to process request')
+      } finally {
+        setLoading(false)
       }
-    } catch (err) {
-      toast.error(err.response?.data?.message || 'Failed to process request')
-    } finally {
-      setLoading(false)
     }
   }
 
@@ -209,17 +226,67 @@ const ForgotPassword = () => {
                 </div>
               )}
 
+              {/* Tab Selector: Mobile OTP vs Email Link */}
+              <div className="flex bg-brand-primary/5 p-1 rounded-xl mb-3">
+                <button
+                  type="button"
+                  onClick={() => { setMode('mobile'); setIdentifier(''); }}
+                  className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
+                    mode === 'mobile'
+                      ? 'bg-white text-brand-primary shadow-xs'
+                      : 'text-brand-text/60 hover:text-brand-primary'
+                  }`}
+                >
+                  <Phone size={13} />
+                  <span>Mobile OTP</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setMode('email'); setIdentifier(''); }}
+                  className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
+                    mode === 'email'
+                      ? 'bg-white text-brand-primary shadow-xs'
+                      : 'text-brand-text/60 hover:text-brand-primary'
+                  }`}
+                >
+                  <Mail size={13} />
+                  <span>Email Link</span>
+                </button>
+              </div>
+
               <form onSubmit={handleIdentifierSubmit} className="space-y-2.5">
-                <FloatingInput
-                  id="identifier"
-                  label="Mobile Number or Email*"
-                  placeholder="e.g. 9876543210 or name@example.com"
-                  value={identifier}
-                  onChange={(e) => setIdentifier(e.target.value)}
-                  icon={identifier.includes('@') ? Mail : Phone}
-                  autoFocus
-                  required
-                />
+                {mode === 'mobile' ? (
+                  <FloatingInput
+                    id="identifier"
+                    label="Mobile Number*"
+                    prefix={<span className="flex items-center gap-1"><span>🇮🇳</span><span>+91</span></span>}
+                    placeholder="9876543210"
+                    type="tel"
+                    inputMode="numeric"
+                    maxLength={10}
+                    value={identifier}
+                    onChange={(e) => {
+                      let val = e.target.value.replace(/\D/g, '')
+                      if (val.startsWith('91') && val.length > 10) val = val.slice(2)
+                      else if (val.startsWith('0') && val.length > 10) val = val.slice(1)
+                      setIdentifier(val.slice(0, 10))
+                    }}
+                    autoFocus
+                    required
+                  />
+                ) : (
+                  <FloatingInput
+                    id="identifier"
+                    label="Email Address*"
+                    icon={Mail}
+                    type="email"
+                    placeholder="e.g. name@gmail.com, name@domain.in"
+                    value={identifier}
+                    onChange={(e) => setIdentifier(e.target.value)}
+                    autoFocus
+                    required
+                  />
+                )}
 
                 <button
                   type="submit"
@@ -296,7 +363,7 @@ const ForgotPassword = () => {
               <div className="mb-3">
                 <h2 className="text-xl sm:text-2xl font-bold font-display text-brand-primary mb-0.5">Reset Password</h2>
                 <p className="text-xs text-brand-text/60">
-                  Enter the OTP sent to <span className="font-bold text-brand-primary">{identifier}</span>
+                  Enter the OTP sent to <span className="font-bold text-brand-primary font-mono">+91 {identifier}</span>
                 </p>
               </div>
               

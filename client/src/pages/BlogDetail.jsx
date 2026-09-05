@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { Helmet } from 'react-helmet-async'
+import DOMPurify from 'dompurify'
 import api from '../api/axios'
 import { FiClock, FiUser, FiArrowLeft, FiShare2, FiCheck } from 'react-icons/fi'
 import { toast } from 'react-toastify'
@@ -96,7 +97,7 @@ const BlogDetail = () => {
         
         <div 
           className="prose prose-sm sm:prose-base max-w-none text-brand-text/85 prose-headings:font-display prose-headings:text-brand-primary prose-a:text-brand-secondary leading-relaxed bg-white p-5 sm:p-8 rounded-2xl border border-brand-primary/5 shadow-2xs"
-          dangerouslySetInnerHTML={{ __html: blog.content }}
+          dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(blog.content) }}
         />
         
         {/* Footer / Share */}

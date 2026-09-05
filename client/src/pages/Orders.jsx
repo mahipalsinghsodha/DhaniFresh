@@ -35,7 +35,7 @@ const getStatus = (order) => {
   if (order.orderStatus === 'OUT_FOR_DELIVERY') {
     return { label: 'Out for Delivery', cls: 'badge-info', icon: FiTruck }
   }
-  if (['SHIPPED', 'ASSIGNED_TO_COURIER', 'PICKED_UP'].includes(order.orderStatus)) {
+  if (['SHIPPED', 'ASSIGNED_TO_COURIER', 'PICKED_UP'].includes(order.orderStatus) || !!order.trackingNumber) {
     return { label: 'In Transit', cls: 'badge-info', icon: FiTruck }
   }
   if (order.orderStatus === 'ACCEPTED' || order.acceptedAt) {

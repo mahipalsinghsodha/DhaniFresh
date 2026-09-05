@@ -44,12 +44,45 @@ function registerChatHandlers(io, socket) {
   /* ── USER: Start a new chat session ─────────────────────────────────────── */
   socket.on('chat:start', async (data) => {
     try {
-      const { guestName, guestEmail, category = 'OTHER', orderId, subIssue, initialMessage, language = 'en' } = data;
+      const {
+        guestName,
+        guestEmail,
+        category = 'OTHER',
+        orderId,
+        subIssue,
+        initialMessage,
+        language = 'en',
+        currentPage = '/',
+        userPhone = '',
+        userAddress = null,
+        deviceInfo = null,
+      } = data;
 
       let resolvedUserId = socket.user?._id || null;
       if (!resolvedUserId && guestEmail) {
-        const foundUser = await User.findOne({ email: guestEmail.toLowerCase().trim() }).select('_id name').lean();
+        const foundUser = await User.findOne({ email: guestEmail.toLowerCase().trim() }).select('_id name phone addresses').lean();
         if (foundUser) resolvedUserId = foundUser._id;
+      }
+
+      let resolvedPhone = userPhone || socket.user?.phone || '';
+      let resolvedAddress = userAddress || null;
+      if (resolvedUserId && (!resolvedPhone || !resolvedAddress)) {
+        try {
+          const dbUser = await User.findById(resolvedUserId).select('phone addresses').lean();
+          if (dbUser) {
+            if (!resolvedPhone) resolvedPhone = dbUser.phone || '';
+            if (!resolvedAddress && dbUser.addresses && dbUser.addresses.length > 0) {
+              const def = dbUser.addresses.find(a => a.isDefault) || dbUser.addresses[0];
+              resolvedAddress = {
+                street: def.street || '',
+                city: def.city || '',
+                state: def.state || '',
+                postalCode: def.zipCode || def.postalCode || '',
+                country: def.country || 'India',
+              };
+            }
+          }
+        } catch (e) {}
       }
 
       let validOrderId = null;
@@ -63,13 +96,17 @@ function registerChatHandlers(io, socket) {
       const sessionId = generateSessionId();
       const session = await ChatSession.create({
         sessionId,
-        userId:     resolvedUserId,
-        guestName:  socket.user?.name || guestName,
-        guestEmail: socket.user?.email || guestEmail,
-        status:     'BOT_HANDLING',
+        userId:      resolvedUserId,
+        guestName:   socket.user?.name || guestName,
+        guestEmail:  socket.user?.email || guestEmail,
+        userPhone:   resolvedPhone,
+        userAddress: resolvedAddress,
+        currentPage: currentPage || '/',
+        deviceInfo:  deviceInfo || { isMobile: false },
+        status:      'BOT_HANDLING',
         category,
-        orderId:    validOrderId,
-        language:   activeLang,
+        orderId:     validOrderId,
+        language:    activeLang,
       });
 
       // Join the session room
@@ -226,6 +263,15 @@ function registerChatHandlers(io, socket) {
   /* ── USER: Typing indicator ─────────────────────────────────────────────── */
   socket.on('chat:typing', async ({ sessionId, isTyping }) => {
     socket.to(`session:${sessionId}`).emit('chat:user_typing', { isTyping });
+  });
+
+  /* ── USER: Update Current Page / Active Route ───────────────────────────── */
+  socket.on('chat:update_page', async ({ sessionId, currentPage }) => {
+    try {
+      if (!sessionId || !currentPage) return;
+      await ChatSession.findOneAndUpdate({ sessionId }, { currentPage });
+      io.to('admin_room').emit('admin:session_update', { sessionId, currentPage });
+    } catch (e) {}
   });
 
   /* ── USER: Close chat ───────────────────────────────────────────────────── */

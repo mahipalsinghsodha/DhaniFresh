@@ -1205,6 +1205,7 @@ router.put('/:id/deliver', auth, auth.admin, auth.hasPermission('orders'), async
       order.invoiceNumber = await getNextInvoiceNumber();
     }
     
+    order.orderStatus = 'DELIVERED';
     order.isPaid = true;
     order.paymentStatus = 'PAID';
     order.isDelivered = true;
@@ -1252,6 +1253,7 @@ router.put('/:id/ship', auth, auth.admin, auth.hasPermission('orders'), async (r
       return res.status(404).json({ message: 'Order not found' });
     }
 
+    order.orderStatus = 'SHIPPED';
     order.trackingNumber = trackingNumber;
     order.shippingProvider = shippingProvider;
     await pushStatusAndNotify(order, 'SHIPPED', `Shipped via ${shippingProvider} (Tracking: ${trackingNumber})`, req.user._id, {
@@ -1570,6 +1572,9 @@ router.put('/:id/accept', auth, auth.admin, auth.hasPermission('orders'), async 
     order.orderStatus = 'ACCEPTED';
     order.acceptedBy = req.user._id;
     order.acceptedAt = new Date();
+    if (order.paymentMethod === 'COD' && order.paymentStatus === 'PENDING') {
+      order.paymentStatus = 'COD_CONFIRMED';
+    }
 
     await pushStatusAndNotify(order, 'ACCEPTED', 'Order accepted by admin', req.user._id, {
       type: 'ORDER_CONFIRMED',
@@ -1585,27 +1590,5 @@ router.put('/:id/accept', auth, auth.admin, auth.hasPermission('orders'), async 
   }
 });
 
-// ========================================================================
-// ADMIN: ASSIGN COURIER
-// ========================================================================
-router.put('/:id/assign-courier', auth, auth.admin, auth.hasPermission('orders'), async (req, res) => {
-  try {
-    const { courierId } = req.body;
-    const order = await Order.findById(req.params.id);
-    
-    if (!order) return res.status(404).json({ message: 'Order not found' });
-    if (!courierId) return res.status(400).json({ message: 'Courier ID is required' });
-
-    order.courierId = courierId;
-    order.orderStatus = 'ASSIGNED_TO_COURIER';
-
-    await pushStatusAndNotify(order, 'ASSIGNED_TO_COURIER', 'Order assigned to courier', req.user._id);
-
-    await order.save();
-    res.json(order);
-  } catch (error) {
-    res.status(500).json({ message: error.message });
-  }
-});
-
 module.exports = router;
+

@@ -19,14 +19,14 @@ const fmtINR = (val) => `₹${Number(val || 0).toLocaleString('en-IN')}`
 const qrUrl = (data, size = 120) => `https://api.qrserver.com/v1/create-qr-code/?size=${size}x${size}&data=${encodeURIComponent(data)}&margin=6`
 
 const getStatus = (o) => {
-  if (o.isDelivered) return { label: 'Delivered', color: 'var(--success)', bg: 'rgba(56,161,105,0.08)', border: 'rgba(56,161,105,0.25)' }
-  if (o.paymentStatus === 'CANCELLED') return { label: 'Cancelled', color: 'var(--text-muted)', bg: 'var(--bg-alt)', border: 'var(--border-color)' }
+  if (o.isDelivered || o.orderStatus === 'DELIVERED') return { label: 'Delivered', color: 'var(--success)', bg: 'rgba(56,161,105,0.08)', border: 'rgba(56,161,105,0.25)' }
+  if (o.orderStatus === 'CANCELLED' || o.paymentStatus === 'CANCELLED') return { label: 'Cancelled', color: 'var(--text-muted)', bg: 'var(--bg-alt)', border: 'var(--border-color)' }
   if (o.paymentStatus === 'FAILED') return { label: 'Failed', color: 'var(--danger)', bg: 'rgba(229,62,62,0.08)', border: 'rgba(229,62,62,0.25)' }
   if (o.paymentStatus === 'RETURN_APPROVED') return { label: 'Returned', color: 'var(--warning)', bg: 'rgba(245,158,11,0.08)', border: 'rgba(245,158,11,0.25)' }
-  if (o.isPaid) return { label: 'Paid', color: 'var(--info)', bg: 'rgba(49,130,206,0.08)', border: 'rgba(49,130,206,0.25)' }
-  if (o.paymentStatus === 'COD_CONFIRMED') return { label: 'Confirmed', color: 'var(--info)', bg: 'rgba(49,130,206,0.08)', border: 'rgba(49,130,206,0.25)' }
+  if (o.orderStatus === 'OUT_FOR_DELIVERY') return { label: 'Out for Delivery', color: '#8b5cf6', bg: 'rgba(139,92,246,0.08)', border: 'rgba(139,92,246,0.25)' }
+  if (['SHIPPED', 'PICKED_UP', 'ASSIGNED_TO_COURIER'].includes(o.orderStatus) || !!o.trackingNumber) return { label: 'Shipped', color: '#0ea5e9', bg: 'rgba(14,165,233,0.08)', border: 'rgba(14,165,233,0.25)' }
   if (o.orderStatus === 'ACCEPTED') return { label: 'Accepted', color: 'var(--brand-secondary)', bg: 'rgba(30,58,138,0.08)', border: 'rgba(30,58,138,0.25)' }
-  return { label: 'Pending', color: 'var(--warning)', bg: 'rgba(245,166,35,0.12)', border: 'rgba(245,166,35,0.25)' }
+  return { label: 'Pending Acceptance', color: 'var(--warning)', bg: 'rgba(245,166,35,0.12)', border: 'rgba(245,166,35,0.25)' }
 }
 
 const StatusBadge = ({ order }) => {
@@ -231,26 +231,18 @@ const ManageOrders = () => {
     finally { setSyncing(false) }
   }
 
-  const handlePushToShiprocket = async (id) => {
-    if (!(await confirm('Push this order to Shiprocket?'))) return
+  const handleShipWithShiprocket = async (id) => {
+    if (!(await confirm('Dispatch this order via Shiprocket (Delhivery / BlueDart)? This will assign courier, generate AWB tracking, and mark as Shipped.'))) return
     setSyncing(true)
     try {
-      await api.post(`/api/shiprocket/push/${id}`)
-      toast.success('Pushed to Shiprocket successfully')
+      const res = await api.post(`/api/shiprocket/ship/${id}`)
+      toast.success(res.data.message || 'Dispatched via Shiprocket successfully!')
       fetchOrders(false, page)
-    } catch (err) { toast.error(err.response?.data?.message || 'Failed to push to Shiprocket') }
-    finally { setSyncing(false) }
-  }
-
-  const handleGenerateAWB = async (id) => {
-    if (!(await confirm('Generate AWB for this shipment?'))) return
-    setSyncing(true)
-    try {
-      await api.post(`/api/shiprocket/awb/${id}`)
-      toast.success('AWB generated successfully')
-      fetchOrders(false, page)
-    } catch (err) { toast.error(err.response?.data?.message || 'Failed to generate AWB') }
-    finally { setSyncing(false) }
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to dispatch via Shiprocket')
+    } finally {
+      setSyncing(false)
+    }
   }
 
   const handleBulkAction = async (action) => {
@@ -401,20 +393,36 @@ const ManageOrders = () => {
       </div>
 
       {/* Bulk Actions Bar */}
-      {selectedOrders.size > 0 && (
-        <div className="sticky top-[72px] z-30 max-w-[1280px] mx-auto px-4 sm:px-6 lg:px-8 py-3 mb-2 bg-white dark:bg-gray-800 shadow-sm border-b rounded-b-2xl flex items-center justify-between">
-          <span className="text-sm font-bold text-gray-700 dark:text-gray-300">
-            {selectedOrders.size} order(s) selected
-          </span>
-          <div className="flex gap-2">
-            <button onClick={() => handleBulkAction('accept')} className="btn btn-primary text-xs px-3 py-1.5 h-auto">Accept Orders</button>
-            <button onClick={() => handleBulkAction('print')} className="btn btn-secondary text-xs px-3 py-1.5 h-auto">Print Labels</button>
-            <button onClick={() => handleBulkAction('pay')} className="btn btn-secondary text-xs px-3 py-1.5 h-auto">Mark Paid</button>
-            <button onClick={() => handleBulkAction('deliver')} className="btn btn-secondary text-xs px-3 py-1.5 h-auto">Mark Delivered</button>
-            <button onClick={() => setSelectedOrders(new Set())} className="btn text-xs px-3 py-1.5 h-auto ml-2"><FiX /></button>
+      {selectedOrders.size > 0 && (() => {
+        const selectedList = orders.filter(o => selectedOrders.has(o._id));
+        const hasPending = selectedList.some(o => o.orderStatus === 'PENDING_ACCEPTANCE' && !isVoid(o));
+        const hasUnpaid = selectedList.some(o => !o.isPaid && !isVoid(o));
+        const hasUndelivered = selectedList.some(o => !o.isDelivered && !isVoid(o) && (o.orderStatus === 'ACCEPTED' || o.orderStatus === 'SHIPPED'));
+        const hasValid = selectedList.some(o => !isVoid(o));
+
+        return (
+          <div className="sticky top-[72px] z-30 max-w-[1280px] mx-auto px-4 sm:px-6 lg:px-8 py-3 mb-2 bg-white dark:bg-gray-800 shadow-sm border-b rounded-b-2xl flex items-center justify-between flex-wrap gap-2">
+            <span className="text-sm font-bold text-gray-700 dark:text-gray-300">
+              {selectedOrders.size} order(s) selected
+            </span>
+            <div className="flex flex-wrap gap-2">
+              {hasPending && (
+                <button onClick={() => handleBulkAction('accept')} className="btn btn-primary text-xs px-3 py-1.5 h-auto">Accept Orders</button>
+              )}
+              {hasValid && (
+                <button onClick={() => handleBulkAction('print')} className="btn btn-secondary text-xs px-3 py-1.5 h-auto">Print Labels</button>
+              )}
+              {hasUnpaid && (
+                <button onClick={() => handleBulkAction('pay')} className="btn btn-secondary text-xs px-3 py-1.5 h-auto">Mark Paid</button>
+              )}
+              {hasUndelivered && (
+                <button onClick={() => handleBulkAction('deliver')} className="btn btn-secondary text-xs px-3 py-1.5 h-auto">Mark Delivered</button>
+              )}
+              <button onClick={() => setSelectedOrders(new Set())} className="btn text-xs px-3 py-1.5 h-auto ml-2"><FiX /></button>
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* Order List */}
       <div className="max-w-[1280px] mx-auto px-4 sm:px-6 lg:px-8 py-6">
@@ -573,22 +581,17 @@ const ManageOrders = () => {
                                     <FiCheckCircle size={13} /> Mark Paid
                                   </button>
                                 )}
-                                {(o.isPaid || o.paymentStatus === 'COD_CONFIRMED') && !o.isDelivered && !isVoid(o) && (
+                                {['ACCEPTED', 'SHIPPED', 'PICKED_UP', 'ASSIGNED_TO_COURIER', 'OUT_FOR_DELIVERY'].includes(o.orderStatus) && !o.isDelivered && !isVoid(o) && (
                                   <>
-                                    {!o.shiprocketOrderId && (
-                                      <button onClick={() => handlePushToShiprocket(o._id)} style={{ padding: '8px 14px', background: '#f5a623', color: '#fff', border: 'none', borderRadius: 10, fontSize: 12, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
-                                        <FiTruck size={13} /> Push to Shiprocket
-                                      </button>
-                                    )}
-                                    {o.shiprocketOrderId && !o.awbCode && (
-                                      <button onClick={() => handleGenerateAWB(o._id)} style={{ padding: '8px 14px', background: '#4a90e2', color: '#fff', border: 'none', borderRadius: 10, fontSize: 12, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
-                                        <FiTag size={13} /> Generate AWB
-                                      </button>
-                                    )}
-                                    {!o.trackingNumber && !o.awbCode && (
-                                      <button onClick={() => setTrackingModal(o)} style={{ padding: '8px 14px', background: 'var(--brand-primary)', color: '#fff', border: 'none', borderRadius: 10, fontSize: 12, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
-                                        <FiBox size={13} /> Manual Tracking
-                                      </button>
+                                    {!o.awbCode && !o.trackingNumber && (
+                                      <>
+                                        <button onClick={() => handleShipWithShiprocket(o._id)} style={{ padding: '8px 14px', background: 'linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%)', color: '#fff', border: 'none', borderRadius: 10, fontSize: 12, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', boxShadow: '0 2px 8px rgba(124, 58, 237, 0.25)' }}>
+                                          <FiTruck size={13} /> 🚀 Ship with Shiprocket
+                                        </button>
+                                        <button onClick={() => setTrackingModal(o)} style={{ padding: '8px 14px', background: 'var(--brand-primary)', color: '#fff', border: 'none', borderRadius: 10, fontSize: 12, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
+                                          <FiBox size={13} /> Manual Tracking
+                                        </button>
+                                      </>
                                     )}
                                     <button onClick={() => markDelivered(o._id)} style={{ padding: '8px 14px', background: 'var(--info)', color: '#fff', border: 'none', borderRadius: 10, fontSize: 12, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
                                       <FiCheckCircle size={13} /> Mark Delivered

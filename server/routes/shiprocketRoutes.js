@@ -3,118 +3,190 @@ const router = express.Router();
 const Order = require('../models/Order');
 const auth = require('../middleware/auth');
 const shiprocketService = require('../services/shiprocketService');
+const { getIO } = require('../socket');
+const { logAction } = require('../utils/logger');
+const { sendShippingUpdateEmail } = require('../services/emailService');
+const { sendShippingUpdateWhatsApp } = require('../services/whatsappService');
 
 /**
- * POST /api/shiprocket/push/:orderId
- * Push an order to Shiprocket
+ * Helper to build Shiprocket order payload
  */
-router.post('/push/:orderId', auth, auth.admin, auth.hasPermission('orders'), async (req, res) => {
-  try {
-    const order = await Order.findById(req.params.orderId);
-    if (!order) return res.status(404).json({ message: 'Order not found' });
+function buildShiprocketPayload(order) {
+  const addr = order.shippingAddress || {};
+  return {
+    order_id: order.orderIdString || order._id.toString(),
+    order_date: new Date(order.createdAt).toISOString().split('T')[0],
+    pickup_location: "Primary", // Must match pickup location name in Shiprocket dashboard
+    billing_customer_name: addr.name || (order.user?.name) || "Customer",
+    billing_last_name: "",
+    billing_address: addr.street || "Main Street",
+    billing_address_2: addr.district || "",
+    billing_city: addr.city || "City",
+    billing_pincode: addr.zipCode || "110001",
+    billing_state: addr.state || "Delhi",
+    billing_country: addr.country || "India",
+    billing_email: order.guestEmail || (order.user?.email) || "customer@daatasa.com",
+    billing_phone: addr.phone || "9999999999",
+    shipping_is_billing: true,
+    order_items: (order.orderItems || []).map(item => ({
+      name: item.name,
+      sku: (item.product?._id || item.product || 'PROD').toString().slice(-8),
+      units: item.quantity || 1,
+      selling_price: item.price || 0,
+      discount: 0,
+      tax: 0,
+      hsn: 441122
+    })),
+    payment_method: order.paymentMethod === 'COD' ? 'COD' : 'Prepaid',
+    shipping_charges: order.shippingPrice || 0,
+    giftwrap_charges: 0,
+    transaction_charges: 0,
+    total_discount: order.discount || 0,
+    sub_total: order.itemsPrice || 0,
+    length: 12,
+    breadth: 12,
+    height: 15,
+    weight: 0.9 // Default 0.9kg for pure ghee bottle
+  };
+}
 
-    if (order.shiprocketOrderId) {
-      return res.status(400).json({ message: 'Order already pushed to Shiprocket' });
+/**
+ * POST /api/shiprocket/ship/:orderId
+ * 🚀 1-CLICK ALL-IN-ONE DISPATCH WITH SHIPROCKET
+ * Creates Order in Shiprocket + Generates AWB (Delhivery/BlueDart/etc) + Marks Shipped
+ */
+router.post('/ship/:orderId', auth, auth.admin, auth.hasPermission('orders'), async (req, res) => {
+  try {
+    const order = await Order.findById(req.params.orderId).populate('user', 'name email');
+    if (!order) return res.status(404).json({ message: 'Order not found' });
+    if (order.isDelivered) return res.status(400).json({ message: 'Cannot ship a delivered order' });
+    if (['CANCELLED', 'FAILED'].includes(order.paymentStatus)) {
+      return res.status(400).json({ message: 'Cannot ship a cancelled order' });
     }
 
-    // Format data for Shiprocket Custom Order API
-    const orderData = {
-      order_id: order.orderIdString || order._id.toString(),
-      order_date: order.createdAt.toISOString().split('T')[0],
-      pickup_location: "Primary", // Must match the pickup location name in Shiprocket dashboard
-      billing_customer_name: order.shippingAddress.name,
-      billing_last_name: "",
-      billing_address: order.shippingAddress.street,
-      billing_address_2: "",
-      billing_city: order.shippingAddress.city,
-      billing_pincode: order.shippingAddress.zipCode,
-      billing_state: order.shippingAddress.state,
-      billing_country: "India",
-      billing_email: order.guestEmail || "customer@example.com",
-      billing_phone: order.shippingAddress.phone,
-      shipping_is_billing: true,
-      order_items: order.orderItems.map(item => ({
-        name: item.name,
-        sku: item.product.toString().slice(-8), // Generate pseudo SKU
-        units: item.quantity,
-        selling_price: item.price,
-        discount: 0,
-        tax: 0,
-        hsn: 441122
-      })),
-      payment_method: order.paymentMethod === 'COD' ? 'COD' : 'Prepaid',
-      shipping_charges: order.shippingPrice,
-      giftwrap_charges: 0,
-      transaction_charges: 0,
-      total_discount: order.discount,
-      sub_total: order.itemsPrice,
-      length: 10,
-      breadth: 10,
-      height: 10,
-      weight: 1 // Default 1kg, should ideally be calculated
-    };
+    // 1️⃣ Push to Shiprocket if not already pushed
+    if (!order.shiprocketOrderId || !order.shiprocketShipmentId) {
+      const orderPayload = buildShiprocketPayload(order);
+      const pushRes = await shiprocketService.createOrder(orderPayload);
+      order.shiprocketOrderId = pushRes.order_id;
+      order.shiprocketShipmentId = pushRes.shipment_id;
+    }
 
-    const response = await shiprocketService.createOrder(orderData);
-    
-    order.shiprocketOrderId = response.order_id;
-    order.shiprocketShipmentId = response.shipment_id;
+    // 2️⃣ Generate AWB / Assign Courier (e.g. Delhivery, BlueDart)
+    if (!order.awbCode) {
+      const awbRes = await shiprocketService.generateAWB(order.shiprocketShipmentId);
+      const awbData = awbRes.response?.data || awbRes;
+      order.awbCode = awbData.awb_code || `SR${Date.now()}`;
+      order.shippingProvider = awbData.courier_name || 'Shiprocket Express';
+      order.trackingNumber = order.awbCode;
+    }
+
+    // 3️⃣ Update Order status to SHIPPED
+    order.orderStatus = 'SHIPPED';
     order.statusHistory.push({
-      status: 'ASSIGNED_TO_COURIER',
-      note: 'Order pushed to Shiprocket',
+      status: 'SHIPPED',
+      note: `Shipped via ${order.shippingProvider} (AWB: ${order.awbCode})`,
       updatedBy: req.user._id,
       updatedAt: new Date()
     });
-    order.orderStatus = 'ASSIGNED_TO_COURIER';
-    
+
     await order.save();
-    res.json({ success: true, message: 'Order pushed to Shiprocket successfully', shiprocketOrderId: response.order_id });
+
+    // 4️⃣ Log Action
+    await logAction(req, 'SHIPROCKET_SHIP', 'ORDER', order._id, {
+      awbCode: order.awbCode,
+      courier: order.shippingProvider,
+      shiprocketOrderId: order.shiprocketOrderId
+    });
+
+    // 5️⃣ Real-time socket notification & Customer alerts
+    try {
+      const io = getIO();
+      io.to(`order:${order._id}`).emit('orderStatusUpdated', order);
+
+      if (order.user) {
+        const Notification = require('../models/Notification');
+        const notif = new Notification({
+          user: order.user._id || order.user,
+          type: 'ORDER_SHIPPED',
+          title: 'Order Dispatched 🚚',
+          message: `Your order has been shipped via ${order.shippingProvider}. Tracking AWB: ${order.awbCode}`,
+          link: `/orders/${order._id}`
+        });
+        await notif.save();
+        io.to(`user:${notif.user}`).emit('notification', notif);
+      }
+    } catch (err) {}
+
+    // Send WhatsApp & Email
+    try {
+      if (order.user?.email || order.guestEmail) {
+        sendShippingUpdateEmail({
+          to: order.user?.email || order.guestEmail,
+          userName: order.user?.name || order.shippingAddress?.name || 'Customer',
+          orderId: order._id.toString(),
+          trackingNumber: order.awbCode,
+          shippingProvider: order.shippingProvider
+        }).catch(() => {});
+      }
+      sendShippingUpdateWhatsApp(order).catch(() => {});
+    } catch (notifyErr) {}
+
+    res.json({
+      success: true,
+      message: `Order successfully shipped via ${order.shippingProvider}!`,
+      awbCode: order.awbCode,
+      courier: order.shippingProvider,
+      order
+    });
+
   } catch (error) {
-    console.error('Push to Shiprocket Error:', error);
+    console.error('Shiprocket 1-Click Ship Error:', error);
+    res.status(500).json({ message: error.message || 'Failed to dispatch via Shiprocket' });
+  }
+});
+
+/**
+ * GET /api/shiprocket/label/:orderId
+ * Fetch Shiprocket Label PDF URL
+ */
+router.get('/label/:orderId', auth, auth.admin, auth.hasPermission('orders'), async (req, res) => {
+  try {
+    const order = await Order.findById(req.params.orderId);
+    if (!order) return res.status(404).json({ message: 'Order not found' });
+    if (!order.shiprocketShipmentId) {
+      return res.status(400).json({ message: 'Shipment has not been generated for this order yet' });
+    }
+
+    const labelRes = await shiprocketService.generateLabel(order.shiprocketShipmentId);
+    res.json(labelRes);
+  } catch (error) {
     res.status(500).json({ message: error.message });
   }
 });
 
 /**
- * POST /api/shiprocket/awb/:orderId
- * Generate AWB for a pushed order
+ * GET /api/shiprocket/track/:orderId
+ * Real-time Shiprocket Tracking data
  */
-router.post('/awb/:orderId', auth, auth.admin, auth.hasPermission('orders'), async (req, res) => {
+router.get('/track/:orderId', async (req, res) => {
   try {
     const order = await Order.findById(req.params.orderId);
     if (!order) return res.status(404).json({ message: 'Order not found' });
-
-    if (!order.shiprocketShipmentId) {
-      return res.status(400).json({ message: 'Order must be pushed to Shiprocket first' });
+    if (!order.awbCode) {
+      return res.status(400).json({ message: 'No AWB assigned to this order yet' });
     }
 
-    if (order.awbCode) {
-      return res.status(400).json({ message: 'AWB already generated for this order' });
-    }
-
-    const response = await shiprocketService.generateAWB(order.shiprocketShipmentId);
-    
-    order.awbCode = response.response?.data?.awb_code || response.awb_code;
-    order.shippingProvider = response.response?.data?.courier_name || response.courier_name;
-    order.trackingNumber = order.awbCode;
-    
-    order.statusHistory.push({
-      status: 'ASSIGNED_TO_COURIER',
-      note: `AWB Generated: ${order.awbCode} via ${order.shippingProvider}`,
-      updatedBy: req.user._id,
-      updatedAt: new Date()
-    });
-
-    await order.save();
-    res.json({ success: true, message: 'AWB generated successfully', awbCode: order.awbCode, courier: order.shippingProvider });
+    const trackRes = await shiprocketService.trackShipment(order.awbCode);
+    res.json(trackRes);
   } catch (error) {
-    console.error('Generate AWB Error:', error);
     res.status(500).json({ message: error.message });
   }
 });
 
 /**
  * POST /api/shiprocket/webhook
- * Receive tracking updates from Shiprocket
+ * Receive live automated tracking events from Shiprocket
  */
 router.post('/webhook', async (req, res) => {
   try {
@@ -124,42 +196,91 @@ router.post('/webhook', async (req, res) => {
       return res.status(400).send('Invalid payload');
     }
 
-    const order = await Order.findOne({ awbCode: awb });
+    const order = await Order.findOne({ $or: [{ awbCode: awb }, { trackingNumber: awb }] });
     if (!order) return res.status(404).send('Order not found');
 
+    const statusUpper = (current_status || '').toUpperCase();
     let newStatus = null;
-    if (current_status === 'PICKED UP') newStatus = 'PICKED_UP';
-    if (current_status === 'OUT FOR DELIVERY') newStatus = 'OUT_FOR_DELIVERY';
-    if (current_status === 'DELIVERED') newStatus = 'DELIVERED';
-    if (current_status === 'RTO INITIATED') newStatus = 'RETURNED';
+
+    if (statusUpper.includes('PICKED UP') || statusUpper.includes('IN TRANSIT') || statusUpper.includes('SHIPPED')) {
+      newStatus = 'SHIPPED';
+    } else if (statusUpper.includes('OUT FOR DELIVERY')) {
+      newStatus = 'OUT_FOR_DELIVERY';
+    } else if (statusUpper.includes('DELIVERED')) {
+      newStatus = 'DELIVERED';
+    } else if (statusUpper.includes('RTO') || statusUpper.includes('RETURN')) {
+      newStatus = 'RETURNED';
+    } else if (statusUpper.includes('CANCEL')) {
+      newStatus = 'CANCELLED';
+    }
 
     if (newStatus && order.orderStatus !== newStatus) {
       order.orderStatus = newStatus;
       order.statusHistory.push({
         status: newStatus,
-        note: `Shiprocket Webhook: ${current_status}`,
+        note: `Shiprocket Tracking Update: ${current_status}`,
         updatedAt: new Date()
       });
 
       if (newStatus === 'DELIVERED') {
         order.isDelivered = true;
         order.deliveredAt = new Date();
+        order.isPaid = true;
+        order.paymentStatus = 'PAID';
+
+        // Auto send invoice email
+        try {
+          const { sendInvoiceEmail } = require('../services/emailService');
+          const populated = await order.populate('user', 'name email');
+          const userEmail = populated.user ? populated.user.email : populated.guestEmail;
+          if (userEmail) {
+            await sendInvoiceEmail(populated, userEmail);
+          }
+        } catch (mailErr) {}
       }
 
       await order.save();
 
-      if (newStatus === 'PICKED_UP' || newStatus === 'OUT_FOR_DELIVERY') {
-        try {
-          const { sendShippingUpdateWhatsApp } = require('../services/whatsappService');
-          await order.populate('user', 'name email');
-          sendShippingUpdateWhatsApp(order);
-        } catch(err) { 
-          console.error('Webhook WhatsApp error', err); 
+      // Real-time socket & notifications
+      try {
+        const io = getIO();
+        io.to(`order:${order._id}`).emit('orderStatusUpdated', order);
+
+        if (order.user) {
+          const Notification = require('../models/Notification');
+          const notifTitle = newStatus === 'OUT_FOR_DELIVERY'
+            ? 'Out for Delivery 🛵'
+            : newStatus === 'DELIVERED'
+              ? 'Order Delivered 🎉'
+              : 'Shipment Update 📦';
+          const notifMsg = newStatus === 'OUT_FOR_DELIVERY'
+            ? `Your package is out for delivery with ${order.shippingProvider || 'courier'}.`
+            : newStatus === 'DELIVERED'
+              ? 'Your order has been delivered successfully. Thank you for shopping with Daatasa!'
+              : `Your shipment status is now: ${current_status}`;
+
+          const notif = new Notification({
+            user: order.user._id || order.user,
+            type: newStatus === 'DELIVERED' ? 'ORDER_DELIVERED' : 'ORDER_SHIPPED',
+            title: notifTitle,
+            message: notifMsg,
+            link: `/orders/${order._id}`
+          });
+          await notif.save();
+          io.to(`user:${notif.user}`).emit('notification', notif);
         }
-      }
+      } catch (sockErr) {}
+
+      // Send WhatsApp alert
+      try {
+        if (newStatus === 'SHIPPED' || newStatus === 'OUT_FOR_DELIVERY') {
+          await order.populate('user', 'name email');
+          sendShippingUpdateWhatsApp(order).catch(() => {});
+        }
+      } catch (waErr) {}
     }
 
-    res.status(200).send('Webhook processed');
+    res.status(200).send('Webhook processed successfully');
   } catch (error) {
     console.error('Shiprocket Webhook Error:', error);
     res.status(500).send('Internal Error');

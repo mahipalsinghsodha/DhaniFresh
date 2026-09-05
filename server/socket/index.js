@@ -114,7 +114,11 @@ function initSocketServer(httpServer) {
     });
   }, 5 * 60 * 1000); // Check every 5 minutes
 
-  console.log('[Socket.io] Server initialized');
+  // ── 15-Minute Inactive Session Auto-Cleanup Cron ───────────────────────────
+  const { startInactivityCleanupCron } = require('./supportQueueManager');
+  startInactivityCleanupCron(io);
+
+  console.log('[Socket.io] Server initialized with 15m Inactivity Cleanup');
   return io;
 }
 

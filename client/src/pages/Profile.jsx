@@ -19,7 +19,7 @@ import { useSocket } from '../hooks/useSocket'
 import { formatOrderId } from '../utils/formatOrderId'
 
 // ── Shared Floating Input System with Luxury Focus Glow ──
-const FloatingInput = ({ id, label, type = 'text', value, onChange, icon: Icon, rightElement, autoComplete, required, disabled, maxLength, inputMode, placeholder }) => {
+const FloatingInput = ({ id, label, type = 'text', value, onChange, icon: Icon, prefix, rightElement, autoComplete, required, disabled, maxLength, inputMode, placeholder }) => {
   const [focused, setFocused] = useState(false)
 
   return (
@@ -29,15 +29,19 @@ const FloatingInput = ({ id, label, type = 'text', value, onChange, icon: Icon, 
           {label}
         </label>
       )}
-      <div className="relative">
-        {Icon && (
+      <div className="relative flex items-center">
+        {prefix ? (
+          <div className="absolute left-3.5 top-1/2 -translate-y-1/2 flex items-center gap-1 pointer-events-none select-none text-brand-primary font-bold text-xs sm:text-sm border-r border-brand-primary/15 pr-2.5 z-10">
+            {prefix}
+          </div>
+        ) : Icon ? (
           <div
-            className="absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none transition-all duration-200"
+            className="absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none transition-all duration-200 z-10"
             style={{ color: focused ? 'var(--gold)' : 'var(--text-muted)' }}
           >
             <Icon size={16} />
           </div>
-        )}
+        ) : null}
         <input
           id={id}
           type={type}
@@ -54,7 +58,7 @@ const FloatingInput = ({ id, label, type = 'text', value, onChange, icon: Icon, 
           className="w-full rounded-[1rem] text-sm font-medium outline-none transition-all placeholder:text-brand-text/30"
           style={{
             height: '52px',
-            paddingLeft: Icon ? '42px' : '14px',
+            paddingLeft: prefix ? '76px' : Icon ? '42px' : '14px',
             paddingRight: rightElement ? '44px' : '14px',
             background: disabled ? 'rgba(27,47,110,0.03)' : (focused ? '#FFFFFF' : 'var(--ivory)'),
             border: `1.5px solid ${focused ? 'var(--brand-secondary)' : 'rgba(27, 47, 110, 0.18)'}`,
@@ -65,7 +69,7 @@ const FloatingInput = ({ id, label, type = 'text', value, onChange, icon: Icon, 
           }}
         />
         {rightElement && (
-          <div className="absolute right-3.5 top-1/2 -translate-y-1/2">{rightElement}</div>
+          <div className="absolute right-3.5 top-1/2 -translate-y-1/2 z-10">{rightElement}</div>
         )}
       </div>
     </div>
@@ -885,11 +889,18 @@ const Profile = () => {
                           <FloatingInput
                             id="phone"
                             label="Phone Number"
-                            icon={FiPhone}
+                            prefix={<span className="flex items-center gap-1"><span>🇮🇳</span><span>+91</span></span>}
+                            placeholder="9876543210"
+                            type="tel"
                             value={phone}
                             maxLength={10}
                             inputMode="numeric"
-                            onChange={e => setPhone(e.target.value.replace(/\D/g, '').slice(0, 10))}
+                            onChange={e => {
+                              let val = e.target.value.replace(/\D/g, '')
+                              if (val.startsWith('91') && val.length > 10) val = val.slice(2)
+                              else if (val.startsWith('0') && val.length > 10) val = val.slice(1)
+                              setPhone(val.slice(0, 10))
+                            }}
                           />
                           {phone && !/^[6-9][0-9]{9}$/.test(phone) && phone.length === 10 && (
                             <p className="text-xs mt-1.5 flex items-center gap-1 text-red-500">
@@ -1123,13 +1134,19 @@ const Profile = () => {
                                 <FloatingInput
                                   id="addr_phone"
                                   label="Phone Number*"
-                                  icon={FiPhone}
+                                  prefix={<span className="flex items-center gap-1"><span>🇮🇳</span><span>+91</span></span>}
+                                  placeholder="9876543210"
                                   type="tel"
                                   required
                                   maxLength={10}
                                   inputMode="numeric"
                                   value={addrForm.phone}
-                                  onChange={e => setAddrForm(p => ({ ...p, phone: e.target.value.replace(/\D/g, '').slice(0, 10) }))}
+                                  onChange={e => {
+                                    let val = e.target.value.replace(/\D/g, '')
+                                    if (val.startsWith('91') && val.length > 10) val = val.slice(2)
+                                    else if (val.startsWith('0') && val.length > 10) val = val.slice(1)
+                                    setAddrForm(p => ({ ...p, phone: val.slice(0, 10) }))
+                                  }}
                                 />
                                 {addrForm.phone && !/^[6-9][0-9]{9}$/.test(addrForm.phone) && addrForm.phone.length === 10 && (
                                   <p className="text-xs text-red-500 mt-1 flex items-center gap-1">
@@ -1414,7 +1431,7 @@ const Profile = () => {
                                             ? 'bg-blue-100 text-blue-800'
                                             : 'bg-amber-100 text-amber-800'
                                       }`}>
-                                      {isDelivered ? 'Delivered' : isCancelled ? 'Cancelled' : (order.orderStatus === 'ACCEPTED' || order.acceptedAt) ? 'Confirmed' : 'Pending Acceptance'}
+                                      {isDelivered ? 'Delivered' : isCancelled ? 'Cancelled' : (order.orderStatus === 'ACCEPTED' || order.acceptedAt) ? 'Confirmed' : 'Order Placed'}
                                     </span>
                                   </div>
                                   <p className="text-xs text-brand-text/50">

@@ -112,6 +112,11 @@ const Register = () => {
   const handleSubmit = async (e) => {
     e.preventDefault()
     if (!name.trim() || !email.trim() || !password || !confirm) { toast.error('Please fill all required fields'); return }
+    const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/
+    if (!emailRegex.test(email.trim())) {
+      toast.error('Please enter a valid email address (e.g. name@gmail.com, name@domain.in, name@domain.co.in)')
+      return
+    }
     if (password.length < 8) { toast.error('Password must be at least 8 characters'); return }
     if (password !== confirm) { toast.error('Passwords do not match'); return }
     setLoading(true)

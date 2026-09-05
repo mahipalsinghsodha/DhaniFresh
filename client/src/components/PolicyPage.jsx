@@ -2,12 +2,17 @@ import { motion } from 'framer-motion'
 import { Link } from 'react-router-dom'
 import { FiArrowRight } from 'react-icons/fi'
 import { useTranslation } from 'react-i18next'
+import { Helmet } from 'react-helmet-async'
 
 // Shared premium layout for all legal/policy pages
 const PolicyPage = ({ icon, tag = 'Legal Document', title, subtitle, lastUpdated, toc = [], children }) => {
   const { t } = useTranslation()
   return (
     <div className="min-h-screen bg-[var(--ivory)] font-sans text-brand-text">
+      <Helmet>
+        <title>{`${title || 'Policy'} | Daatasa Pure Vedic Ghee`}</title>
+        <meta name="description" content={subtitle || `${title} document for Daatasa customer terms and policies.`} />
+      </Helmet>
 
       {/* Premium Hero */}
       <div className="relative overflow-hidden bg-white text-brand-primary border-b border-brand-primary/5">

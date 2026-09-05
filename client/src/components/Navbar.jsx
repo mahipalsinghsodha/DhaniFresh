@@ -190,6 +190,7 @@ const Navbar = () => {
 
                 {[
                   { to: '/products', label: t('navbar.shop', 'Products') },
+                  { to: '/how-it-works', label: t('navbar.process', 'Our Process') },
                   { to: '/about', label: t('navbar.about', 'About Us') },
                   { to: '/blogs', label: t('navbar.blogs', 'Blogs') },
                   ...(user ? [{ to: '#support', label: t('navbar.help', 'Help'), isSupport: true }] : []),
@@ -627,6 +628,7 @@ const Navbar = () => {
                     {[
                       { to: '/', label: t('navbar.home', 'Home') },
                       { to: '/products', label: t('navbar.shop', 'Products') },
+                      { to: '/how-it-works', label: t('navbar.process', 'Our Process') },
                       { to: '/about', label: t('navbar.about', 'About Us') },
                       { to: '/blogs', label: t('navbar.blogs', 'Blogs') },
                       ...(user ? [{ to: '/support', label: t('navbar.help', 'Help') }] : []),

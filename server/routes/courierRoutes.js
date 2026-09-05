@@ -182,6 +182,31 @@ router.put('/orders/:id/status', auth, isCourier, async (req, res) => {
     try {
       const io = getIO();
       io.to(`order:${order._id}`).emit('orderStatusUpdated', order);
+
+      // Customer in-app notification
+      if (order.user) {
+        const notifTitle = status === 'OUT_FOR_DELIVERY' 
+          ? 'Out for Delivery' 
+          : status === 'DELIVERED' 
+            ? 'Order Delivered' 
+            : `Order ${status.replace(/_/g, ' ')}`;
+        const notifMsg = status === 'OUT_FOR_DELIVERY'
+          ? 'Your order is out for delivery with our delivery partner.'
+          : status === 'DELIVERED'
+            ? 'Your order has been delivered successfully.'
+            : `Your order status has been updated to ${status.replace(/_/g, ' ')}.`;
+            
+        const Notification = require('../models/Notification');
+        const notif = new Notification({
+          user: order.user._id || order.user,
+          type: status === 'DELIVERED' ? 'ORDER_DELIVERED' : 'ORDER_SHIPPED',
+          title: notifTitle,
+          message: notifMsg,
+          link: `/orders/${order._id}`
+        });
+        await notif.save();
+        io.to(`user:${notif.user}`).emit('notification', notif);
+      }
     } catch (err) {}
 
     res.json(order);

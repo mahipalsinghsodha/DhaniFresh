@@ -14,33 +14,38 @@ const HeroCarousel = () => {
   const slides = [
     {
       id: 1,
-      image: "https://images.unsplash.com/photo-1596733430284-f7437764b1a9?w=1600&q=80",
+      image: "/herosection.png",
       badge: t('hero.badge1', 'Heritage of Rajasthan'),
-      title: t('hero.title1', 'Pure Vedic Bilona'),
-      subtitle: t('hero.sub1', 'Desi Cow Ghee'),
+      title: t('hero.title1', '100% Pure Vedic A2'),
+      subtitle: t('hero.sub1', 'Cow Ghee — Traditional Bilona Method'),
       description: t('hero.desc1', 'Traditionally hand-churned liquid gold crafted slowly in earthen pots to preserve authentic aroma and nutrients.'),
       buttonText: t('hero.btn1', 'Shop Collection'),
-      link: '/products'
+      secondaryButtonText: t('hero.btn1b', 'Buy Pure Ghee'),
+      secondaryLink: '/products',
+      link: '/products',
+      objectPosition: 'center center'
     },
     {
       id: 2,
-      image: "https://images.unsplash.com/photo-1511690078903-71dc5a49f5e3?w=1600&q=80",
+      image: "/tharparkar-herd.jpg",
       badge: t('hero.badge2', 'Farm to Family'),
       title: t('hero.title2', '100% Organic & Natural'),
       subtitle: t('hero.sub2', 'Directly from Farms'),
-      description: t('hero.desc2', 'Sourced from happy, free-grazing cows fed on natural organic grass in Khuri, Jaisalmer.'),
+      description: t('hero.desc2', 'Sourced from happy, free-grazing Tharparkar cows fed on natural organic grass in Khuri, Jaisalmer.'),
       buttonText: t('hero.btn2', 'Discover More'),
-      link: '/about'
+      link: '/about',
+      objectPosition: 'center center'
     },
     {
       id: 3,
-      image: "https://images.unsplash.com/photo-1513682121497-80211f36a790?w=1600&q=80",
+      image: "/gallery-churn.png",
       badge: t('hero.badge3', 'Authentic Process'),
       title: t('hero.title3', 'Traditional Bilona'),
       subtitle: t('hero.sub3', 'Hand-Churned Perfection'),
       description: t('hero.desc3', 'Rigorous 4-step Vedic process with patience and tradition for unparalleled health benefits.'),
       buttonText: t('hero.btn3', 'Shop Now'),
-      link: '/products'
+      link: '/products',
+      objectPosition: 'center top'
     }
   ]
 
@@ -107,7 +112,8 @@ const HeroCarousel = () => {
             <img 
               src={slides[currentSlide].image} 
               alt={slides[currentSlide].title}
-              className="w-full h-full object-cover object-center"
+              className="w-full h-full object-cover"
+              style={{ objectPosition: slides[currentSlide].objectPosition || 'center center' }}
               loading="eager"
             />
             <div className="absolute inset-0 bg-gradient-to-r from-black/85 via-black/55 to-black/25 sm:to-transparent" />
@@ -151,6 +157,7 @@ const HeroCarousel = () => {
                 initial={{ opacity: 0, y: 15 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.45, duration: 0.6 }}
+                className="flex flex-wrap items-center gap-3"
               >
                 <Link 
                   to={slides[currentSlide].link} 
@@ -158,6 +165,20 @@ const HeroCarousel = () => {
                 >
                   <span>{slides[currentSlide].buttonText}</span> <FiArrowRight className="text-xs sm:text-sm" />
                 </Link>
+                {slides[currentSlide].secondaryButtonText && (
+                  <Link
+                    to={slides[currentSlide].secondaryLink || slides[currentSlide].link}
+                    className="h-9 xs:h-10 sm:h-12 px-4 xs:px-6 sm:px-7 text-xs sm:text-sm rounded-full inline-flex items-center gap-1.5 font-bold transition-all hover:scale-105 active:scale-95"
+                    style={{
+                      border: '2px solid rgba(255,255,255,0.55)',
+                      color: '#fff',
+                      backdropFilter: 'blur(6px)',
+                      background: 'rgba(255,255,255,0.08)'
+                    }}
+                  >
+                    <span>{slides[currentSlide].secondaryButtonText}</span>
+                  </Link>
+                )}
               </motion.div>
             </div>
           </div>

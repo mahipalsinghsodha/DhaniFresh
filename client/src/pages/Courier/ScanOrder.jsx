@@ -4,8 +4,8 @@ import { FiCheckCircle, FiPackage, FiTruck, FiAlertCircle, FiXCircle, FiRefreshC
 import { toast } from 'react-toastify';
 import api from '../../api/axios';
 import { useAuth } from '../../context/AuthContext';
-import RestrictedAccess from '../../components/RestrictedAccess';
 import { Html5QrcodeScanner } from 'html5-qrcode';
+import { formatOrderId } from '../../utils/formatOrderId';
 
 const ScanOrder = () => {
   const [searchParams] = useSearchParams();
@@ -161,7 +161,7 @@ const ScanOrder = () => {
             <div className="flex justify-between items-center border-b pb-4 mb-4 dark:border-gray-700">
               <div>
                 <p className="text-xs text-gray-500 font-bold tracking-wider">ORDER ID</p>
-                <p className="font-mono font-bold">#{order._id.slice(-8).toUpperCase()}</p>
+                <p className="font-mono font-bold">#{formatOrderId(order)}</p>
               </div>
               <div className="text-right">
                 <span className="inline-block px-2 py-1 text-xs font-bold rounded bg-blue-100 text-blue-800 border border-blue-200">
@@ -239,7 +239,7 @@ const ScanOrder = () => {
                   setIsScanning(false);
                 }} className="bg-white dark:bg-gray-800 p-4 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 cursor-pointer hover:shadow-md transition-all">
                   <div className="flex justify-between items-center mb-2">
-                    <span className="font-mono font-bold text-sm">#{ao._id.slice(-8).toUpperCase()}</span>
+                    <span className="font-mono font-bold text-sm">#{formatOrderId(ao)}</span>
                     <span className="text-xs font-bold px-2 py-1 bg-blue-100 text-blue-800 rounded">{ao.orderStatus.replace(/_/g, ' ')}</span>
                   </div>
                   <p className="text-sm font-medium">{ao.user?.name || ao.shippingAddress?.name || 'Customer'}</p>

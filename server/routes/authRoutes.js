@@ -171,10 +171,29 @@ router.post('/login', authLimiter, dbCheck, [
     }
 
     const { emailOrPhone, password } = req.body;
+    const trimmedInput = (emailOrPhone || '').trim();
     
-    // Check if input is email or phone
-    const isEmail = emailOrPhone.includes('@');
-    const query = isEmail ? { email: emailOrPhone } : { phone: emailOrPhone };
+    // Check if input is email, phone, or username/staff handle
+    const isEmail = trimmedInput.includes('@');
+    const isDigitsOnly = /^\d+$/.test(trimmedInput);
+
+    let query;
+    if (isEmail) {
+      query = { email: trimmedInput.toLowerCase() };
+    } else if (isDigitsOnly && trimmedInput.length >= 10) {
+      query = { phone: trimmedInput };
+    } else {
+      // Allow username, support handle or name (e.g. support1 -> matches support1@daatasa.com, support1@gmail.com, or name "support1")
+      query = {
+        $or: [
+          { email: trimmedInput.toLowerCase() },
+          { email: `${trimmedInput.toLowerCase()}@daatasa.com` },
+          { email: `${trimmedInput.toLowerCase()}@gmail.com` },
+          { name: new RegExp(`^${trimmedInput.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') },
+          { phone: trimmedInput }
+        ]
+      };
+    }
 
     const user = await User.findOne(query).select('+password +refreshTokens');
     if (!user) {
