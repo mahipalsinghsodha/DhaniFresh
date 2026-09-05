@@ -239,11 +239,29 @@ const Checkout = () => {
     const { data } = await api.post('/api/orders', payload)
     const { order, razorpayOrder: rzrOrder } = data;
 
-    const razorpayKey = import.meta.env.VITE_RAZORPAY_KEY_ID;
+    const razorpayKey = import.meta.env.VITE_RAZORPAY_KEY_ID || data?.key_id || 'rzp_test_EvzmZvtG1AJQAS';
     if (!razorpayKey) {
-      toast.error('Razorpay Key is missing in frontend environment variables.');
+      toast.error('Razorpay payment configuration is missing.');
       return;
     }
+
+    // Ensure Razorpay SDK is ready
+    if (!window.Razorpay) {
+      try {
+        await new Promise((resolve, reject) => {
+          const script = document.createElement('script');
+          script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+          script.async = true;
+          script.onload = resolve;
+          script.onerror = () => reject(new Error('Failed to load Razorpay payment gateway'));
+          document.body.appendChild(script);
+        });
+      } catch (scriptErr) {
+        toast.error('Could not load payment gateway. Please check your internet connection.');
+        return;
+      }
+    }
+
     const rzp = new window.Razorpay({
       key: razorpayKey,
       order_id: rzrOrder.id, name: 'Daatasa',

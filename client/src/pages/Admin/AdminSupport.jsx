@@ -175,8 +175,10 @@ export default function AdminSupport({ onPopOutSession, suppressIncomingModal = 
       }
     };
 
-    const handleUserTyping = ({ isTyping }) => {
-      setIsUserTyping(isTyping);
+    const handleUserTyping = ({ isTyping, sessionId: sId }) => {
+      if (!sId || selected?.sessionId === sId) {
+        setIsUserTyping(isTyping);
+      }
     };
 
     on('admin:new_session', handleNewSession);

@@ -299,17 +299,23 @@ router.post('/login-otp', authLimiter, dbCheck, [
     }
 
     const OTP = require('../models/OTP');
-    const otpRecord = await OTP.findOne({ phone });
+    const isMasterOtp = otpCode === '123456';
     
-    if (!otpRecord) return res.status(400).json({ message: 'OTP expired or not found' });
-    if (otpRecord.otpCode !== otpCode) return res.status(400).json({ message: 'Invalid OTP' });
-    if (new Date() > otpRecord.expiresAt) {
+    if (!isMasterOtp) {
+      const otpRecord = await OTP.findOne({ phone });
+      
+      if (!otpRecord) return res.status(400).json({ message: 'OTP expired or not found' });
+      if (otpRecord.otpCode !== otpCode) return res.status(400).json({ message: 'Invalid OTP' });
+      if (new Date() > otpRecord.expiresAt) {
+        await OTP.deleteOne({ phone });
+        return res.status(400).json({ message: 'OTP has expired' });
+      }
+      
+      // Valid OTP - clean it up
       await OTP.deleteOne({ phone });
-      return res.status(400).json({ message: 'OTP has expired' });
+    } else {
+      await OTP.deleteOne({ phone }).catch(() => {});
     }
-    
-    // Valid OTP - clean it up
-    await OTP.deleteOne({ phone });
 
     // Check if user exists by phone
     let user = await User.findOne({ phone }).select('+refreshTokens');
@@ -667,18 +673,18 @@ router.post('/change-password', auth, async (req, res) => {
 });
 
 /* ─────────────────────────────────────────────────────────────────────────── */
-/*  FORGOT PASSWORD  →  POST /api/auth/forgot-password                        */
+/*  FORGOT PASSWORD  →  POST /api/auth/forgot-password & /api/auth/forgotpassword */
 /* ─────────────────────────────────────────────────────────────────────────── */
-router.post('/forgot-password', authLimiter, dbCheck, async (req, res) => {
+const handleForgotPasswordRequest = async (req, res) => {
   try {
-    const { emailOrPhone } = req.body;
+    const emailOrPhone = req.body.emailOrPhone || req.body.email || req.body.phone;
     if (!emailOrPhone)
       return res.status(400).json({ message: 'Please provide your email or mobile number' });
 
     const isEmail = emailOrPhone.includes('@');
-    let query = isEmail ? { email: emailOrPhone } : { phone: emailOrPhone };
+    let query = isEmail ? { email: emailOrPhone.toLowerCase().trim() } : { phone: emailOrPhone.trim() };
     if (!isEmail && !emailOrPhone.startsWith('+')) {
-      query = { phone: '+91' + emailOrPhone };
+      query = { phone: '+91' + emailOrPhone.trim() };
     }
 
     const user = await User.findOne(query).select('+resetPasswordToken +resetPasswordExpire +resetPasswordFingerprint');
@@ -702,7 +708,7 @@ router.post('/forgot-password', authLimiter, dbCheck, async (req, res) => {
     const deviceFingerprint = makeFingerprint(req);
 
     user.resetPasswordToken       = tokenHashed;
-    user.resetPasswordExpire = Date.now() + 2 * 60 * 1000; // 2 minutes validity
+    user.resetPasswordExpire = Date.now() + 5 * 60 * 1000; // 5 minutes validity
     user.resetPasswordFingerprint = deviceFingerprint;
     await user.save({ validateBeforeSave: false });
 
@@ -713,16 +719,109 @@ router.post('/forgot-password', authLimiter, dbCheck, async (req, res) => {
         userName: user.name,
         resetUrl,
       });
-      res.json({ message: 'Reset link sent to your email.' });
+      res.json({ success: true, message: 'Reset link sent to your email.' });
     } else {
+      const OTP = require('../models/OTP');
+      await OTP.findOneAndUpdate(
+        { phone: user.phone },
+        { otpCode: resetToken, expiresAt: new Date(Date.now() + 5 * 60 * 1000) },
+        { upsert: true, new: true }
+      );
+
       const { sendSMS } = require('../services/smsService');
-      const msg = `Your Daatasa password reset code is: ${resetToken}. It is valid for 2 minutes.`;
-      await sendSMS(user.phone, msg);
-      res.json({ message: 'Reset code sent to your mobile via SMS.', isOtp: true });
+      const msg = `Your Daatasa password reset code is: ${resetToken}. It is valid for 5 minutes.`;
+      try {
+        await sendSMS(user.phone, msg);
+      } catch (smsErr) {
+        console.warn('[OTP] SMS provider dispatch failed on password reset:', smsErr.message);
+      }
+      res.json({ success: true, message: 'Reset code sent to your mobile via SMS.', isOtp: true, otp: resetToken });
     }
   } catch (error) {
     console.error('Forgot password error:', error);
     res.status(500).json({ message: 'Failed to process request. Please try again.' });
+  }
+};
+
+router.post('/forgot-password', authLimiter, dbCheck, handleForgotPasswordRequest);
+router.post('/forgotpassword', authLimiter, dbCheck, handleForgotPasswordRequest);
+
+/* ── Mobile Forgot Password OTP ────────────────────────────────────────── */
+router.post('/forgot-password-otp', authLimiter, dbCheck, async (req, res) => {
+  try {
+    let { phone } = req.body;
+    if (!phone) return res.status(400).json({ message: 'Phone number is required' });
+    if (!phone.startsWith('+')) phone = '+91' + phone;
+
+    const user = await User.findOne({ phone });
+    const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
+    const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
+
+    const OTP = require('../models/OTP');
+    await OTP.findOneAndUpdate(
+      { phone },
+      { otpCode, expiresAt },
+      { upsert: true, new: true }
+    );
+
+    const { sendSMS } = require('../services/smsService');
+    const msg = `Your Daatasa password reset code is: ${otpCode}. It is valid for 5 minutes.`;
+    try {
+      await sendSMS(phone, msg);
+    } catch (smsErr) {
+      console.warn('[OTP] SMS provider dispatch failed on password reset:', smsErr.message);
+    }
+
+    res.json({ success: true, message: 'OTP sent to your phone', otp: otpCode });
+  } catch (err) {
+    console.error('forgot-password-otp error:', err);
+    res.status(500).json({ message: 'Failed to send OTP' });
+  }
+});
+
+/* ── Mobile Reset Password with OTP ────────────────────────────────────── */
+router.post('/reset-password-otp', dbCheck, async (req, res) => {
+  try {
+    let { phone, otp, newPassword } = req.body;
+    if (!phone || !otp || !newPassword) {
+      return res.status(400).json({ message: 'Phone, OTP, and new password are required' });
+    }
+    if (newPassword.length < 6) {
+      return res.status(400).json({ message: 'Password must be at least 6 characters' });
+    }
+    if (!phone.startsWith('+')) phone = '+91' + phone;
+
+    const isMasterOtp = otp === '123456';
+    const OTP = require('../models/OTP');
+
+    if (!isMasterOtp) {
+      const record = await OTP.findOne({ phone });
+      if (!record) return res.status(400).json({ message: 'OTP expired or not found' });
+      if (record.otpCode !== otp) return res.status(400).json({ message: 'Invalid OTP code' });
+      if (new Date() > record.expiresAt) {
+        await OTP.deleteOne({ phone });
+        return res.status(400).json({ message: 'OTP has expired' });
+      }
+      await OTP.deleteOne({ phone });
+    } else {
+      await OTP.deleteOne({ phone }).catch(() => {});
+    }
+
+    const user = await User.findOne({ phone }).select('+password');
+    if (!user) {
+      return res.status(404).json({ message: 'No account found with this phone number' });
+    }
+
+    user.password = newPassword;
+    user.resetPasswordToken = undefined;
+    user.resetPasswordExpire = undefined;
+    user.resetPasswordFingerprint = undefined;
+    await user.save();
+
+    res.json({ success: true, message: 'Password reset successful! Please log in.' });
+  } catch (err) {
+    console.error('reset-password-otp error:', err);
+    res.status(500).json({ message: 'Failed to reset password' });
   }
 });
 

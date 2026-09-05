@@ -76,6 +76,7 @@ export default function SupportPopup() {
   const messagesEndRef = useRef(null)
   const inputRef = useRef(null)
   const fileInputRef = useRef(null)
+  const typingTimerRef = useRef(null)
 
   // Fetch live schedule
   useEffect(() => {
@@ -170,9 +171,11 @@ export default function SupportPopup() {
       setTimeout(() => scrollToBottom(true), 100)
     }
 
-    const handleAgentTyping = ({ isTyping }) => {
-      setAgentTyping(isTyping)
-      if (isTyping) setTimeout(() => scrollToBottom(true), 50)
+    const handleAgentTyping = ({ isTyping, sessionId: sId }) => {
+      if (!sId || sId === sessionId) {
+        setAgentTyping(isTyping)
+        if (isTyping) setTimeout(() => scrollToBottom(true), 50)
+      }
     }
 
     const handleStatusChanged = (data) => {
@@ -347,6 +350,11 @@ export default function SupportPopup() {
       }
     }
 
+    clearTimeout(typingTimerRef.current)
+    if (sessionId) {
+      emit('chat:typing', { sessionId, isTyping: false })
+    }
+
     emit('chat:message', {
       sessionId,
       content: text,
@@ -358,6 +366,18 @@ export default function SupportPopup() {
     setInputText('')
     setTimeout(() => scrollToBottom(true), 60)
   }, [inputText, imageFiles, sessionId, emit, scrollToBottom])
+
+  const handleInputChange = (e) => {
+    const val = e.target.value
+    setInputText(val)
+    if (!sessionId) return
+
+    emit('chat:typing', { sessionId, isTyping: true })
+    clearTimeout(typingTimerRef.current)
+    typingTimerRef.current = setTimeout(() => {
+      emit('chat:typing', { sessionId, isTyping: false })
+    }, 1500)
+  }
 
   // ── Image Handling ─────────────────────────────────────────────────────────
   const handleImageSelect = (e) => {
@@ -732,9 +752,9 @@ export default function SupportPopup() {
 
           {/* ── Bottom Input & Guidance Bar ───────────────────────────────── */}
           <div className="p-3 sm:p-4 bg-white dark:bg-slate-900 border-t border-gray-100 dark:border-slate-800 flex flex-col gap-2 shadow-lg shrink-0">
-            {sessionStatus !== 'ACTIVE' && (
+            {sessionStatus !== 'ACTIVE' && sessionStatus !== 'CLOSED' && sessionStatus !== 'RESOLVED' && (
               <div className="flex justify-between items-center text-xs px-1 text-gray-500 dark:text-gray-400">
-                <span className="font-medium">{isHindi ? '👆 ऊपर दिए गए बटन दबाकर चुनें' : '👆 Tap an option above to proceed'}</span>
+                <span className="font-medium">{isHindi ? '👆 ऊपर दिए गए बटन दबाकर चुनें या नीचे लिखें' : '👆 Tap an option above or type below'}</span>
                 <button
                   onClick={() => handleQuickReply(isHindi ? '💬 एजेंट से बात करें' : '💬 Talk to a human agent')}
                   className="font-bold text-amber-700 dark:text-amber-400 hover:underline flex items-center gap-1 cursor-pointer"
@@ -747,7 +767,7 @@ export default function SupportPopup() {
             <div className="flex gap-2 items-center">
               <button
                 onClick={() => fileInputRef.current?.click()}
-                disabled={sessionStatus !== 'ACTIVE' || imageFiles.length >= MAX_IMAGES || uploadingImages}
+                disabled={sessionStatus === 'CLOSED' || sessionStatus === 'RESOLVED' || imageFiles.length >= MAX_IMAGES || uploadingImages}
                 className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-slate-800 text-gray-600 dark:text-gray-300 disabled:opacity-30 disabled:cursor-not-allowed hover:bg-gray-100 dark:hover:bg-slate-700 transition-all cursor-pointer"
                 title={`Attach image (${imageFiles.length}/${MAX_IMAGES})`}
               >
@@ -761,15 +781,17 @@ export default function SupportPopup() {
                 <input
                   ref={inputRef}
                   type="text"
-                  disabled={sessionStatus !== 'ACTIVE'}
+                  disabled={sessionStatus === 'CLOSED' || sessionStatus === 'RESOLVED'}
                   placeholder={
-                    sessionStatus === 'ACTIVE'
-                      ? (isHindi ? 'एजेंट को संदेश लिखें…' : 'Type a message to the agent…')
-                      : (isHindi ? 'ऊपर दिए गए विकल्पों में से चुनें…' : 'Please choose an option above…')
+                    sessionStatus === 'CLOSED' || sessionStatus === 'RESOLVED'
+                      ? (isHindi ? 'यह चैट समाप्त हो चुकी है' : 'This chat has ended')
+                      : sessionStatus === 'ACTIVE'
+                        ? (isHindi ? 'एजेंट को संदेश लिखें…' : 'Type a message to the agent…')
+                        : (isHindi ? 'अपनी समस्या या प्रश्न लिखें…' : 'Type your message or question…')
                   }
                   value={inputText}
                   maxLength={5000}
-                  onChange={(e) => setInputText(e.target.value)}
+                  onChange={handleInputChange}
                   onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && handleSend()}
                   className="w-full h-10 px-3.5 text-sm outline-none rounded-xl border border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-800 text-gray-900 dark:text-white placeholder:text-gray-400 disabled:opacity-60 disabled:cursor-not-allowed focus:border-amber-500 transition-all"
                   id="popup-support-chat-input"
@@ -778,7 +800,7 @@ export default function SupportPopup() {
 
               <button
                 onClick={handleSend}
-                disabled={sessionStatus !== 'ACTIVE' || (!inputText.trim() && imageFiles.length === 0)}
+                disabled={(sessionStatus === 'CLOSED' || sessionStatus === 'RESOLVED') || (!inputText.trim() && imageFiles.length === 0)}
                 className="w-10 h-10 rounded-xl text-white flex items-center justify-center shrink-0 disabled:opacity-30 disabled:cursor-not-allowed bg-gradient-to-r from-amber-600 to-amber-700 hover:from-amber-500 hover:to-amber-600 shadow-sm active:scale-95 transition-all cursor-pointer"
                 id="popup-support-chat-send"
                 aria-label="Send message"

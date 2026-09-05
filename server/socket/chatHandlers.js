@@ -273,7 +273,9 @@ function registerChatHandlers(io, socket) {
 
   /* ── USER: Typing indicator ─────────────────────────────────────────────── */
   socket.on('chat:typing', async ({ sessionId, isTyping }) => {
-    socket.to(`session:${sessionId}`).emit('chat:user_typing', { isTyping });
+    if (!sessionId) return;
+    socket.to(`session:${sessionId}`).emit('chat:user_typing', { sessionId, isTyping: !!isTyping });
+    io.to('admin_room').emit('chat:user_typing', { sessionId, isTyping: !!isTyping });
   });
 
   /* ── USER: Update Current Page / Active Route ───────────────────────────── */
@@ -459,7 +461,8 @@ function registerChatHandlers(io, socket) {
 
   /* ── AGENT: Typing indicator ─────────────────────────────────────────────── */
   socket.on('agent:typing', ({ sessionId, isTyping }) => {
-    socket.to(`session:${sessionId}`).emit('chat:agent_typing', { isTyping });
+    if (!sessionId) return;
+    socket.to(`session:${sessionId}`).emit('chat:agent_typing', { sessionId, isTyping: !!isTyping });
   });
 
   /* ── AGENT: Close chat ──────────────────────────────────────────────────── */

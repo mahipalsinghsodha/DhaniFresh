@@ -129,8 +129,12 @@ const Login = () => {
       }
       setLoading(true)
       try {
-        await api.post('/api/otp/send', { phone: cleanedPhone })
-        toast.success(`OTP sent to +91 ${cleanedPhone}`)
+        const res = await api.post('/api/otp/send', { phone: cleanedPhone })
+        if (res.data?.otp) {
+          toast.info(`Verification code: ${res.data.otp}`)
+        } else {
+          toast.success(`OTP sent to +91 ${cleanedPhone}`)
+        }
         setIdentifier(cleanedPhone)
         setStep('OTP')
         setTimeLeft(30)
@@ -211,8 +215,12 @@ const Login = () => {
     if (timeLeft > 0) return
     setLoading(true)
     try {
-      await api.post('/api/otp/send', { phone: identifier.trim() })
-      toast.success('OTP resent successfully')
+      const res = await api.post('/api/otp/send', { phone: identifier.trim() })
+      if (res.data?.otp) {
+        toast.info(`New verification code: ${res.data.otp}`)
+      } else {
+        toast.success('OTP resent successfully')
+      }
       setTimeLeft(30)
       setOtp(['', '', '', '', '', ''])
     } catch (err) {
