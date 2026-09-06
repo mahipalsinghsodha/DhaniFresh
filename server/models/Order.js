@@ -218,8 +218,30 @@ refundInfo: {
   awbCode: String,
   returnRequest: {
     reason: String,
+    description: String,
+    images: [{ type: String }],
+    video: String,
+    pickupAddress: {
+      name: String,
+      phone: String,
+      street: String,
+      city: String,
+      district: String,
+      state: String,
+      zipCode: String
+    },
     requestedAt: Date,
-    status: { type: String, enum: ['PENDING', 'APPROVED', 'REJECTED'] }
+    status: { type: String, enum: ['PENDING', 'APPROVED', 'REJECTED'], default: 'PENDING' },
+    adminNote: String,
+    resolvedAt: Date,
+    reverseShipment: {
+      shiprocketOrderId: String,
+      shipmentId: String,
+      awbCode: String,
+      courierName: String,
+      pickupScheduledDate: Date,
+      status: String
+    }
   }
 }, {
   timestamps: true

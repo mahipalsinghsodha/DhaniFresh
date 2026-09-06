@@ -194,6 +194,84 @@ const cancelOrder = async (orderIds) => {
   }
 };
 
+/**
+ * Creates a Return / Reverse Pickup order in Shiprocket
+ */
+const createReturnOrder = async (order, pickupAddress) => {
+  const token = await getToken();
+  const addr = pickupAddress || order.shippingAddress || {};
+  
+  if (!token) {
+    console.log(`\n========================================`);
+    console.log(`🚀 [MOCK MODE] SHIPROCKET CREATE RETURN ORDER`);
+    console.log(`Order ID: ${order._id}`);
+    console.log(`Pickup Address: ${addr.street}, ${addr.city}, ${addr.state} - ${addr.zipCode}`);
+    console.log(`========================================\n`);
+    const mockAwb = `RET${Math.floor(1000000000 + Math.random() * 9000000000)}`;
+    return {
+      success: true,
+      return_order_id: Math.floor(10000000 + Math.random() * 90000000),
+      shipment_id: Math.floor(10000000 + Math.random() * 90000000),
+      awb_code: mockAwb,
+      courier_name: 'Delhivery Reverse Pickup',
+      status: 'PICKUP_SCHEDULED'
+    };
+  }
+
+  try {
+    const returnData = {
+      order_id: `RET_${order.orderIdString || order._id}`,
+      order_date: new Date().toISOString().split('T')[0],
+      channel_id: '',
+      pickup_customer_name: addr.name || 'Customer',
+      pickup_last_name: '',
+      pickup_address: addr.street || '',
+      pickup_city: addr.city || '',
+      pickup_state: addr.state || '',
+      pickup_country: 'India',
+      pickup_pincode: addr.zipCode || '',
+      pickup_phone: addr.phone || '',
+      shipping_customer_name: 'Daatasa Warehouse',
+      shipping_address: process.env.WAREHOUSE_ADDRESS || 'Vedic Dairy Farm, Rajasthan',
+      shipping_city: process.env.WAREHOUSE_CITY || 'Jodhpur',
+      shipping_state: process.env.WAREHOUSE_STATE || 'Rajasthan',
+      shipping_country: 'India',
+      shipping_pincode: process.env.WAREHOUSE_PINCODE || '342001',
+      shipping_phone: process.env.WAREHOUSE_PHONE || '9882844137',
+      order_items: (order.orderItems || []).map(item => ({
+        name: item.name || 'Ghee Item',
+        sku: item.sku || `SKU_${item.product}`,
+        units: item.quantity || 1,
+        selling_price: item.price || 0
+      })),
+      sub_total: order.totalPrice || 0,
+      length: 12,
+      breadth: 12,
+      height: 12,
+      weight: 1.0
+    };
+
+    const response = await axios.post(`${SHIPROCKET_API_URL}/orders/create/return`, returnData, {
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }
+    });
+
+    return {
+      success: true,
+      return_order_id: response.data.order_id,
+      shipment_id: response.data.shipment_id,
+      awb_code: response.data.awb_code || null,
+      courier_name: response.data.courier_name || 'Assigned Courier',
+      status: 'PICKUP_SCHEDULED'
+    };
+  } catch (error) {
+    console.error('Shiprocket Return Order Creation Error:', error.response?.data || error.message);
+    return {
+      success: false,
+      error: error.response?.data?.message || error.message
+    };
+  }
+};
+
 module.exports = {
   isConfigured,
   createOrder,
@@ -201,5 +279,6 @@ module.exports = {
   generateLabel,
   requestPickup,
   trackShipment,
-  cancelOrder
+  cancelOrder,
+  createReturnOrder
 };

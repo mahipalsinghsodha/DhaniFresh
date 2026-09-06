@@ -61,6 +61,23 @@ router.post('/', auth, auth.admin, upload.single('image'), async (req, res) => {
     }
 });
 
+// Multer for Return Proofs: Images (up to 10MB) & Videos (up to 40MB)
+const uploadProof = multer({
+    storage: multer.memoryStorage(),
+    fileFilter: (req, file, cb) => {
+        const allowed = [
+            'image/jpeg', 'image/png', 'image/webp', 'image/jpg',
+            'video/mp4', 'video/webm', 'video/quicktime', 'video/mov', 'video/x-matroska'
+        ];
+        if (allowed.includes(file.mimetype.toLowerCase())) {
+            cb(null, true);
+        } else {
+            cb(new Error('Only images (JPG, PNG, WebP) and videos (MP4, WebM, MOV) are allowed'), false);
+        }
+    },
+    limits: { fileSize: 40 * 1024 * 1024 }, // 40 MB max for unboxing / defect videos
+});
+
 // POST /api/upload/chat (open — no auth required for guest chat support)
 router.post('/chat', upload.single('image'), async (req, res) => {
     try {
@@ -77,6 +94,35 @@ router.post('/chat', upload.single('image'), async (req, res) => {
     } catch (error) {
         console.error('Chat upload error:', error);
         res.status(500).json({ message: error.message || 'Image upload failed' });
+    }
+});
+
+// POST /api/upload/return-proof/single (Authenticated user uploads one proof photo or video)
+router.post('/return-proof/single', auth, (req, res, next) => {
+    uploadProof.single('file')(req, res, (err) => {
+        if (err) {
+            return res.status(400).json({ message: err.message || 'Upload validation failed' });
+        }
+        next();
+    });
+}, async (req, res) => {
+    try {
+        if (!req.file) {
+            return res.status(400).json({ message: 'No file uploaded' });
+        }
+
+        const isVideo = req.file.mimetype.startsWith('video/');
+        const options = {
+            folder: isVideo ? 'returns/videos' : 'returns/images',
+            resource_type: isVideo ? 'video' : 'image',
+            ...(isVideo ? {} : { transformation: [{ width: 1600, crop: 'limit', quality: 'auto' }] })
+        };
+
+        const result = await streamUpload(req.file.buffer, options);
+        res.json({ url: result.secure_url, isVideo });
+    } catch (error) {
+        console.error('Return proof single upload error:', error);
+        res.status(500).json({ message: error.message || 'Upload failed' });
     }
 });
 

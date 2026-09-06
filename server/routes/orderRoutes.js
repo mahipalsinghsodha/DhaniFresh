@@ -1525,11 +1525,11 @@ router.post('/:id/cancel', auth, async (req, res) => {
 });
 
 // ========================================================================
-// RETURN REQUEST
+// RETURN REQUEST (Customer submits proof media, address, and reason)
 // ========================================================================
 router.post('/:id/return-request', auth, async (req, res) => {
   try {
-    const { reason } = req.body;
+    const { reason, description, images, video, pickupAddress } = req.body;
     const order = await Order.findOne({ _id: req.params.id, user: req.user._id });
     if (!order) return res.status(404).json({ message: 'Order not found' });
     
@@ -1542,15 +1542,31 @@ router.post('/:id/return-request', auth, async (req, res) => {
       return res.status(400).json({ message: 'Return window (7 days) has expired' });
     }
 
+    // Default pickup address to existing shippingAddress if not explicitly customized
+    const cleanPickup = {
+      name: pickupAddress?.name || order.shippingAddress?.name || 'Customer',
+      phone: pickupAddress?.phone || order.shippingAddress?.phone || '',
+      street: pickupAddress?.street || order.shippingAddress?.street || '',
+      city: pickupAddress?.city || order.shippingAddress?.city || '',
+      district: pickupAddress?.district || order.shippingAddress?.district || '',
+      state: pickupAddress?.state || order.shippingAddress?.state || '',
+      zipCode: pickupAddress?.zipCode || order.shippingAddress?.zipCode || ''
+    };
+
     order.returnRequest = {
-      reason,
+      reason: reason || 'Defective/Damaged product',
+      description: description || '',
+      images: Array.isArray(images) ? images : [],
+      video: typeof video === 'string' ? video : null,
+      pickupAddress: cleanPickup,
       requestedAt: new Date(),
       status: 'PENDING'
     };
+
     await pushStatusAndNotify(order, 'RETURN_REQUESTED', `Return requested. Reason: ${reason || 'None'}`, req.user._id, {
       type: 'SYSTEM',
       title: 'Return Requested',
-      message: `Your return request has been submitted and is pending approval.`,
+      message: `Your return request with proof media has been submitted and is pending verification.`,
       link: `/orders/${order._id}`
     });
     await order.save();
@@ -1561,11 +1577,11 @@ router.post('/:id/return-request', auth, async (req, res) => {
 });
 
 // ========================================================================
-// ADMIN: UPDATE RETURN STATUS
+// ADMIN: UPDATE RETURN STATUS & SCHEDULE REVERSE PICKUP
 // ========================================================================
 router.put('/:id/return-status', auth, auth.admin, auth.hasPermission('orders'), async (req, res) => {
   try {
-    const { status, adminNote } = req.body;
+    const { status, adminNote, bookReversePickup } = req.body;
     if (!['APPROVED', 'REJECTED'].includes(status)) {
       return res.status(400).json({ message: 'Invalid return status' });
     }
@@ -1588,27 +1604,51 @@ router.put('/:id/return-status', auth, auth.admin, auth.hasPermission('orders'),
       order.paymentStatus = 'REFUNDED';
       order.orderStatus = 'RETURNED';
       
-      // Restore all order resources (variant stock, wallet refund, gift card, coupon count, Razorpay refund)
+      // 1. Optionally book Shiprocket Reverse Pickup
+      if (bookReversePickup) {
+        try {
+          const { createReturnOrder } = require('../services/shiprocketService');
+          const retShipment = await createReturnOrder(order, order.returnRequest.pickupAddress);
+          if (retShipment && retShipment.success) {
+            order.returnRequest.reverseShipment = {
+              shiprocketOrderId: String(retShipment.return_order_id || ''),
+              shipmentId: String(retShipment.shipment_id || ''),
+              awbCode: retShipment.awb_code || '',
+              courierName: retShipment.courier_name || 'Reverse Courier',
+              pickupScheduledDate: new Date(),
+              status: 'PICKUP_SCHEDULED'
+            };
+          }
+        } catch (srErr) {
+          console.error('[Shiprocket Return Error]:', srErr.message);
+        }
+      }
+
+      // 2. Restore all order resources (variant stock, wallet refund, gift card, coupon count, Razorpay refund)
       const { restoreOrderResources } = require('../utils/orderResourceHelper');
       await restoreOrderResources(order, adminNote || 'Return approved by admin');
 
-      await pushStatusAndNotify(order, 'RETURN_APPROVED', `Return Approved. Note: ${adminNote || 'None'}`, req.user._id, {
+      const pickupMsg = order.returnRequest.reverseShipment?.awbCode
+        ? ` Pickup scheduled with ${order.returnRequest.reverseShipment.courierName} (AWB: ${order.returnRequest.reverseShipment.awbCode}).`
+        : '';
+
+      await pushStatusAndNotify(order, 'RETURN_APPROVED', `Return Approved. Note: ${adminNote || 'None'}.${pickupMsg}`, req.user._id, {
         type: 'SYSTEM',
         title: 'Return Approved',
-        message: `Your return request has been approved and refund processed.`,
+        message: `Your return request has been approved and refund processed.${pickupMsg}`,
         link: `/orders/${order._id}`
       });
     } else {
       await pushStatusAndNotify(order, 'RETURN_REJECTED', `Return Rejected. Note: ${adminNote || 'None'}`, req.user._id, {
         type: 'SYSTEM',
         title: 'Return Rejected',
-        message: `Your return request was rejected.`,
+        message: `Your return request was rejected. Reason: ${adminNote || 'Item not eligible'}`,
         link: `/orders/${order._id}`
       });
     }
 
     await order.save();
-    await logAction(req, 'UPDATE_RETURN_STATUS', 'ORDER', order._id, { status, adminNote });
+    await logAction(req, 'UPDATE_RETURN_STATUS', 'ORDER', order._id, { status, adminNote, bookReversePickup });
 
     await order.populate('user', 'name email');
     await order.populate('orderItems.product');
