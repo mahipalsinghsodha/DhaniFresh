@@ -322,6 +322,14 @@ async function generateOrderResponse(order, queryText, subIssue = null, language
             order = updatedDoc;
           }
 
+          // Cancel Shiprocket order if active
+          if (order.shiprocketOrderId) {
+            try {
+              const { cancelOrder: cancelShiprocket } = require('../services/shiprocketService');
+              cancelShiprocket(order.shiprocketOrderId).catch(err => console.error('[Bot] Shiprocket cancel error:', err));
+            } catch (srErr) {}
+          }
+
           // 4. Update card metadata status to CANCELLED
           orderCardMetadata.status = 'CANCELLED';
           orderCardMetadata.statusLabel = isHindi ? 'रद्द (Cancelled)' : 'Cancelled';
