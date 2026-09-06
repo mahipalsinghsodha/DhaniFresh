@@ -20,7 +20,7 @@ const getStatus = (order) => {
   if (order.orderStatus === 'CANCELLED' || order.paymentStatus === 'CANCELLED') {
     return { label: 'Cancelled', cls: 'badge-muted', icon: FiX }
   }
-  if (order.orderStatus === 'RETURNED' || order.returnRequest?.status === 'RETURN_APPROVED') {
+  if (order.orderStatus === 'RETURNED' || (order.returnRequest?.requestedAt && ['RETURN_APPROVED', 'APPROVED'].includes(order.returnRequest?.status))) {
     return { label: 'Returned', cls: 'badge-muted', icon: FiRotateCcw }
   }
   if (order.paymentStatus === 'FAILED') {
@@ -647,7 +647,7 @@ const Orders = () => {
     !['CANCELLED', 'FAILED'].includes(o.paymentStatus) &&
     !['SHIPPED', 'OUT_FOR_DELIVERY', 'DELIVERED', 'RETURNED'].includes(o.orderStatus) &&
     !o.isDelivered
-  const canReturn = (o) => o.isDelivered && !o.returnRequest && (Date.now() - new Date(o.deliveredAt).getTime()) / (1000 * 60 * 60 * 24) <= 7
+  const canReturn = (o) => o.isDelivered && !o.returnRequest?.requestedAt && (Date.now() - new Date(o.deliveredAt).getTime()) / (1000 * 60 * 60 * 24) <= 7
 
   const visible = orders.filter(o => {
     if (filter === 'all') return true

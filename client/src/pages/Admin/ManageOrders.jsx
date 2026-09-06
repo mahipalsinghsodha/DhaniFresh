@@ -535,7 +535,7 @@ const ManageOrders = () => {
                                 </div>
                               )}
                               
-                              {o.returnRequest && o.returnRequest.status === 'PENDING' && (
+                              {o.returnRequest?.requestedAt && o.returnRequest.status === 'PENDING' && (
                                 <div className="mt-4 p-4 bg-orange-50 border border-orange-200 rounded-xl">
                                   <p className="text-sm font-bold text-orange-800">Return Requested</p>
                                   <p className="text-xs text-orange-600 mt-1">Reason: {o.returnRequest.reason}</p>

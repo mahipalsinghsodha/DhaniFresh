@@ -929,7 +929,10 @@ router.get('/myorders', auth, async (req, res) => {
 // ========================================================================
 router.get('/admin/returns', auth, auth.admin, auth.hasPermission('orders'), async (req, res) => {
   try {
-    const orders = await Order.find({ 'returnRequest.status': { $exists: true } })
+    const orders = await Order.find({ 
+      'returnRequest.requestedAt': { $exists: true, $ne: null },
+      'returnRequest.status': { $exists: true } 
+    })
       .populate('user', 'name email')
       .populate('orderItems.product')
       .sort({ 'returnRequest.requestedAt': -1 });

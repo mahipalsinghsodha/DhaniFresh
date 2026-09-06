@@ -117,7 +117,7 @@ const OrderTimeline = ({ order }) => {
     });
   }
 
-  if (returnRequest && returnRequest.status) {
+  if (returnRequest && returnRequest.status && returnRequest.requestedAt) {
     const returnHistory = getHistory(['RETURN_REQUESTED', 'RETURN_APPROVED', 'RETURN_REJECTED']);
     steps.push({
       id: 'return',

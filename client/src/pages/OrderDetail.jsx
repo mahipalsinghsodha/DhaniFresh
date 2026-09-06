@@ -110,7 +110,7 @@ const OrderDetail = () => {
 
   const isVoid = ['CANCELLED', 'FAILED'].includes(order.paymentStatus) || order.orderStatus === 'CANCELLED';
   const isCancellable = !isVoid && !order.isDelivered && !['SHIPPED', 'OUT_FOR_DELIVERY', 'DELIVERED', 'RETURNED'].includes(order.orderStatus);
-  const isReturnable = (order.isDelivered || order.orderStatus === 'DELIVERED') && !isVoid && !order.returnRequest?.status && ((Date.now() - new Date(order.deliveredAt || order.updatedAt).getTime()) / (1000 * 60 * 60 * 24) <= 7);
+  const isReturnable = (order.isDelivered || order.orderStatus === 'DELIVERED') && !isVoid && !order.returnRequest?.requestedAt && ((Date.now() - new Date(order.deliveredAt || order.updatedAt).getTime()) / (1000 * 60 * 60 * 24) <= 7);
 
   return (
     <div className="min-h-screen py-8 px-4 sm:px-6 lg:px-8" style={{ background: 'var(--bg-base)' }}>

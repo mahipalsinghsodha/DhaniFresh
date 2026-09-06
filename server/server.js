@@ -276,6 +276,23 @@ START SERVER
 const startServer = async () => {
   await connectDB();
 
+  // Clean up accidental empty returnRequest objects created by previous schema default
+  try {
+    const Order = require('./models/Order');
+    await Order.updateMany(
+      {
+        $or: [
+          { 'returnRequest.requestedAt': { $exists: false } },
+          { 'returnRequest.requestedAt': null }
+        ],
+        'returnRequest.status': { $exists: true }
+      },
+      { $unset: { returnRequest: 1 } }
+    );
+  } catch (err) {
+    console.error('Order cleanup stale returnRequest error:', err);
+  }
+
   // Start background jobs
   startOrderCleanup();
   require('./cron')();

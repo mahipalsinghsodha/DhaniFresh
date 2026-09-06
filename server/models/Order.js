@@ -17,6 +17,34 @@ const orderItemSchema = new mongoose.Schema({
   quantity: Number
 });
 
+const returnRequestSchema = new mongoose.Schema({
+  reason: String,
+  description: String,
+  images: [{ type: String }],
+  video: String,
+  pickupAddress: {
+    name: String,
+    phone: String,
+    street: String,
+    city: String,
+    district: String,
+    state: String,
+    zipCode: String
+  },
+  requestedAt: Date,
+  status: { type: String, enum: ['PENDING', 'APPROVED', 'REJECTED'] },
+  adminNote: String,
+  resolvedAt: Date,
+  reverseShipment: {
+    shiprocketOrderId: String,
+    shipmentId: String,
+    awbCode: String,
+    courierName: String,
+    pickupScheduledDate: Date,
+    status: String
+  }
+}, { _id: false });
+
 const orderSchema = new mongoose.Schema({
   user: {
     type: mongoose.Schema.Types.ObjectId,
@@ -217,31 +245,8 @@ refundInfo: {
   shiprocketShipmentId: String,
   awbCode: String,
   returnRequest: {
-    reason: String,
-    description: String,
-    images: [{ type: String }],
-    video: String,
-    pickupAddress: {
-      name: String,
-      phone: String,
-      street: String,
-      city: String,
-      district: String,
-      state: String,
-      zipCode: String
-    },
-    requestedAt: Date,
-    status: { type: String, enum: ['PENDING', 'APPROVED', 'REJECTED'], default: 'PENDING' },
-    adminNote: String,
-    resolvedAt: Date,
-    reverseShipment: {
-      shiprocketOrderId: String,
-      shipmentId: String,
-      awbCode: String,
-      courierName: String,
-      pickupScheduledDate: Date,
-      status: String
-    }
+    type: returnRequestSchema,
+    default: null
   }
 }, {
   timestamps: true

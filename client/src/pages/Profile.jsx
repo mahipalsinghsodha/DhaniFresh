@@ -1693,7 +1693,7 @@ const Profile = () => {
                           const isDelivered = order.isDelivered
                           const isCancelled = ['CANCELLED', 'FAILED'].includes(order.paymentStatus)
                           const canCancel = !isDelivered && !isCancelled && !['SHIPPED', 'OUT_FOR_DELIVERY', 'DELIVERED', 'RETURNED'].includes(order.orderStatus)
-                          const canReturn = isDelivered && !order.returnRequest && (Date.now() - new Date(order.deliveredAt).getTime()) / (1000 * 60 * 60 * 24) <= 7
+                          const canReturn = isDelivered && !order.returnRequest?.requestedAt && (Date.now() - new Date(order.deliveredAt).getTime()) / (1000 * 60 * 60 * 24) <= 7
 
                           return (
                             <div

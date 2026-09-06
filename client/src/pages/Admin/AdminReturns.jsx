@@ -73,6 +73,7 @@ const AdminReturns = () => {
   }
 
   const filteredOrders = orders.filter(o => {
+    if (!o.returnRequest?.requestedAt) return false
     const q = search.toLowerCase()
     return (
       !q ||

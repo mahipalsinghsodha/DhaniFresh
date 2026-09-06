@@ -251,7 +251,10 @@ exports.deleteAdmin = async (req, res) => {
 
 exports.getReturnRequests = async (req, res) => {
   try {
-    const orders = await Order.find({ 'returnRequest.status': { $exists: true } })
+    const orders = await Order.find({ 
+      'returnRequest.requestedAt': { $exists: true, $ne: null },
+      'returnRequest.status': { $exists: true } 
+    })
       .populate('user', 'name email')
       .populate('orderItems.product')
       .sort({ 'returnRequest.requestedAt': -1 });
