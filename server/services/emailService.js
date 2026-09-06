@@ -100,10 +100,17 @@ const sendOrderSuccessEmail = async (order, to) => {
       ${itemsHtml}
       <div style="margin-top:16px;padding-top:16px;">
         ${row('Payment Method', paymentMethod)}
+        ${order.walletUsed > 0 ? row('Paid via Wallet', `-₹${Number(order.walletUsed).toFixed(2)}`) : ''}
+        ${order.giftCard?.amountUsed > 0 ? row('Paid via Gift Card', `-₹${Number(order.giftCard.amountUsed).toFixed(2)}`) : ''}
         <div style="display:flex;justify-content:space-between;margin-top:16px;font-size:16px;">
-          <span style="font-weight:800;color:#334155;">Total</span>
-          <span style="font-weight:900;color:${brandGold};">₹${Number(totalPrice).toFixed(2)}</span>
+          <span style="font-weight:800;color:#334155;">${(order.walletUsed > 0 || order.giftCard?.amountUsed > 0) ? (paymentMethod === 'COD' ? 'Amount to Pay (COD)' : 'Net Amount') : 'Total'}</span>
+          <span style="font-weight:900;color:${brandGold};">₹${Number((order.payableAmount !== undefined && order.payableAmount !== null) ? order.payableAmount : Math.max(0, (totalPrice || 0) - (order.walletUsed || 0) - (order.giftCard?.amountUsed || 0))).toFixed(2)}</span>
         </div>
+        ${(order.walletUsed > 0 || order.giftCard?.amountUsed > 0) ? `
+        <div style="display:flex;justify-content:space-between;margin-top:4px;font-size:12px;color:#94A3B8;">
+          <span>Total Order Value</span>
+          <span>₹${Number(totalPrice).toFixed(2)}</span>
+        </div>` : ''}
       </div>
     `)}
     
@@ -138,6 +145,9 @@ const sendOrderSuccessEmail = async (order, to) => {
         subtotal: order.itemsPrice || 0,
         shipping: order.shippingPrice || 0,
         total: order.totalPrice || 0,
+        walletUsed: order.walletUsed || 0,
+        giftCardUsed: order.giftCard?.amountUsed || 0,
+        payableAmount: (order.payableAmount !== undefined && order.payableAmount !== null) ? order.payableAmount : Math.max(0, (order.totalPrice || 0) - (order.walletUsed || 0) - (order.giftCard?.amountUsed || 0)),
         transactionId: order.paymentInfo?.razorpay_payment_id,
         paymentInfo: order.paymentInfo
       };

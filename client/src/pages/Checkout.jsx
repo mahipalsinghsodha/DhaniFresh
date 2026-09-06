@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
 import { Helmet } from 'react-helmet-async'
 import api from '../api/axios'
@@ -46,6 +46,7 @@ const Checkout = () => {
   const [cart, setCart]               = useState(null)
   const { items: cartItems }          = useCart()
   const [loading, setLoading]         = useState(false)
+  const submittingRef                 = useRef(false)
   const [paymentMethod, setPayment]   = useState(user ? 'COD' : 'Online')
   const [savedAddresses, setSaved]    = useState([])
   const [selectedAddrId, setSelAddr]  = useState(null)
@@ -199,32 +200,33 @@ const Checkout = () => {
 
     if (paymentMethod === 'COD' || finalTotal === 0) {
       await api.post('/api/orders', payload); 
-      clearCart();
-      fetchCartCount();
+      setCart({ items: [] });
+      await clearCart();
+      await fetchCartCount();
       toast.success('Order placed successfully!'); 
-      navigate('/orders');
+      navigate('/orders', { replace: true });
     } else { await startOnlinePayment(payload) }
   }
 
   const handleSubmit = async (e) => {
-    e.preventDefault(); setLoading(true)
+    e.preventDefault();
+    if (submittingRef.current || loading) return;
+
     // Validate address before opening Razorpay or placing order
     const addr = getAddr()
     if (!addr.name?.trim() || !addr.street?.trim() || !addr.city?.trim() || !addr.zipCode?.trim() || !addr.state?.trim() || (!user && !addr.email?.trim())) {
       toast.error('Please fill in all required delivery details (including email for guests)')
-      setLoading(false); return
+      return;
     }
 
     const phoneDigits = String(addr.phone || '').replace(/\D/g, '').slice(-10)
     if (!/^[6-9][0-9]{9}$/.test(phoneDigits)) {
       toast.error('Please enter a valid 10-digit Indian mobile number')
-      setLoading(false); return
+      return;
     }
 
-    // Calculate final total to see if COD is really required (not fully paid by wallet)
-    let finalTotal = preview?.totalPrice || 0
-    if (useWallet && walletBalance > 0) finalTotal = Math.max(0, finalTotal - walletBalance)
-    if (appliedGiftCard) finalTotal = Math.max(0, finalTotal - appliedGiftCard.balance)
+    submittingRef.current = true;
+    setLoading(true);
 
     try { await placeOrder() } catch (err) {
       if (err.response?.status === 409 && err.response?.data?.allItems) {
@@ -232,7 +234,10 @@ const Checkout = () => {
       } else {
         toast.error(err.response?.data?.message || 'Failed to place order')
       }
-    } finally { setLoading(false) }
+    } finally {
+      setLoading(false);
+      submittingRef.current = false;
+    }
   }
 
   const startOnlinePayment = async (payload) => {
@@ -270,10 +275,11 @@ const Checkout = () => {
       handler: async (res) => {
         try { 
           await api.post('/api/payment/verify', res); 
-          clearCart();
-          fetchCartCount(); 
+          setCart({ items: [] });
+          await clearCart();
+          await fetchCartCount(); 
           toast.success('Payment successful!'); 
-          navigate('/orders');
+          navigate('/orders', { replace: true });
         }
         catch { toast.error('Payment verification failed') }
       },
@@ -672,7 +678,7 @@ const Checkout = () => {
                 else btnText = `Pay ₹${Math.round(netPayable).toLocaleString('en-IN')} Online`;
 
                 return (
-                  <button type="submit" disabled={loading}
+                  <button type="submit" disabled={loading || submittingRef.current}
                     className="w-full h-14 btn btn-primary rounded-full flex items-center justify-center gap-2 text-base transition-all disabled:opacity-60"
                   >
                     {loading ? <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"/> : <FiArrowRight size={18}/>}

@@ -53,7 +53,20 @@ const sendOrderSuccessWhatsApp = async (order, userEmail) => {
   if (!phone) return;
 
   const orderId = order.orderIdString || order._id.toString();
-  const body = `*Order Confirmed!*\n\nHi ${order.shippingAddress.name},\nThank you for shopping with Daatasa! Your order #${orderId} has been confirmed.\n\nTotal: ₹${order.totalPrice}\nPayment: ${order.paymentMethod}\n\nWe will notify you once it ships.`;
+  const netAmt = (order.payableAmount !== undefined && order.payableAmount !== null)
+    ? order.payableAmount
+    : Math.max(0, (order.totalPrice || 0) - (order.walletUsed || 0) - (order.giftCard?.amountUsed || 0));
+
+  let amountInfo = `Total: ₹${order.totalPrice}`;
+  if (order.walletUsed > 0 || order.giftCard?.amountUsed > 0) {
+    const lines = [`Total Order Value: ₹${order.totalPrice}`];
+    if (order.walletUsed > 0) lines.push(`Paid via Wallet: -₹${Number(order.walletUsed).toFixed(2)}`);
+    if (order.giftCard?.amountUsed > 0) lines.push(`Paid via Gift Card: -₹${Number(order.giftCard.amountUsed).toFixed(2)}`);
+    lines.push(`${order.paymentMethod === 'COD' ? 'Amount to Collect on Delivery' : 'Net Amount'}: ₹${Number(netAmt).toFixed(2)}`);
+    amountInfo = lines.join('\n');
+  }
+
+  const body = `*Order Confirmed!*\n\nHi ${order.shippingAddress.name},\nThank you for shopping with Daatasa! Your order #${orderId} has been confirmed.\n\n${amountInfo}\nPayment: ${order.paymentMethod}\n\nWe will notify you once it ships.`;
   
   await sendWhatsApp(phone, body);
 };

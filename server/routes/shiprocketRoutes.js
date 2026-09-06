@@ -41,7 +41,7 @@ function buildShiprocketPayload(order) {
     shipping_charges: order.shippingPrice || 0,
     giftwrap_charges: 0,
     transaction_charges: 0,
-    total_discount: order.discount || 0,
+    total_discount: Math.round(((order.discount || 0) + (order.walletUsed || 0) + (order.giftCard?.amountUsed || 0)) * 100) / 100,
     sub_total: order.itemsPrice || 0,
     length: 12,
     breadth: 12,

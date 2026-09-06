@@ -669,13 +669,32 @@ const Orders = () => {
                         </button>
                       )}
                       <div className="text-right">
-                        <p className="text-[10px] mb-1 text-brand-text/40 font-bold uppercase tracking-widest">Total</p>
-                        <p className="text-xl font-bold font-display" style={{
-                          color: o.paymentStatus === 'CANCELLED' ? 'var(--text-muted)' : 'var(--brand-primary)',
-                          textDecoration: o.paymentStatus === 'CANCELLED' ? 'line-through' : 'none'
-                        }}>
-                          ₹{Number(o.totalPrice).toLocaleString('en-IN')}
-                        </p>
+                        {o.walletUsed > 0 || o.giftCard?.amountUsed > 0 ? (
+                          <>
+                            <p className="text-[10px] mb-1 text-brand-text/40 font-bold uppercase tracking-widest">
+                              {o.paymentMethod === 'COD' && o.paymentStatus !== 'PAID' ? 'To Pay (COD)' : 'Net Amount'}
+                            </p>
+                            <p className="text-xl font-bold font-display" style={{
+                              color: o.paymentStatus === 'CANCELLED' ? 'var(--text-muted)' : 'var(--brand-primary)',
+                              textDecoration: o.paymentStatus === 'CANCELLED' ? 'line-through' : 'none'
+                            }}>
+                              ₹{Number((o.payableAmount !== undefined && o.payableAmount !== null) ? o.payableAmount : Math.max(0, o.totalPrice - (o.walletUsed || 0) - (o.giftCard?.amountUsed || 0))).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}
+                            </p>
+                            <p className="text-[10px] text-emerald-600 font-semibold">
+                              Total ₹{Number(o.totalPrice).toLocaleString('en-IN')} (Wallet: -₹{Number(o.walletUsed || 0).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })})
+                            </p>
+                          </>
+                        ) : (
+                          <>
+                            <p className="text-[10px] mb-1 text-brand-text/40 font-bold uppercase tracking-widest">Total</p>
+                            <p className="text-xl font-bold font-display" style={{
+                              color: o.paymentStatus === 'CANCELLED' ? 'var(--text-muted)' : 'var(--brand-primary)',
+                              textDecoration: o.paymentStatus === 'CANCELLED' ? 'line-through' : 'none'
+                            }}>
+                              ₹{Number(o.totalPrice).toLocaleString('en-IN')}
+                            </p>
+                          </>
+                        )}
                       </div>
                       <button
                         className="w-12 h-12 rounded-full flex items-center justify-center bg-[var(--ivory)] text-brand-primary transition-all shrink-0 border border-brand-primary/5 hover:border-brand-primary/20 hover:bg-brand-primary/5"
@@ -768,9 +787,29 @@ const Orders = () => {
                                   <div className="flex justify-between text-sm"><span className="text-brand-text/60 font-medium">Subtotal</span><span className="text-brand-primary font-bold font-display">₹{Number(o.itemsPrice).toLocaleString('en-IN')}</span></div>
                                   {o.discount > 0 && <div className="flex justify-between text-sm"><span className="text-emerald-600 font-medium">Discount</span><span className="text-emerald-600 font-bold font-display">-₹{Number(o.discount).toLocaleString('en-IN')}</span></div>}
                                   <div className="flex justify-between text-sm"><span className="text-brand-text/60 font-medium">Shipping</span><span className="font-bold font-display" style={{ color: o.shippingPrice === 0 ? 'var(--success)' : 'var(--brand-primary)' }}>{o.shippingPrice === 0 ? 'FREE' : `₹${o.shippingPrice}`}</span></div>
-                                  <div className="flex justify-between pt-4 border-t border-brand-primary/10">
-                                    <span className="text-base font-bold font-display text-brand-primary">Total</span>
-                                    <span className="text-xl font-bold font-display text-brand-primary">₹{Number(o.totalPrice).toLocaleString('en-IN')}</span>
+                                  <div className="flex justify-between pt-3 border-t border-brand-primary/10">
+                                    <span className="text-sm font-bold font-display text-brand-primary">Total Order Value</span>
+                                    <span className="text-base font-bold font-display text-brand-primary">₹{Number(o.totalPrice).toLocaleString('en-IN')}</span>
+                                  </div>
+                                  {o.walletUsed > 0 && (
+                                    <div className="flex justify-between text-sm font-semibold text-emerald-600 bg-emerald-50 px-3 py-1.5 rounded-xl border border-emerald-100">
+                                      <span>Paid via Wallet</span>
+                                      <span>-₹{Number(o.walletUsed).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}</span>
+                                    </div>
+                                  )}
+                                  {o.giftCard?.amountUsed > 0 && (
+                                    <div className="flex justify-between text-sm font-semibold text-emerald-600 bg-emerald-50 px-3 py-1.5 rounded-xl border border-emerald-100">
+                                      <span>Paid via Gift Card</span>
+                                      <span>-₹{Number(o.giftCard.amountUsed).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}</span>
+                                    </div>
+                                  )}
+                                  <div className="flex justify-between pt-3 border-t border-brand-primary/10">
+                                    <span className="text-base font-bold font-display text-brand-primary">
+                                      {o.paymentMethod === 'COD' && o.paymentStatus !== 'PAID' ? 'Amount to Pay (COD)' : (o.isPaid ? 'Net Paid' : 'Net Payable')}
+                                    </span>
+                                    <span className="text-xl font-bold font-display text-brand-primary">
+                                      ₹{Number((o.payableAmount !== undefined && o.payableAmount !== null) ? o.payableAmount : Math.max(0, o.totalPrice - (o.walletUsed || 0) - (o.giftCard?.amountUsed || 0))).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}
+                                    </span>
                                   </div>
                                 </div>
                               </div>

@@ -48,10 +48,14 @@ const openPrint = (body, title) => {
   w.document.write(`<!DOCTYPE html><html><head><title>${title}</title><style>${INV_CSS}</style></head><body>${body}<button onclick="window.print()" style="margin:20px;padding:10px 24px;background:#1B2F6E;color:#fff;border:none;border-radius:8px;cursor:pointer">Print</button></body></html>`)
   w.document.close()
 }
-const invoiceHTML = (o) => `<div class="inv"><div class="head"><div><div class="brand">Daatasa</div><div style="color:#6b7280;font-size:13px">Premium Quality</div></div><div style="text-align:right"><div style="font-size:16px;font-weight:700">TAX INVOICE</div><div style="color:#F5A623;font-weight:700">#${o._id.slice(-10).toUpperCase()}</div><div style="font-size:12px;color:#6b7280">${new Date(o.createdAt).toLocaleDateString('en-IN')}</div></div></div><div style="display:flex;justify-content:space-between;margin-bottom:24px"><div><p style="font-size:11px;color:#9ca3af;font-weight:700;margin-bottom:6px">SHIP TO</p><strong>${o.user?.name||'Customer'}</strong><br/>${o.shippingAddress?.street||''}, ${o.shippingAddress?.city||''}<br/>${o.shippingAddress?.state||''} - ${o.shippingAddress?.zipCode||''}</div><img src="${qrUrl(`ORDER:${o._id}`,90)}" width="80" height="80"/></div><table><thead><tr><th>Item</th><th>Qty</th><th style="text-align:right">Price</th><th style="text-align:right">Total</th></tr></thead><tbody>${(o.orderItems||[]).map(i=>`<tr><td>${i.name}</td><td>${i.quantity}</td><td style="text-align:right">₹${Number(i.price).toFixed(2)}</td><td style="text-align:right">₹${(i.price*i.quantity).toFixed(2)}</td></tr>`).join('')}</tbody><tfoot><tr><td colspan="3">Subtotal</td><td style="text-align:right">₹${Number(o.itemsPrice||0).toFixed(2)}</td></tr><tr><td colspan="3">Tax</td><td style="text-align:right">₹${Number(o.taxPrice||0).toFixed(2)}</td></tr><tr><td colspan="3">Shipping</td><td style="text-align:right">₹${Number(o.shippingPrice||0).toFixed(2)}</td></tr><tr class="total"><td colspan="3"><strong>Total</strong></td><td style="text-align:right"><strong>₹${Number(o.totalPrice||0).toFixed(2)}</strong></td></tr></tfoot></table></div>`
+const invoiceHTML = (o) => {
+  const netAmt = (o.payableAmount !== undefined && o.payableAmount !== null) ? o.payableAmount : Math.max(0, (o.totalPrice || 0) - (o.walletUsed || 0) - (o.giftCard?.amountUsed || 0));
+  return `<div class="inv"><div class="head"><div><div class="brand">Daatasa</div><div style="color:#6b7280;font-size:13px">Premium Quality</div></div><div style="text-align:right"><div style="font-size:16px;font-weight:700">TAX INVOICE</div><div style="color:#F5A623;font-weight:700">#${o._id.slice(-10).toUpperCase()}</div><div style="font-size:12px;color:#6b7280">${new Date(o.createdAt).toLocaleDateString('en-IN')}</div></div></div><div style="display:flex;justify-content:space-between;margin-bottom:24px"><div><p style="font-size:11px;color:#9ca3af;font-weight:700;margin-bottom:6px">SHIP TO</p><strong>${o.user?.name||'Customer'}</strong><br/>${o.shippingAddress?.street||''}, ${o.shippingAddress?.city||''}<br/>${o.shippingAddress?.state||''} - ${o.shippingAddress?.zipCode||''}</div><img src="${qrUrl(`ORDER:${o._id}`,90)}" width="80" height="80"/></div><table><thead><tr><th>Item</th><th>Qty</th><th style="text-align:right">Price</th><th style="text-align:right">Total</th></tr></thead><tbody>${(o.orderItems||[]).map(i=>`<tr><td>${i.name}</td><td>${i.quantity}</td><td style="text-align:right">₹${Number(i.price).toFixed(2)}</td><td style="text-align:right">₹${(i.price*i.quantity).toFixed(2)}</td></tr>`).join('')}</tbody><tfoot><tr><td colspan="3">Subtotal</td><td style="text-align:right">₹${Number(o.itemsPrice||0).toFixed(2)}</td></tr><tr><td colspan="3">Tax</td><td style="text-align:right">₹${Number(o.taxPrice||0).toFixed(2)}</td></tr><tr><td colspan="3">Shipping</td><td style="text-align:right">₹${Number(o.shippingPrice||0).toFixed(2)}</td></tr><tr><td colspan="3"><strong>Total Order Value</strong></td><td style="text-align:right"><strong>₹${Number(o.totalPrice||0).toFixed(2)}</strong></td></tr>${o.walletUsed > 0 ? `<tr><td colspan="3" style="color:#059669">Paid via Wallet</td><td style="text-align:right;color:#059669">-₹${Number(o.walletUsed).toFixed(2)}</td></tr>` : ''}${o.giftCard?.amountUsed > 0 ? `<tr><td colspan="3" style="color:#059669">Paid via Gift Card</td><td style="text-align:right;color:#059669">-₹${Number(o.giftCard.amountUsed).toFixed(2)}</td></tr>` : ''}<tr class="total"><td colspan="3"><strong>Net ${o.isPaid ? 'Paid' : 'Payable'}</strong></td><td style="text-align:right"><strong>₹${Number(netAmt).toFixed(2)}</strong></td></tr></tfoot></table></div>`;
+};
 
 const shippingLabelHTML = (o) => {
   const qrLink = `${window.location.origin}/courier/scan?orderId=${o._id}`;
+  const netCollect = (o.payableAmount !== undefined && o.payableAmount !== null) ? o.payableAmount : Math.max(0, (o.totalPrice || 0) - (o.walletUsed || 0) - (o.giftCard?.amountUsed || 0));
   return `<div style="width: 4in; height: 6in; padding: 20px; border: 2px solid #000; font-family: sans-serif; position: relative; margin: 0 auto;">
     <h1 style="font-size: 24px; font-weight: 900; border-bottom: 2px solid #000; padding-bottom: 10px; margin: 0 0 20px 0; display: flex; justify-content: space-between;">
       <span>DAATASA</span>
@@ -69,7 +73,7 @@ const shippingLabelHTML = (o) => {
         <p style="font-size: 12px; font-weight: bold; margin: 0 0 4px 0;">ORDER #${formatOrderId(o)}</p>
         <p style="font-size: 12px; margin: 0 0 4px 0;">Date: ${new Date(o.createdAt).toLocaleDateString('en-IN')}</p>
         <p style="font-size: 12px; margin: 0 0 4px 0;">Items: ${o.orderItems?.length || 0}</p>
-        <p style="font-size: 14px; font-weight: 900; margin: 10px 0 0 0;">Collect Amount: ${o.paymentMethod === 'COD' && o.paymentStatus !== 'PAID' ? '₹' + Number(o.totalPrice).toFixed(2) : '₹0.00'}</p>
+        <p style="font-size: 14px; font-weight: 900; margin: 10px 0 0 0;">Collect Amount: ${o.paymentMethod === 'COD' && o.paymentStatus !== 'PAID' ? '₹' + Number(netCollect).toFixed(2) : '₹0.00'}${o.walletUsed > 0 ? ` (₹${Number(o.walletUsed).toFixed(2)} paid via Wallet)` : ''}</p>
       </div>
       <img src="${qrUrl(qrLink, 120)}" width="100" height="100" style="border: 2px solid #000; padding: 4px;" />
     </div>
@@ -81,7 +85,7 @@ const shippingLabelHTML = (o) => {
       Scan QR to update status
     </div>
   </div>`;
-}
+};
 
 
 const ManageOrders = () => {
@@ -483,9 +487,16 @@ const ManageOrders = () => {
                       </div>
                     </div>
                     <div className="flex items-center justify-between sm:justify-end gap-4" style={{ flexShrink: 0 }}>
-                      <p style={{ fontSize: 18, fontWeight: 900, color: isVoid(o) ? 'var(--text-muted)' : 'var(--text-primary)', textDecoration: isVoid(o) ? 'line-through' : 'none', fontFamily: 'var(--font-display)' }}>
-                        {fmtINR(o.totalPrice)}
-                      </p>
+                      <div className="text-right">
+                        <p style={{ fontSize: 18, fontWeight: 900, color: isVoid(o) ? 'var(--text-muted)' : 'var(--text-primary)', textDecoration: isVoid(o) ? 'line-through' : 'none', fontFamily: 'var(--font-display)' }}>
+                          {fmtINR((o.payableAmount !== undefined && o.payableAmount !== null) ? o.payableAmount : Math.max(0, (o.totalPrice || 0) - (o.walletUsed || 0) - (o.giftCard?.amountUsed || 0)))}
+                        </p>
+                        {(o.walletUsed > 0 || o.giftCard?.amountUsed > 0) && (
+                          <span style={{ fontSize: 11, color: 'var(--success)', fontWeight: 700, display: 'block' }}>
+                            {o.walletUsed > 0 ? `Wallet: -${fmtINR(o.walletUsed)}` : ''}{o.giftCard?.amountUsed > 0 ? ` GC: -${fmtINR(o.giftCard.amountUsed)}` : ''}
+                          </span>
+                        )}
+                      </div>
                       {/* Desktop chevron */}
                       <button onClick={() => setExpandedId(isExp ? null : o._id)}
                         className="hidden sm:flex"
@@ -557,9 +568,29 @@ const ManageOrders = () => {
                                   {o.discount > 0 && <div style={{ display: 'flex', justifyContent: 'space-between' }}><span style={{ color: 'var(--success)' }}>Discount</span><span style={{ color: 'var(--success)', fontWeight: 600 }}>-{fmtINR(o.discount)}</span></div>}
                                   <div style={{ display: 'flex', justifyContent: 'space-between' }}><span style={{ color: 'var(--text-muted)' }}>Shipping</span><span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{o.shippingPrice === 0 ? 'FREE' : fmtINR(o.shippingPrice)}</span></div>
                                   <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: 8, borderTop: '1px solid var(--border-color)', marginTop: 8 }}>
-                                    <span style={{ fontWeight: 800, color: 'var(--text-primary)', fontSize: 15 }}>Total</span>
-                                    <span style={{ fontWeight: 900, fontSize: 15, color: isVoid(o) ? 'var(--text-muted)' : 'var(--text-primary)', textDecoration: isVoid(o) ? 'line-through' : 'none' }}>{fmtINR(o.totalPrice)}</span>
+                                    <span style={{ fontWeight: 800, color: 'var(--text-primary)', fontSize: 14 }}>Total Order Value</span>
+                                    <span style={{ fontWeight: 800, fontSize: 14, color: isVoid(o) ? 'var(--text-muted)' : 'var(--text-primary)', textDecoration: isVoid(o) ? 'line-through' : 'none' }}>{fmtINR(o.totalPrice)}</span>
                                   </div>
+                                  {o.walletUsed > 0 && (
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--success)', fontWeight: 600 }}>
+                                      <span>Paid via Wallet</span>
+                                      <span>-{fmtINR(o.walletUsed)}</span>
+                                    </div>
+                                  )}
+                                  {o.giftCard?.amountUsed > 0 && (
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--success)', fontWeight: 600 }}>
+                                      <span>Paid via Gift Card</span>
+                                      <span>-{fmtINR(o.giftCard.amountUsed)}</span>
+                                    </div>
+                                  )}
+                                  {(o.walletUsed > 0 || o.giftCard?.amountUsed > 0) && (
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: 8, borderTop: '1px solid var(--border-color)', marginTop: 4 }}>
+                                      <span style={{ fontWeight: 800, color: 'var(--text-primary)', fontSize: 15 }}>Net {o.isPaid ? 'Paid' : 'Payable'}</span>
+                                      <span style={{ fontWeight: 900, fontSize: 15, color: isVoid(o) ? 'var(--text-muted)' : 'var(--text-primary)' }}>
+                                        {fmtINR((o.payableAmount !== undefined && o.payableAmount !== null) ? o.payableAmount : Math.max(0, (o.totalPrice || 0) - (o.walletUsed || 0) - (o.giftCard?.amountUsed || 0)))}
+                                      </span>
+                                    </div>
+                                  )}
                                 </div>
                               </div>
 

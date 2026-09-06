@@ -168,7 +168,21 @@ const ScanOrder = () => {
                   {order.paymentMethod}
                 </span>
                 {order.paymentMethod === 'COD' && order.paymentStatus !== 'PAID' && (
-                  <p className="text-red-500 font-black text-lg mt-1">Collect: ₹{order.totalPrice}</p>
+                  <div>
+                    <p className="text-red-500 font-black text-lg mt-1">
+                      Collect: ₹{Number((order.payableAmount !== undefined && order.payableAmount !== null) ? order.payableAmount : Math.max(0, order.totalPrice - (order.walletUsed || 0) - (order.giftCard?.amountUsed || 0))).toFixed(2)}
+                    </p>
+                    {order.walletUsed > 0 && (
+                      <p className="text-[11px] text-green-600 font-bold">
+                        (₹{Number(order.walletUsed).toFixed(2)} paid via Wallet)
+                      </p>
+                    )}
+                    {order.giftCard?.amountUsed > 0 && (
+                      <p className="text-[11px] text-green-600 font-bold">
+                        (₹{Number(order.giftCard.amountUsed).toFixed(2)} paid via Gift Card)
+                      </p>
+                    )}
+                  </div>
                 )}
               </div>
             </div>
