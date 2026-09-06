@@ -228,6 +228,66 @@ router.post('/webhook', async (req, res) => {
         order.isPaid = true;
         order.paymentStatus = 'PAID';
 
+        // Award Reward Points upon successful delivery
+        if (order.user && !order.rewardPointsAwarded) {
+          try {
+            const User = require('../models/User');
+            const WalletTransaction = require('../models/WalletTransaction');
+            const Notification = require('../models/Notification');
+            const user = await User.findById(order.user._id || order.user);
+            if (user) {
+              const points = Math.floor((order.totalPrice || 0) / 10);
+              user.rewardPoints = (user.rewardPoints || 0) + points;
+
+              // Referral Bonus check
+              if (user.referredBy && !user.referralRewardClaimed) {
+                const referrer = await User.findById(user.referredBy);
+                if (referrer) {
+                  user.walletBalance = (user.walletBalance || 0) + 50;
+                  referrer.walletBalance = (referrer.walletBalance || 0) + 50;
+                  user.referralRewardClaimed = true;
+                  await referrer.save();
+
+                  await WalletTransaction.create([
+                    {
+                      user: user._id,
+                      type: 'CREDIT',
+                      amount: 50,
+                      balanceAfter: user.walletBalance,
+                      description: 'Referral bonus (first order delivered)',
+                      transactionType: 'REWARD_CONVERSION'
+                    },
+                    {
+                      user: referrer._id,
+                      type: 'CREDIT',
+                      amount: 50,
+                      balanceAfter: referrer.walletBalance,
+                      description: `Referral bonus for inviting ${user.name} (first order delivered)`,
+                      transactionType: 'REWARD_CONVERSION'
+                    }
+                  ]);
+                }
+              }
+
+              await user.save();
+              order.rewardPointsAwarded = true;
+
+              if (points > 0) {
+                const notif = new Notification({
+                  user: user._id,
+                  type: 'SYSTEM',
+                  title: 'Reward Points Earned! 🎁',
+                  message: `You earned ${points} reward points for your delivered order #${order.orderIdString || order._id.toString().slice(-8)}. Convert them into wallet cash anytime!`,
+                  link: '/profile'
+                });
+                await notif.save();
+              }
+            }
+          } catch (rewardErr) {
+            console.error('Shiprocket reward points error:', rewardErr);
+          }
+        }
+
         // Auto send invoice email
         try {
           const { sendInvoiceEmail } = require('../services/emailService');
