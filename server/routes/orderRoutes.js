@@ -508,14 +508,17 @@ router.post('/', auth.optional, async (req, res) => {
     await order.populate('user', 'name email');
     await order.populate('orderItems.product');
 
-    // ── 8.5 Send Email & WhatsApp (COD only) ──────────────────────────────
+    // ── 8.5 Send Email & WhatsApp (COD only - Non-blocking background dispatch) ──
     if (paymentMethod === 'COD') {
       try {
         const { sendOrderSuccessEmail } = require('../services/emailService');
         const { sendOrderSuccessWhatsApp } = require('../services/whatsappService');
+        const recipientEmail = req.user ? order.user?.email : guestEmail;
         
-        await sendOrderSuccessEmail(order, req.user ? order.user.email : guestEmail);
-        await sendOrderSuccessWhatsApp(order, req.user ? order.user.email : guestEmail);
+        if (recipientEmail) {
+          sendOrderSuccessEmail(order, recipientEmail).catch(err => console.error('COD EMAIL ERROR (non-fatal):', err));
+        }
+        sendOrderSuccessWhatsApp(order, recipientEmail).catch(err => console.error('COD WHATSAPP ERROR (non-fatal):', err));
       } catch (err) {
         console.error('COD SUCCESS NOTIFICATION ERROR:', err);
       }
@@ -524,7 +527,7 @@ router.post('/', auth.optional, async (req, res) => {
     // Invalidate analytics cache so next fetch gets fresh data
     invalidateAnalytics().catch(() => {});
 
-    // ── 8.6 Log User Activity ─────────────────────────────────────────
+    // ── 8.6 Log User Activity (Non-blocking) ─────────────────────────
     try {
       let ipAddress = req.headers['x-forwarded-for'] || req.socket.remoteAddress || req.ip;
       if (ipAddress) ipAddress = ipAddress.split(',')[0].trim();
@@ -538,7 +541,7 @@ router.post('/', auth.optional, async (req, res) => {
         }
       }
 
-      await UserActivity.create({
+      UserActivity.create({
         user: req.user ? req.user._id : null,
         action: 'ORDER_PLACED',
         details: {
@@ -551,9 +554,9 @@ router.post('/', auth.optional, async (req, res) => {
         },
         ipAddress,
         location
-      });
+      }).catch(activityErr => console.error('Failed to log order activity:', activityErr));
     } catch (activityErr) {
-      console.error('Failed to log order activity:', activityErr);
+      console.error('Failed to prepare order activity:', activityErr);
     }
 
     if (paymentMethod === 'Online') {
