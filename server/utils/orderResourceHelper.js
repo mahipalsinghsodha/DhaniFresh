@@ -52,7 +52,7 @@ async function restoreOrderResources(order, reason = 'Order cancelled or payment
   // ──────────────────────────────────────────────────────────────────────────
   // 1. RESTORE PRODUCT STOCK (VARIANT-AWARE)
   // ──────────────────────────────────────────────────────────────────────────
-  if (!options.skipStock && order.orderItems && order.orderItems.length > 0) {
+  if (!options.skipStock && !order.stockRestored && order.orderItems && order.orderItems.length > 0) {
     try {
       for (const item of order.orderItems) {
         const pId = item.product?._id || item.product;
@@ -87,6 +87,7 @@ async function restoreOrderResources(order, reason = 'Order cancelled or payment
         }
       }
       result.restoredStock = true;
+      order.stockRestored = true;
     } catch (stockErr) {
       console.error('[restoreOrderResources] Error restoring stock:', stockErr.message);
     }

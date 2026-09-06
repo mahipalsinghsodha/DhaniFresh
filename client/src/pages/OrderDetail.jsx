@@ -4,6 +4,7 @@ import { FiArrowLeft, FiPrinter, FiX, FiRefreshCcw, FiExternalLink, FiHelpCircle
 import { toast } from 'react-toastify';
 import api from '../api/axios';
 import OrderTimeline from '../components/OrderTimeline';
+import CancelOrderModal from '../components/CancelOrderModal';
 import { useSupportStore } from '../store/support';
 import { formatOrderId } from '../utils/formatOrderId';
 import { useSocket } from '../hooks/useSocket';
@@ -66,16 +67,23 @@ const OrderDetail = () => {
     }
   };
 
-  const handleCancel = async () => {
+  const handleCancel = async (selectedReason) => {
+    if (submitting) return;
     setSubmitting(true);
     try {
-      const res = await api.post(`/api/orders/${id}/cancel`, { reason });
+      const res = await api.post(`/api/orders/${id}/cancel`, { reason: selectedReason });
       toast.success(res.data.message || 'Order cancelled successfully');
       setCancelModal(false);
-      setReason('');
       fetchOrder();
     } catch (err) {
-      toast.error(err.response?.data?.message || 'Cancellation failed');
+      const msg = err.response?.data?.message || '';
+      if (msg.toLowerCase().includes('already cancelled')) {
+        toast.info('Order was already cancelled.');
+        setCancelModal(false);
+        fetchOrder();
+      } else {
+        toast.error(msg || 'Cancellation failed');
+      }
     } finally {
       setSubmitting(false);
     }
@@ -101,7 +109,7 @@ const OrderDetail = () => {
   }
 
   const isVoid = ['CANCELLED', 'FAILED'].includes(order.paymentStatus) || order.orderStatus === 'CANCELLED';
-  const isCancellable = !order.isDelivered && order.orderStatus !== 'DELIVERED' && !isVoid;
+  const isCancellable = !isVoid && !order.isDelivered && !['SHIPPED', 'OUT_FOR_DELIVERY', 'DELIVERED', 'RETURNED'].includes(order.orderStatus);
   const isReturnable = (order.isDelivered || order.orderStatus === 'DELIVERED') && !isVoid && !order.returnRequest?.status && ((Date.now() - new Date(order.deliveredAt || order.updatedAt).getTime()) / (1000 * 60 * 60 * 24) <= 7);
 
   return (
@@ -245,19 +253,12 @@ const OrderDetail = () => {
 
       {/* Cancel Modal */}
       {cancelModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-          <div className="bg-white dark:bg-gray-800 rounded-2xl w-full max-w-md p-6 shadow-xl">
-            <h3 className="text-xl font-bold mb-2">Cancel Order</h3>
-            <p className="text-sm text-gray-500 mb-4">Please let us know why you are cancelling this order.</p>
-            <textarea value={reason} onChange={e => setReason(e.target.value)} placeholder="Reason for cancellation (optional)" className="w-full p-3 border rounded-xl mb-4 bg-gray-50 dark:bg-gray-900" rows={3}></textarea>
-            <div className="flex gap-3">
-              <button onClick={() => setCancelModal(false)} className="flex-1 py-3 font-semibold rounded-xl border hover:bg-gray-50 dark:hover:bg-gray-700">Go Back</button>
-              <button onClick={handleCancel} disabled={submitting} className="flex-1 py-3 font-bold rounded-xl bg-red-500 text-white hover:bg-red-600 disabled:opacity-50">
-                {submitting ? 'Cancelling...' : 'Confirm Cancel'}
-              </button>
-            </div>
-          </div>
-        </div>
+        <CancelOrderModal
+          order={order}
+          onClose={() => setCancelModal(false)}
+          onConfirm={handleCancel}
+          loading={submitting}
+        />
       )}
 
 

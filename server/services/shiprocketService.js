@@ -170,11 +170,36 @@ const trackShipment = async (awbCode) => {
   }
 };
 
+/**
+ * Cancels an order in Shiprocket
+ */
+const cancelOrder = async (orderIds) => {
+  const token = await getToken();
+  const ids = Array.isArray(orderIds) ? orderIds : [orderIds];
+  if (!token) {
+    console.log(`🚀 [MOCK MODE] SHIPROCKET CANCEL ORDER: ${ids.join(', ')}`);
+    return { status: 200, message: 'Order cancelled in Shiprocket (Mock)' };
+  }
+
+  try {
+    const response = await axios.post(`${SHIPROCKET_API_URL}/orders/cancel`, {
+      ids
+    }, {
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }
+    });
+    return response.data;
+  } catch (error) {
+    console.error('Shiprocket Cancel Failed:', error.response?.data || error.message);
+    return null;
+  }
+};
+
 module.exports = {
   isConfigured,
   createOrder,
   generateAWB,
   generateLabel,
   requestPickup,
-  trackShipment
+  trackShipment,
+  cancelOrder
 };

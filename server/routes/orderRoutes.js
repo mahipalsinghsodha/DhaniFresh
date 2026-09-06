@@ -1390,6 +1390,12 @@ router.post('/:id/cancel', auth, async (req, res) => {
   try {
     const { reason } = req.body;
 
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(400).json({ message: 'Invalid order ID' });
+    }
+
+    const sanitizedReason = typeof reason === 'string' ? reason.slice(0, 250).trim() : '';
+
     const isAdmin = req.user.role === 'admin' || req.user.role === 'superadmin';
 
     // ✅ FIX S9/B7: Permission check BEFORE DB query (not after)
@@ -1403,15 +1409,48 @@ router.post('/:id/cancel', auth, async (req, res) => {
 
     const order = await Order.findOne(query).populate('user', 'name email');
 
-    if (!order) return res.status(404).json({ message: 'Order not found' });
-    if (order.isDelivered) return res.status(400).json({ message: 'Cannot cancel a delivered order' });
-    if (['CANCELLED', 'FAILED'].includes(order.paymentStatus)) {
-      return res.status(400).json({ message: 'Order is already cancelled' });
+    if (!order) return res.status(404).json({ message: 'Order not found or unauthorized' });
+
+    // If order is already cancelled, return success so frontend doesn't show error toast
+    if (['CANCELLED', 'FAILED', 'REFUNDED'].includes(order.paymentStatus) || order.orderStatus === 'CANCELLED') {
+      return res.json({
+        success: true,
+        message: 'Order is already cancelled.',
+        alreadyCancelled: true,
+        refund: order.refundInfo,
+        walletRefunded: order.walletRefunded ? (order.walletUsed || 0) : 0,
+        onlineRefunded: order.refundInfo?.amount || 0
+      });
+    }
+
+    if (order.isDelivered || order.orderStatus === 'DELIVERED') {
+      return res.status(400).json({ message: 'Cannot cancel a delivered order. You can request a return instead.' });
+    }
+
+    // Security check: Only admins can cancel dispatched orders; customers can only cancel before shipment
+    const isDispatched = ['SHIPPED', 'OUT_FOR_DELIVERY', 'PICKED_UP'].includes(order.orderStatus);
+    if (isDispatched && !isAdmin) {
+      return res.status(400).json({
+        message: 'Your order has already been dispatched with our courier partner. Direct cancellation is no longer possible. You can refuse delivery at your doorstep for an automatic 100% refund.'
+      });
+    }
+
+    // 🔒 Anti-Hacker & Race Condition Atomic Guard: Prevent duplicate concurrent refund attacks
+    const locked = await Order.findOneAndUpdate(
+      { _id: order._id, isCancelledLock: { $ne: true }, paymentStatus: { $nin: ['CANCELLED', 'FAILED', 'REFUNDED'] } },
+      { $set: { isCancelledLock: true } }
+    );
+    if (!locked) {
+      return res.json({
+        success: true,
+        message: 'Order cancellation is already being processed.',
+        alreadyCancelled: true
+      });
     }
 
     // ── 1. Restore all order resources (variant stock, wallet balance, gift card, coupon count, Razorpay refund) ──
     const { restoreOrderResources } = require('../utils/orderResourceHelper');
-    const restoreResult = await restoreOrderResources(order, reason || 'Order cancelled');
+    const restoreResult = await restoreOrderResources(order, sanitizedReason || 'Order cancelled');
 
     const refundInfo = restoreResult.razorpayRefund || (restoreResult.walletRefunded > 0 ? {
       status: 'PROCESSED',
@@ -1420,11 +1459,20 @@ router.post('/:id/cancel', auth, async (req, res) => {
       note: 'Refunded to Daatasa Wallet'
     } : null);
 
+    // Cancel Shiprocket order if active
+    if (order.shiprocketOrderId) {
+      try {
+        const { cancelOrder: cancelShiprocket } = require('../services/shiprocketService');
+        cancelShiprocket(order.shiprocketOrderId).catch(err => console.error('Shiprocket cancel error:', err));
+      } catch (srErr) {}
+    }
+
     // ── 2. Update order ───────────────────────────────────────────────────
     order.paymentStatus = 'CANCELLED';
     order.orderStatus = 'CANCELLED';
-    order.cancelReason = reason || '';
+    order.cancelReason = sanitizedReason || '';
     order.cancelledAt = new Date();
+    order.isCancelledLock = false;
     order.cancelledBy = (req.user.role === 'admin' || req.user.role === 'superadmin') ? 'admin' : 'user';
     if (refundInfo) order.refundInfo = refundInfo;
 
@@ -1440,10 +1488,10 @@ router.post('/:id/cancel', auth, async (req, res) => {
       await logAction(req, 'CANCEL_ORDER', 'ORDER', order._id, { reason });
     }
 
-    // ── 3. Emails (non-fatal) ─────────────────────────────────────────────
+    // ── 3. Non-blocking Email (fire-and-forget so HTTP response returns instantly) ──
     try {
       const { sendCancelEmail } = require('../services/emailService');
-      await sendCancelEmail({
+      sendCancelEmail({
         to: order.user?.email || order.guestEmail,
         userName: order.user?.name || order.shippingAddress?.name || 'Customer',
         orderId: order._id.toString(),
@@ -1451,9 +1499,9 @@ router.post('/:id/cancel', auth, async (req, res) => {
         reason,
         isRefund: Boolean(restoreResult.razorpayRefund || restoreResult.walletRefunded > 0),
         refundId: refundInfo?.refund_id || (restoreResult.walletRefunded > 0 ? 'WALLET_REFUND' : null),
-      });
-    } catch (emailErr) {
-      console.error('EMAIL ERROR (non-fatal):', emailErr);
+      }).catch(emailErr => console.error('EMAIL ERROR (non-fatal):', emailErr));
+    } catch (e) {
+      console.error('EMAIL DISPATCH ERROR (non-fatal):', e);
     }
 
     res.json({
@@ -1534,6 +1582,7 @@ router.put('/:id/return-status', auth, auth.admin, auth.hasPermission('orders'),
     
     if (status === 'APPROVED') {
       order.paymentStatus = 'REFUNDED';
+      order.orderStatus = 'RETURNED';
       
       // Restore all order resources (variant stock, wallet refund, gift card, coupon count, Razorpay refund)
       const { restoreOrderResources } = require('../utils/orderResourceHelper');

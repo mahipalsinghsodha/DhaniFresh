@@ -281,7 +281,10 @@ exports.approveReturnRequest = async (req, res) => {
       const { restoreOrderResources } = require('../utils/orderResourceHelper');
       const restoreResult = await restoreOrderResources(order, 'Return approved by admin');
 
-      order.paymentStatus = 'RETURN_APPROVED';
+      order.paymentStatus = 'REFUNDED';
+      order.orderStatus = 'RETURNED';
+      order.returnRequest.resolvedAt = new Date();
+      order.returnRequest.adminNote = req.body.adminNote || 'Return approved by admin';
       if (restoreResult.razorpayRefund) {
         order.refundInfo = restoreResult.razorpayRefund;
       } else if (restoreResult.walletRefunded > 0) {

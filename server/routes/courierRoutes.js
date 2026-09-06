@@ -123,13 +123,19 @@ router.put('/orders/:id/status', auth, isCourier, async (req, res) => {
     }
 
     if (status === 'RETURNED') {
-      const mongoose = require('mongoose');
-      const Product = mongoose.model('Product');
-      for (const item of order.orderItems) {
-        if (item.product) {
-          await Product.findByIdAndUpdate(item.product, { $inc: { stock: item.quantity } });
-        }
-      }
+      const { restoreOrderResources } = require('../utils/orderResourceHelper');
+      const restoreResult = await restoreOrderResources(order, note || 'Doorstep delivery refused / RTO returned');
+
+      const isPrepaid = order.isPaid && (order.paymentMethod === 'Online' || order.paymentMethod === 'Wallet' || (order.walletUsed || 0) > 0);
+      order.paymentStatus = isPrepaid ? 'REFUNDED' : 'CANCELLED';
+
+      const refundInfo = restoreResult.razorpayRefund || (restoreResult.walletRefunded > 0 ? {
+        status: 'PROCESSED',
+        amount: restoreResult.walletRefunded,
+        initiatedAt: new Date(),
+        note: 'Refunded to Daatasa Wallet'
+      } : null);
+      if (refundInfo) order.refundInfo = refundInfo;
     }
 
     order.statusHistory.push({

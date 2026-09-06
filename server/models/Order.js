@@ -64,7 +64,7 @@ refundInfo: {
 
   paymentStatus: {
     type: String,
-    enum: ['PENDING', 'PAID', 'FAILED', 'CANCELLED', 'COD_CONFIRMED', 'EXPIRED'],
+    enum: ['PENDING', 'PAID', 'FAILED', 'CANCELLED', 'COD_CONFIRMED', 'EXPIRED', 'REFUNDED', 'RETURN_APPROVED'],
     default: 'PENDING'
   },
 
@@ -157,6 +157,16 @@ refundInfo: {
   payableAmount: {
     type: Number,
     default: 0
+  },
+
+  stockRestored: {
+    type: Boolean,
+    default: false
+  },
+
+  isCancelledLock: {
+    type: Boolean,
+    default: false
   },
 
   walletRefunded: {
