@@ -1076,6 +1076,11 @@ router.get('/', auth, auth.admin, auth.hasPermission('orders'), async (req, res)
       query.isDelivered = false;
     } else if (filter === 'delivered') {
       query.isDelivered = true;
+    } else if (filter === 'returns' || filter === 'return_pending' || filter === 'return') {
+      query['returnRequest.requestedAt'] = { $exists: true, $ne: null };
+      query['returnRequest.status'] = 'PENDING';
+    } else if (filter === 'all_returns') {
+      query['returnRequest.requestedAt'] = { $exists: true, $ne: null };
     } else if (filter === 'cancelled') {
       query.paymentStatus = { $in: ['CANCELLED', 'FAILED'] };
     }
@@ -1109,22 +1114,29 @@ const { getNextInvoiceNumber } = require('../utils/helpers');
       .limit(limit);
 
     const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
-    const newOrdersCount = await Order.countDocuments({
-      createdAt: { $gt: fiveMinutesAgo },
-      isPaid: false
-    });
+    const [newOrdersCount, pendingReturnsCount] = await Promise.all([
+      Order.countDocuments({
+        createdAt: { $gt: fiveMinutesAgo },
+        isPaid: false
+      }),
+      Order.countDocuments({
+        'returnRequest.requestedAt': { $exists: true, $ne: null },
+        'returnRequest.status': 'PENDING'
+      })
+    ]);
 
     if (req.query.page) {
       return res.json({ 
         orders, 
         newOrdersCount, 
+        pendingReturnsCount,
         total: totalCount, 
         page: validPage, 
         pages: totalPages 
       });
     }
 
-    res.json({ orders, newOrdersCount });
+    res.json({ orders, newOrdersCount, pendingReturnsCount });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }

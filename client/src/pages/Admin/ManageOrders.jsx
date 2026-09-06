@@ -4,7 +4,8 @@ import {
   FiPackage, FiCheckCircle, FiTruck, FiRefreshCw,
   FiPrinter, FiX, FiSearch, FiChevronDown, FiTag,
   FiUser, FiMapPin, FiCalendar, FiAlertCircle, FiShield,
-  FiBox, FiCheckSquare, FiSquare, FiDownload
+  FiBox, FiCheckSquare, FiSquare, FiDownload,
+  FiRotateCcw, FiImage, FiVideo, FiCheck, FiEye
 } from 'react-icons/fi'
 import { toast } from 'react-toastify'
 import api from '../../api/axios'
@@ -19,10 +20,12 @@ const fmtINR = (val) => `₹${Number(val || 0).toLocaleString('en-IN')}`
 const qrUrl = (data, size = 120) => `https://api.qrserver.com/v1/create-qr-code/?size=${size}x${size}&data=${encodeURIComponent(data)}&margin=6`
 
 const getStatus = (o) => {
+  if (o.returnRequest?.requestedAt && o.returnRequest.status === 'PENDING') return { label: 'Return Pending', color: '#ea580c', bg: 'rgba(234,88,12,0.12)', border: 'rgba(234,88,12,0.35)' }
+  if (o.orderStatus === 'RETURNED' || (o.returnRequest?.requestedAt && o.returnRequest.status === 'APPROVED') || o.paymentStatus === 'RETURN_APPROVED') return { label: 'Returned', color: '#16a34a', bg: 'rgba(22,163,74,0.12)', border: 'rgba(22,163,74,0.35)' }
+  if (o.returnRequest?.requestedAt && o.returnRequest.status === 'REJECTED') return { label: 'Return Rejected', color: '#dc2626', bg: 'rgba(220,38,38,0.12)', border: 'rgba(220,38,38,0.35)' }
   if (o.isDelivered || o.orderStatus === 'DELIVERED') return { label: 'Delivered', color: 'var(--success)', bg: 'rgba(56,161,105,0.08)', border: 'rgba(56,161,105,0.25)' }
   if (o.orderStatus === 'CANCELLED' || o.paymentStatus === 'CANCELLED') return { label: 'Cancelled', color: 'var(--text-muted)', bg: 'var(--bg-alt)', border: 'var(--border-color)' }
   if (o.paymentStatus === 'FAILED') return { label: 'Failed', color: 'var(--danger)', bg: 'rgba(229,62,62,0.08)', border: 'rgba(229,62,62,0.25)' }
-  if (o.paymentStatus === 'RETURN_APPROVED') return { label: 'Returned', color: 'var(--warning)', bg: 'rgba(245,158,11,0.08)', border: 'rgba(245,158,11,0.25)' }
   if (o.orderStatus === 'OUT_FOR_DELIVERY') return { label: 'Out for Delivery', color: '#8b5cf6', bg: 'rgba(139,92,246,0.08)', border: 'rgba(139,92,246,0.25)' }
   if (['SHIPPED', 'PICKED_UP', 'ASSIGNED_TO_COURIER'].includes(o.orderStatus) || !!o.trackingNumber) return { label: 'Shipped', color: '#0ea5e9', bg: 'rgba(14,165,233,0.08)', border: 'rgba(14,165,233,0.25)' }
   if (o.orderStatus === 'ACCEPTED') return { label: 'Accepted', color: 'var(--brand-secondary)', bg: 'rgba(30,58,138,0.08)', border: 'rgba(30,58,138,0.25)' }
@@ -108,6 +111,10 @@ const ManageOrders = () => {
 
   const [cancelModal, setCancelModal] = useState(null)
   const [trackingModal, setTrackingModal] = useState(null)
+  const [returnActionModal, setReturnActionModal] = useState(null)
+  const [previewImage, setPreviewImage] = useState(null)
+  const [previewVideo, setPreviewVideo] = useState(null)
+  const [pendingReturnsCount, setPendingReturnsCount] = useState(0)
   const [submitting, setSubmitting] = useState(false)
   const [syncing, setSyncing] = useState(false)
 
@@ -153,6 +160,7 @@ const ManageOrders = () => {
       setOrders(res.data.orders || [])
       if (res.data.pages !== undefined) setTotalPages(res.data.pages)
       if (res.data.total !== undefined) setTotalOrders(res.data.total)
+      if (res.data.pendingReturnsCount !== undefined) setPendingReturnsCount(res.data.pendingReturnsCount)
       if (res.data.page && res.data.page !== pg) {
         setPage(res.data.page)
       }
@@ -224,15 +232,27 @@ const ManageOrders = () => {
     finally { setSubmitting(false) }
   }
 
+  const handleProcessReturn = async (orderId, status, adminNote, bookReversePickup) => {
+    setSubmitting(true)
+    try {
+      const res = await api.put(`/api/orders/${orderId}/return-status`, {
+        status,
+        adminNote: adminNote || (status === 'APPROVED' ? 'Return approved by admin' : 'Return rejected'),
+        bookReversePickup: !!bookReversePickup
+      })
+      toast.success(res.data.message || (status === 'APPROVED' ? 'Return approved & refund processed!' : 'Return rejected'))
+      setReturnActionModal(null)
+      fetchOrders(false, page)
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to update return status')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
   const handleApproveReturn = async (id) => {
     if (!(await confirm('Approve this return? A refund will be initiated if paid online.'))) return
-    setSyncing(true)
-    try {
-      await api.put(`/api/admin/return-requests/${id}`, { status: 'APPROVED' })
-      toast.success('Return approved & refund initiated')
-      fetchOrders(false, page)
-    } catch (err) { toast.error(err.response?.data?.message || 'Failed to approve return') }
-    finally { setSyncing(false) }
+    handleProcessReturn(id, 'APPROVED', 'Return approved by admin', false)
   }
 
   const handleShipWithShiprocket = async (id) => {
@@ -381,8 +401,9 @@ const ManageOrders = () => {
               { v: 'cod',       l: 'COD' },
               { v: 'paid',      l: 'Paid' },
               { v: 'delivered', l: 'Delivered' },
+              { v: 'returns',   l: 'Return Pending', badge: pendingReturnsCount },
               { v: 'cancelled', l: 'Cancelled' },
-            ].map(({ v, l }) => (
+            ].map(({ v, l, badge }) => (
               <button key={v} onClick={() => { setFilter(v); setPage(1); }}
                 className="whitespace-nowrap px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2"
                 style={filter === v
@@ -390,6 +411,15 @@ const ManageOrders = () => {
                   : { background: 'rgba(255,255,255,0.10)', border: '1px solid rgba(255,255,255,0.18)', color: 'rgba(255,255,255,0.75)' }
                 }>
                 {l}
+                {badge > 0 && (
+                  <span className="px-1.5 py-0.5 rounded-full text-[10px] font-black"
+                    style={{
+                      background: filter === v ? 'var(--navy)' : '#ea580c',
+                      color: filter === v ? 'var(--gold)' : '#fff'
+                    }}>
+                    {badge}
+                  </span>
+                )}
               </button>
             ))}
           </div>
@@ -535,13 +565,94 @@ const ManageOrders = () => {
                                 </div>
                               )}
                               
-                              {o.returnRequest?.requestedAt && o.returnRequest.status === 'PENDING' && (
-                                <div className="mt-4 p-4 bg-orange-50 border border-orange-200 rounded-xl">
-                                  <p className="text-sm font-bold text-orange-800">Return Requested</p>
-                                  <p className="text-xs text-orange-600 mt-1">Reason: {o.returnRequest.reason}</p>
-                                  <button onClick={() => handleApproveReturn(o._id)} className="mt-3 px-4 py-2 bg-orange-500 text-white rounded-lg text-xs font-bold hover:bg-orange-600">
-                                    Approve Return
-                                  </button>
+                               {o.returnRequest?.requestedAt && (
+                                <div className="mt-4 p-4 rounded-2xl border" style={{
+                                  background: o.returnRequest.status === 'PENDING' ? 'rgba(234,88,12,0.06)' : o.returnRequest.status === 'APPROVED' ? 'rgba(22,163,74,0.06)' : 'rgba(220,38,38,0.06)',
+                                  borderColor: o.returnRequest.status === 'PENDING' ? 'rgba(234,88,12,0.25)' : o.returnRequest.status === 'APPROVED' ? 'rgba(22,163,74,0.25)' : 'rgba(220,38,38,0.25)'
+                                }}>
+                                  <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+                                    <div className="flex items-center gap-2">
+                                      <FiRotateCcw size={14} className={o.returnRequest.status === 'PENDING' ? 'text-orange-500' : o.returnRequest.status === 'APPROVED' ? 'text-emerald-500' : 'text-rose-500'} />
+                                      <span className="text-xs font-extrabold uppercase tracking-wider" style={{ color: 'var(--text-primary)' }}>Return Request</span>
+                                    </div>
+                                    <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${
+                                      o.returnRequest.status === 'PENDING' ? 'bg-orange-100 text-orange-700 dark:bg-orange-950/50 dark:text-orange-300' :
+                                      o.returnRequest.status === 'APPROVED' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300' :
+                                      'bg-rose-100 text-rose-700 dark:bg-rose-950/50 dark:text-rose-300'
+                                    }`}>
+                                      {o.returnRequest.status}
+                                    </span>
+                                  </div>
+
+                                  <div className="text-xs space-y-1.5" style={{ color: 'var(--text-secondary)' }}>
+                                    <p><strong style={{ color: 'var(--text-primary)' }}>Reason:</strong> {o.returnRequest.reason}</p>
+                                    {o.returnRequest.description && (
+                                      <p><strong style={{ color: 'var(--text-primary)' }}>Note:</strong> {o.returnRequest.description}</p>
+                                    )}
+                                    {o.returnRequest.pickupAddress?.street && (
+                                      <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                                        <strong style={{ color: 'var(--text-primary)' }}>Pickup:</strong> {o.returnRequest.pickupAddress.street}, {o.returnRequest.pickupAddress.city}, {o.returnRequest.pickupAddress.state} - {o.returnRequest.pickupAddress.zipCode} (Ph: {o.returnRequest.pickupAddress.phone})
+                                      </p>
+                                    )}
+                                    {o.returnRequest.reverseShipment?.awbCode && (
+                                      <p className="text-[11px] font-semibold text-sky-600 dark:text-sky-400">
+                                        Reverse Pickup: {o.returnRequest.reverseShipment.courierName} (AWB: {o.returnRequest.reverseShipment.awbCode})
+                                      </p>
+                                    )}
+                                    {o.returnRequest.adminNote && (
+                                      <p className="text-[11px] italic" style={{ color: 'var(--text-muted)' }}>
+                                        <strong>Admin note:</strong> {o.returnRequest.adminNote}
+                                      </p>
+                                    )}
+                                  </div>
+
+                                  {/* Media Proof Preview */}
+                                  {((o.returnRequest.images && o.returnRequest.images.length > 0) || o.returnRequest.video) && (
+                                    <div className="mt-3 flex flex-wrap items-center gap-2">
+                                      {o.returnRequest.images?.map((img, i) => (
+                                        <button
+                                          key={i}
+                                          type="button"
+                                          onClick={() => setPreviewImage(img)}
+                                          className="w-12 h-12 rounded-lg border border-brand-primary/10 overflow-hidden relative group hover:opacity-80 transition-all cursor-pointer"
+                                        >
+                                          <img src={img} alt={`Proof ${i + 1}`} className="w-full h-full object-cover" />
+                                          <span className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all text-white">
+                                            <FiEye size={12} />
+                                          </span>
+                                        </button>
+                                      ))}
+                                      {o.returnRequest.video && (
+                                        <button
+                                          type="button"
+                                          onClick={() => setPreviewVideo(o.returnRequest.video)}
+                                          className="px-2.5 py-1.5 rounded-lg bg-orange-100 dark:bg-orange-950/40 text-orange-700 dark:text-orange-300 text-[11px] font-bold flex items-center gap-1.5 hover:opacity-80 cursor-pointer"
+                                        >
+                                          <FiVideo size={13} /> Watch Video Proof
+                                        </button>
+                                      )}
+                                    </div>
+                                  )}
+
+                                  {/* Actions */}
+                                  {o.returnRequest.status === 'PENDING' && (
+                                    <div className="mt-3.5 pt-3 border-t border-brand-primary/10 flex flex-wrap items-center gap-2">
+                                      <button
+                                        type="button"
+                                        onClick={() => setReturnActionModal({ order: o, action: 'APPROVE', adminNote: 'Return approved by admin', bookReversePickup: false })}
+                                        className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-extrabold flex items-center gap-1.5 transition-all shadow-xs cursor-pointer"
+                                      >
+                                        <FiCheck size={14} /> Approve Return & Refund
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => setReturnActionModal({ order: o, action: 'REJECT', adminNote: 'Item does not meet return conditions', bookReversePickup: false })}
+                                        className="px-3 py-2 bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer"
+                                      >
+                                        <FiX size={14} /> Reject Return
+                                      </button>
+                                    </div>
+                                  )}
                                 </div>
                               )}
                             </div>
@@ -730,6 +841,142 @@ const ManageOrders = () => {
                 </div>
               </form>
             </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Return Action Modal */}
+      <AnimatePresence>
+        {returnActionModal && (
+          <div style={{ position: 'fixed', inset: 0, zIndex: 60, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16, background: 'rgba(27,47,110,0.5)', backdropFilter: 'blur(12px)' }}>
+            <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
+              style={{ background: 'var(--bg-surface)', borderRadius: 'var(--radius-lg)', width: '100%', maxWidth: 500, padding: 24, boxShadow: 'var(--shadow-lg)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+                <div>
+                  <h3 style={{ fontSize: 17, fontWeight: 800, color: 'var(--text-primary)', fontFamily: 'var(--font-display)', margin: 0 }}>
+                    {returnActionModal.action === 'APPROVE' ? 'Approve Return & Refund' : 'Reject Return Request'}
+                  </h3>
+                  <p style={{ fontSize: 12, color: 'var(--text-muted)', margin: '4px 0 0 0' }}>
+                    Order #{formatOrderId(returnActionModal.order)} • {returnActionModal.order.user?.name || 'Customer'}
+                  </p>
+                </div>
+                <button onClick={() => setReturnActionModal(null)} style={{ padding: 8, background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', borderRadius: 8 }}><FiX size={16} /></button>
+              </div>
+
+              {/* Order Return Summary */}
+              <div className="p-3 mb-4 rounded-xl bg-orange-50 dark:bg-orange-950/30 border border-orange-200 dark:border-orange-900/50 text-xs space-y-1">
+                <p><strong className="text-orange-900 dark:text-orange-200">Return Reason:</strong> {returnActionModal.order.returnRequest?.reason || 'Not specified'}</p>
+                {returnActionModal.order.returnRequest?.description && (
+                  <p><strong className="text-orange-900 dark:text-orange-200">Customer Note:</strong> {returnActionModal.order.returnRequest.description}</p>
+                )}
+                <p><strong className="text-orange-900 dark:text-orange-200">Refund Amount:</strong> ₹{Number(returnActionModal.order.totalPrice).toLocaleString('en-IN')}</p>
+              </div>
+
+              {returnActionModal.action === 'APPROVE' ? (
+                <div className="space-y-4">
+                  <p style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
+                    Approving will mark this order as <strong>RETURNED</strong> and automatically restore inventory, wallet balance, and initiate online payment refund via Razorpay if paid online.
+                  </p>
+
+                  <label className="flex items-start gap-3 p-3 rounded-xl border border-brand-primary/20 bg-brand-primary/5 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      className="mt-0.5"
+                      checked={returnActionModal.bookReversePickup}
+                      onChange={e => setReturnActionModal({ ...returnActionModal, bookReversePickup: e.target.checked })}
+                    />
+                    <div className="text-xs">
+                      <strong className="block text-brand-primary">Auto-Book Shiprocket Reverse Pickup</strong>
+                      <span className="text-brand-text/60">Automatically assign courier and generate reverse AWB for customer pickup.</span>
+                    </div>
+                  </label>
+
+                  <div>
+                    <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1.5">Admin Note / Instructions</label>
+                    <input
+                      type="text"
+                      value={returnActionModal.adminNote}
+                      onChange={e => setReturnActionModal({ ...returnActionModal, adminNote: e.target.value })}
+                      placeholder="e.g. Return approved, refund processed"
+                      className="w-full p-3 border rounded-xl text-sm"
+                    />
+                  </div>
+
+                  <div style={{ display: 'flex', gap: 12, marginTop: 20 }}>
+                    <button type="button" onClick={() => setReturnActionModal(null)} className="btn btn-secondary" style={{ flex: 1, justifyContent: 'center' }}>Cancel</button>
+                    <button
+                      type="button"
+                      disabled={submitting}
+                      onClick={() => handleProcessReturn(returnActionModal.order._id, 'APPROVED', returnActionModal.adminNote, returnActionModal.bookReversePickup)}
+                      style={{ flex: 1.5, padding: '12px', background: 'var(--success)', color: '#fff', border: 'none', borderRadius: 10, fontSize: 13, fontWeight: 800, cursor: 'pointer', opacity: submitting ? 0.7 : 1 }}>
+                      {submitting ? 'Processing…' : 'Confirm & Refund'}
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <p style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
+                    Please provide a clear rejection reason. This message will be sent to the customer in their notification.
+                  </p>
+
+                  <div>
+                    <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1.5">Rejection Reason <span className="text-red-500">*</span></label>
+                    <textarea
+                      rows={3}
+                      value={returnActionModal.adminNote}
+                      onChange={e => setReturnActionModal({ ...returnActionModal, adminNote: e.target.value })}
+                      placeholder="e.g. Returned item does not match return policy (seal broken / outside return window)"
+                      className="w-full p-3 border rounded-xl text-sm"
+                    />
+                  </div>
+
+                  <div style={{ display: 'flex', gap: 12, marginTop: 20 }}>
+                    <button type="button" onClick={() => setReturnActionModal(null)} className="btn btn-secondary" style={{ flex: 1, justifyContent: 'center' }}>Cancel</button>
+                    <button
+                      type="button"
+                      disabled={submitting || !returnActionModal.adminNote?.trim()}
+                      onClick={() => handleProcessReturn(returnActionModal.order._id, 'REJECTED', returnActionModal.adminNote, false)}
+                      style={{ flex: 1.5, padding: '12px', background: 'var(--danger)', color: '#fff', border: 'none', borderRadius: 10, fontSize: 13, fontWeight: 800, cursor: 'pointer', opacity: submitting ? 0.7 : 1 }}>
+                      {submitting ? 'Rejecting…' : 'Confirm Reject'}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Image Preview Lightbox */}
+      <AnimatePresence>
+        {previewImage && (
+          <div
+            onClick={() => setPreviewImage(null)}
+            style={{ position: 'fixed', inset: 0, zIndex: 70, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(8px)' }}
+          >
+            <div className="relative max-w-2xl max-h-[85vh] p-2" onClick={e => e.stopPropagation()}>
+              <button onClick={() => setPreviewImage(null)} className="absolute -top-10 right-0 p-2 text-white hover:opacity-80 cursor-pointer">
+                <FiX size={24} />
+              </button>
+              <img src={previewImage} alt="Return Proof" className="max-w-full max-h-[80vh] rounded-xl object-contain shadow-2xl" />
+            </div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Video Preview Modal */}
+      <AnimatePresence>
+        {previewVideo && (
+          <div
+            onClick={() => setPreviewVideo(null)}
+            style={{ position: 'fixed', inset: 0, zIndex: 70, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(8px)' }}
+          >
+            <div className="relative w-full max-w-xl bg-black rounded-2xl overflow-hidden p-2 shadow-2xl" onClick={e => e.stopPropagation()}>
+              <button onClick={() => setPreviewVideo(null)} className="absolute top-4 right-4 z-10 p-2 text-white bg-black/50 rounded-full hover:bg-black/80 cursor-pointer">
+                <FiX size={20} />
+              </button>
+              <video src={previewVideo} controls autoPlay className="w-full max-h-[75vh] rounded-xl" />
+            </div>
           </div>
         )}
       </AnimatePresence>
