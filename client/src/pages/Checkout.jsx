@@ -46,6 +46,8 @@ const Checkout = () => {
   const [cart, setCart]               = useState(null)
   const { items: cartItems }          = useCart()
   const [loading, setLoading]         = useState(false)
+  const [isProcessingOrder, setIsProcessingOrder] = useState(false)
+  const [processingMessage, setProcessingMessage] = useState('')
   const submittingRef                 = useRef(false)
   const [paymentMethod, setPayment]   = useState(user ? 'COD' : 'Online')
   const [savedAddresses, setSaved]    = useState([])
@@ -185,7 +187,13 @@ const Checkout = () => {
 
   const placeOrder = async () => {
     const shippingAddress = getAddr()
-    if (showNewForm && saveNewAddr && user) await api.post('/api/auth/addresses', { ...newAddr, isDefault: savedAddresses.length === 0 })
+    if (showNewForm && saveNewAddr && user) {
+      try {
+        await api.post('/api/auth/addresses', { ...newAddr, isDefault: savedAddresses.length === 0 })
+      } catch (e) {
+        console.error('Failed to save address:', e)
+      }
+    }
     
     // For guest checkout, pull email from shipping address
     const guestEmail = !user ? shippingAddress.email : null;
@@ -199,18 +207,23 @@ const Checkout = () => {
     if (appliedGiftCard) finalTotal = Math.max(0, finalTotal - appliedGiftCard.balance)
 
     if (paymentMethod === 'COD' || finalTotal === 0) {
+      setProcessingMessage('Placing your order…')
       await api.post('/api/orders', payload); 
+      setProcessingMessage('Order placed! Confirming details…')
       setCart({ items: [] });
       await clearCart();
       await fetchCartCount();
       toast.success('Order placed successfully!'); 
       navigate('/orders', { replace: true });
-    } else { await startOnlinePayment(payload) }
+      // Keep loading and isProcessingOrder active until component unmounts on navigate
+    } else {
+      await startOnlinePayment(payload)
+    }
   }
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (submittingRef.current || loading) return;
+    if (submittingRef.current || loading || isProcessingOrder) return;
 
     // Validate address before opening Razorpay or placing order
     const addr = getAddr()
@@ -227,25 +240,45 @@ const Checkout = () => {
 
     submittingRef.current = true;
     setLoading(true);
+    setIsProcessingOrder(true);
+    setProcessingMessage(paymentMethod === 'COD' ? 'Placing your order…' : 'Preparing secure payment gateway…');
 
-    try { await placeOrder() } catch (err) {
+    try {
+      await placeOrder()
+    } catch (err) {
+      // ONLY reset loading and processing state on error
+      setLoading(false);
+      submittingRef.current = false;
+      setIsProcessingOrder(false);
+      setProcessingMessage('');
+
       if (err.response?.status === 409 && err.response?.data?.allItems) {
         setStockModal(err.response.data.allItems)
       } else {
         toast.error(err.response?.data?.message || 'Failed to place order')
       }
-    } finally {
-      setLoading(false);
-      submittingRef.current = false;
     }
   }
 
   const startOnlinePayment = async (payload) => {
-    const { data } = await api.post('/api/orders', payload)
-    const { order, razorpayOrder: rzrOrder } = data;
+    setProcessingMessage('Connecting to payment gateway…')
+    let orderData;
+    try {
+      const { data } = await api.post('/api/orders', payload)
+      orderData = data;
+    } catch (err) {
+      setLoading(false);
+      submittingRef.current = false;
+      setIsProcessingOrder(false);
+      throw err;
+    }
 
-    const razorpayKey = import.meta.env.VITE_RAZORPAY_KEY_ID || data?.key_id || 'rzp_test_EvzmZvtG1AJQAS';
+    const { razorpayOrder: rzrOrder } = orderData;
+    const razorpayKey = import.meta.env.VITE_RAZORPAY_KEY_ID || orderData?.key_id || 'rzp_test_EvzmZvtG1AJQAS';
     if (!razorpayKey) {
+      setLoading(false);
+      submittingRef.current = false;
+      setIsProcessingOrder(false);
       toast.error('Razorpay payment configuration is missing.');
       return;
     }
@@ -262,6 +295,9 @@ const Checkout = () => {
           document.body.appendChild(script);
         });
       } catch (scriptErr) {
+        setLoading(false);
+        submittingRef.current = false;
+        setIsProcessingOrder(false);
         toast.error('Could not load payment gateway. Please check your internet connection.');
         return;
       }
@@ -269,10 +305,21 @@ const Checkout = () => {
 
     const rzp = new window.Razorpay({
       key: razorpayKey,
-      order_id: rzrOrder.id, name: 'Daatasa',
-      description: 'Premium Ghee Purchase', amount: rzrOrder.amount,
-      theme: { color: '#F5A623' }, prefill: { name: user?.name || getAddr().name, email: user?.email || getAddr().email, contact: user?.phone || getAddr().phone },
+      order_id: rzrOrder.id,
+      name: 'Daatasa',
+      description: 'Premium Ghee Purchase',
+      amount: rzrOrder.amount,
+      theme: { color: '#F5A623' },
+      prefill: {
+        name: user?.name || getAddr().name,
+        email: user?.email || getAddr().email,
+        contact: user?.phone || getAddr().phone
+      },
       handler: async (res) => {
+        setIsProcessingOrder(true);
+        setLoading(true);
+        submittingRef.current = true;
+        setProcessingMessage('Verifying payment and confirming your order…');
         try { 
           await api.post('/api/payment/verify', res); 
           setCart({ items: [] });
@@ -280,17 +327,27 @@ const Checkout = () => {
           await fetchCartCount(); 
           toast.success('Payment successful!'); 
           navigate('/orders', { replace: true });
+        } catch {
+          setLoading(false);
+          submittingRef.current = false;
+          setIsProcessingOrder(false);
+          toast.error('Payment verification failed');
         }
-        catch { toast.error('Payment verification failed') }
       },
-      modal: { ondismiss: async () => {
-        try {
-          await api.post('/api/orders/fail', { razorpay_order_id: rzrOrder.id });
-          api.get('/api/wallet').then(res => setWalletBalance(res.data.walletBalance)).catch(() => {});
-        } catch {}
-        toast.info('Payment cancelled. Any deducted wallet balance has been restored.');
-      }},
+      modal: {
+        ondismiss: async () => {
+          setLoading(false);
+          submittingRef.current = false;
+          setIsProcessingOrder(false);
+          try {
+            await api.post('/api/orders/fail', { razorpay_order_id: rzrOrder.id });
+            api.get('/api/wallet').then(res => setWalletBalance(res.data.walletBalance)).catch(() => {});
+          } catch {}
+          toast.info('Payment cancelled. Any deducted wallet balance has been restored.');
+        }
+      },
     })
+    setIsProcessingOrder(false);
     rzp.open()
   }
 
@@ -672,16 +729,16 @@ const Checkout = () => {
                 const netPayable = Math.max(0, Math.round((afterWallet - effectiveGC) * 100) / 100);
 
                 let btnText = 'Place Order';
-                if (loading) btnText = 'Placing Order…';
+                if (loading || isProcessingOrder) btnText = processingMessage || 'Placing Order…';
                 else if (netPayable === 0) btnText = 'Pay via Wallet / Gift Card';
                 else if (paymentMethod === 'COD') btnText = `Place Order (COD: ₹${Math.round(netPayable).toLocaleString('en-IN')})`;
                 else btnText = `Pay ₹${Math.round(netPayable).toLocaleString('en-IN')} Online`;
 
                 return (
-                  <button type="submit" disabled={loading || submittingRef.current}
+                  <button type="submit" disabled={loading || submittingRef.current || isProcessingOrder}
                     className="w-full h-14 btn btn-primary rounded-full flex items-center justify-center gap-2 text-base transition-all disabled:opacity-60"
                   >
-                    {loading ? <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"/> : <FiArrowRight size={18}/>}
+                    {(loading || isProcessingOrder) ? <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"/> : <FiArrowRight size={18}/>}
                     {btnText}
                   </button>
                 );
@@ -699,7 +756,25 @@ const Checkout = () => {
         </form>
       </div>
 
-
+      {/* Full-screen Order Processing Overlay */}
+      <AnimatePresence>
+        {isProcessingOrder && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[9999] bg-black/70 backdrop-blur-md flex flex-col items-center justify-center text-white text-center p-6 select-none"
+          >
+            <div className="w-16 h-16 border-4 border-white/20 border-t-amber-400 rounded-full animate-spin mb-4" />
+            <h3 className="text-xl sm:text-2xl font-bold font-display text-white">
+              {processingMessage || 'Processing Your Order…'}
+            </h3>
+            <p className="text-sm text-white/80 mt-2 max-w-sm">
+              Please do not refresh the page or press back while we confirm your order.
+            </p>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Stock Modal */}
       <AnimatePresence>

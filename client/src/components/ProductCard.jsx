@@ -66,19 +66,21 @@ const ProductCard = ({ product, categories = [], rank }) => {
   const handleQuickAdd = async (e) => {
     e.preventDefault()
     e.stopPropagation()
-    if (!inStock || isComingSoon) return
+    if (!inStock || isComingSoon || addingToCart) return
     setAddingToCart(true)
-    
-    let qtyToAdd = 1;
-    if (user?.role === 'b2b_customer' && product.b2bMinQty > 0) {
-      qtyToAdd = product.b2bMinQty;
+    try {
+      let qtyToAdd = 1;
+      if (user?.role === 'b2b_customer' && product.b2bMinQty > 0) {
+        qtyToAdd = product.b2bMinQty;
+      }
+      
+      const success = await addItem(product, qtyToAdd, variantId)
+      if (success) {
+        toast.success('Added to cart!')
+      }
+    } finally {
+      setAddingToCart(false)
     }
-    
-    const success = await addItem(product, qtyToAdd, variantId)
-    if (success) {
-      toast.success('Added to cart!')
-    }
-    setAddingToCart(false)
   }
 
   const handleDecrement = async (e) => {

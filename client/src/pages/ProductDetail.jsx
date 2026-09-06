@@ -224,6 +224,7 @@ const ProductDetail = () => {
   }
 
   const handleAddToCart = async ({ redirectTo } = {}) => {
+    if (adding) return;
     const isComingSoon = Boolean(product?.launchDate && new Date(product.launchDate) > new Date())
     if (isComingSoon) {
       toast.info('This product is coming soon and not yet available for order')

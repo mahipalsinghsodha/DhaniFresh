@@ -41,6 +41,8 @@ const notificationSchema = new mongoose.Schema({
 
 notificationSchema.index({ user: 1, createdAt: -1 });
 notificationSchema.index({ user: 1, isRead: 1 });
+// Automatically delete notifications older than 3 days (3 * 24 * 60 * 60 = 259,200 seconds)
+notificationSchema.index({ createdAt: 1 }, { expireAfterSeconds: 3 * 24 * 60 * 60 });
 
 const Notification = mongoose.model('Notification', notificationSchema);
 module.exports = Notification;

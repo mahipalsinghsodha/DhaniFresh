@@ -266,6 +266,17 @@ router.post('/webhook', async (req, res) => {
                       transactionType: 'REWARD_CONVERSION'
                     }
                   ]);
+
+                  try {
+                    const notifReferrer = new Notification({
+                      user: referrer._id,
+                      type: 'SYSTEM',
+                      title: 'Referral Bonus Earned! 🎉',
+                      message: `You earned ₹50 in your wallet because ${user.name} completed their first order!`,
+                      link: '/profile'
+                    });
+                    await notifReferrer.save();
+                  } catch (e) {}
                 }
               }
 

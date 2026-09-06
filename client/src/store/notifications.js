@@ -8,25 +8,29 @@ export const useNotificationStore = create((set, get) => ({
   isDrawerOpen: false,
 
   setNotifications: (notifications) => {
-    const unread = notifications.filter(n => !n.isRead).length
-    set({ notifications, unreadCount: unread })
+    const unread = (notifications || []).filter(n => !n.isRead)
+    set({ notifications: unread, unreadCount: unread.length })
   },
 
   addNotification: (notification) => {
+    if (notification.isRead) return
     set(state => ({
-      notifications: [notification, ...state.notifications],
-      unreadCount: state.unreadCount + (notification.isRead ? 0 : 1),
+      notifications: [notification, ...state.notifications.filter(n => n._id !== notification._id)],
+      unreadCount: state.unreadCount + 1,
     }))
   },
 
   markRead: async (id) => {
-    // Optimistic update
-    set(state => ({
-      notifications: state.notifications.map(n =>
-        n._id === id ? { ...n, isRead: true } : n
-      ),
-      unreadCount: Math.max(0, state.unreadCount - 1),
-    }))
+    // Optimistic update: immediately remove notification once read
+    set(state => {
+      const removed = state.notifications.find(n => n._id === id)
+      return {
+        notifications: state.notifications.filter(n => n._id !== id),
+        unreadCount: removed && !removed.isRead
+          ? Math.max(0, state.unreadCount - 1)
+          : Math.max(0, state.notifications.length - 1),
+      }
+    })
     try {
       await api.patch(`/api/notifications/${id}/read`)
     } catch (err) {
@@ -35,11 +39,11 @@ export const useNotificationStore = create((set, get) => ({
   },
 
   markAllRead: async () => {
-    // Optimistic update
-    set(state => ({
-      notifications: state.notifications.map(n => ({ ...n, isRead: true })),
+    // Optimistic update: clear all notifications immediately
+    set({
+      notifications: [],
       unreadCount: 0,
-    }))
+    })
     try {
       await api.patch('/api/notifications/read-all')
     } catch (err) {
@@ -48,14 +52,14 @@ export const useNotificationStore = create((set, get) => ({
   },
 
   removeNotification: async (id) => {
-    // Optimistic update
+    // Optimistic update: remove notification
     set(state => {
       const removed = state.notifications.find(n => n._id === id)
       return {
         notifications: state.notifications.filter(n => n._id !== id),
         unreadCount: removed && !removed.isRead
           ? Math.max(0, state.unreadCount - 1)
-          : state.unreadCount,
+          : Math.max(0, state.notifications.length - 1),
       }
     })
     try {

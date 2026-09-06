@@ -30,7 +30,7 @@ const NotifIcon = ({ type }) => {
 }
 
 /* ── Single Notification Item ───────────────────────────────── */
-const NotifItem = ({ notif, onClick }) => {
+const NotifItem = ({ notif, onClick, onRemove }) => {
   let timeAgo = 'just now';
   if (notif.createdAt) {
     const d = new Date(notif.createdAt);
@@ -41,25 +41,37 @@ const NotifItem = ({ notif, onClick }) => {
 
   return (
     <div
-      className="flex items-start gap-3 px-4 py-3.5 cursor-pointer transition-colors"
+      className="group relative flex items-start gap-3 px-4 py-3.5 cursor-pointer transition-colors"
       style={{
-        background: notif.isRead ? 'transparent' : 'rgba(245,197,24,0.04)',
+        background: 'rgba(245,197,24,0.04)',
         borderBottom: '1px solid var(--border-color)',
       }}
       onClick={() => onClick(notif)}
-      onMouseEnter={e => { e.currentTarget.style.background = notif.isRead ? 'var(--bg-alt)' : 'rgba(245,197,24,0.06)' }}
+      onMouseEnter={e => { e.currentTarget.style.background = 'rgba(245,197,24,0.08)' }}
       onMouseLeave={e => {
-        e.currentTarget.style.background = notif.isRead ? 'transparent' : 'rgba(245,197,24,0.04)'
+        e.currentTarget.style.background = 'rgba(245,197,24,0.04)'
       }}
     >
       <NotifIcon type={notif.type} />
-      <div className="flex-1 min-w-0">
+      <div className="flex-1 min-w-0 pr-6">
         <p className="text-[13px] font-medium text-[var(--text-primary)] leading-snug">{notif.title}</p>
         <p className="text-[12px] text-[var(--text-secondary)] leading-relaxed mt-0.5">{notif.message}</p>
         <p className="text-[11px] text-[var(--text-muted)] mt-1.5">{timeAgo}</p>
       </div>
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          onRemove(notif._id);
+        }}
+        className="opacity-0 group-hover:opacity-100 p-1 hover:bg-black/10 dark:hover:bg-white/10 rounded transition-all absolute right-3 top-3 text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+        title="Dismiss notification"
+        aria-label="Dismiss notification"
+      >
+        <X size={14} />
+      </button>
       {!notif.isRead && (
-        <div className="w-2 h-2 rounded-full mt-1.5 shrink-0"
+        <div className="w-2 h-2 rounded-full mt-1.5 shrink-0 group-hover:opacity-0 transition-opacity"
           style={{ background: 'var(--brand-primary)' }} />
       )}
     </div>
@@ -94,12 +106,12 @@ export default function NotificationDrawer() {
   const navigate = useNavigate()
   const {
     isDrawerOpen, closeDrawer, notifications, unreadCount,
-    setNotifications, markRead, markAllRead,
+    setNotifications, markRead, markAllRead, removeNotification,
   } = useNotificationStore()
   const openSupport = useSupportStore(state => state.openSupport)
 
   const handleNotifClick = (notif) => {
-    if (!notif.isRead) markRead(notif._id)
+    markRead(notif._id)
     
     if (notif.link) {
       navigate(notif.link)
@@ -182,7 +194,7 @@ export default function NotificationDrawer() {
                 )}
               </div>
               <div className="flex items-center gap-1">
-                {unreadCount > 0 && (
+                {notifications.length > 0 && (
                   <button
                     onClick={markAllRead}
                     className="btn-ghost text-[12px]"
@@ -190,7 +202,7 @@ export default function NotificationDrawer() {
                     id="mark-all-read-btn"
                   >
                     <CheckCheck size={13} />
-                    Mark all read
+                    Clear all
                   </button>
                 )}
                 <button onClick={closeDrawer} className="btn-icon w-8 h-8" aria-label="Close">
@@ -221,7 +233,7 @@ export default function NotificationDrawer() {
                         style={{ color: 'var(--text-muted)' }}>{group}</span>
                     </div>
                     {groups[group].map(n => (
-                      <NotifItem key={n._id} notif={n} onClick={handleNotifClick} />
+                      <NotifItem key={n._id} notif={n} onClick={handleNotifClick} onRemove={removeNotification} />
                     ))}
                   </div>
                 ))

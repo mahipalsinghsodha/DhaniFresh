@@ -2,9 +2,10 @@ const cron = require('node-cron');
 const Order = require('../models/Order');
 const Product = require('../models/Product');
 const User = require('../models/User');
+const Notification = require('../models/Notification');
 
 const startOrderCleanup = () => {
-  // Run every 15 minutes — find PENDING orders older than 72 hours
+  // Run every 15 minutes — find PENDING orders older than 72 hours and notifications older than 3 days
   cron.schedule('*/15 * * * *', async () => {
     const isDev = process.env.NODE_ENV === 'development';
     if (isDev) console.log('[OrderCleanup] Running cleanup check...');
@@ -67,6 +68,22 @@ const startOrderCleanup = () => {
 
     } catch (error) {
       console.error('[OrderCleanup] ERROR:', error);
+    }
+
+    // ── Purge notifications: older than 3 days OR already marked read ──
+    try {
+      const notifExpiry = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000);
+      const notifRes = await Notification.deleteMany({
+        $or: [
+          { createdAt: { $lt: notifExpiry } },
+          { isRead: true }
+        ]
+      });
+      if (isDev && notifRes.deletedCount > 0) {
+        console.log(`[OrderCleanup] Purged ${notifRes.deletedCount} notifications (older than 3 days or read).`);
+      }
+    } catch (nErr) {
+      console.error('[OrderCleanup] Notification purge error:', nErr.message);
     }
   });
 };
